@@ -107,9 +107,15 @@ export interface SucursalConStats extends Sucursal {
 
 // ===== Genericos =====
 
-export interface Paginated<T> {
+/**
+ * Formato UNICO de todas las respuestas de listado de la API.
+ * Refinamiento: { data, total, page, pageSize }
+ */
+export interface PaginatedResponse<T> {
   data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface ApiErrorResponse {

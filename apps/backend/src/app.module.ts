@@ -6,9 +6,16 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
 
 import { PrismaModule } from './prisma/prisma.module';
+import { JwtGlobalModule } from './common/auth/jwt-global.module';
 import { RedisModule } from './common/redis/redis.module';
+import { AuditoriaModule } from './common/auditoria/auditoria.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
+import { SucursalesModule } from './sucursales/sucursales.module';
+import { NegociosModule } from './negocios/negocios.module';
+import { ConfiguracionModule } from './configuracion/configuracion.module';
+import { ClientesModule } from './clientes/clientes.module';
+import { EmpleadosModule } from './empleados/empleados.module';
 
 /**
  * Convierte REDIS_URL en opciones de ioredis.
@@ -43,10 +50,18 @@ function redisConnectionFromUrl(raw?: string) {
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     BullModule.forRoot({ connection: redisConnectionFromUrl(process.env.REDIS_URL) }),
     PrismaModule,
+    JwtGlobalModule,
     RedisModule,
+    AuditoriaModule,
+    SucursalesModule,
     HealthModule,
     AuthModule,
-    // Los modulos de features se agregan por lote (Lote 3..5)
+    // --- Lote 3: core negocio ---
+    NegociosModule,
+    ConfiguracionModule,
+    ClientesModule,
+    EmpleadosModule,
+    // Los modulos del Lote 4..5 se agregan despues
   ],
   providers: [
     // Rate limiting global. Los JWT guards NO se registran globalmente:

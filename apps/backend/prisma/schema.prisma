@@ -460,6 +460,7 @@ model Cliente {
   notasInternas         String?         @db.Text
   creadoEn              DateTime        @default(now())
   ultimaVisita          DateTime?
+  eliminadoEn           DateTime? // Soft delete (Lote 3): los listados filtran eliminadoEn: null
 
   negocio          Negocio                @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   dispositivos     DispositivoCliente[]
@@ -472,6 +473,7 @@ model Cliente {
   @@unique([negocioId, telefono])
   @@index([negocioId, ultimaVisita])
   @@index([negocioId, etiqueta])
+  @@index([negocioId, eliminadoEn])
 }
 
 // Dispositivo asociado a un cliente (identidad multi-capa)

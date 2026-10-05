@@ -258,7 +258,7 @@ Y por fase: el test unit/e2e que indica cada prompt.
 |---|---|---|
 | 1 | Infraestructura base + healthcheck + ESLint | ✅ `a3a0d6d` |
 | 2 | Auth dual (lockout por negocio, claim `tipo`, E.164, rotación de refresh) | ✅ verificado e2e |
-| 3 | Core negocio (negocios, configuracion, clientes, empleados) | ⬜ pendiente |
+| 3 | Core negocio (negocios, configuracion, clientes, empleados) | ✅ verificado e2e |
 | 4 | Fidelización + Carta (visitas + WS, carta) | ⬜ pendiente |
 | 5 | Soporte (push, resenas, google, estadisticas, webhooks) | ⬜ pendiente |
 
@@ -269,3 +269,46 @@ Y por fase: el test unit/e2e que indica cada prompt.
       `tipo="dueno"` -> **401** (antes solo lo frenaba el claim).
 - [x] Regenerar `packages/types` (ver arriba). HECHO.
 
+
+---
+
+## Lote 3 — Core Negocio (cerrado)
+
+Refinamientos implementados: `SucursalResolverService` (4 fuentes + cache Redis),
+envelope `{ data, total, page, pageSize }`, soft delete (`eliminadoEn`), auditoria en
+`EventoAuditoria`, RBAC con `@Roles()`, negocio con `plan`/`modoClientes`/`features`/
+`sucursalesActivas`, cliente con sellos/puntos/visitas + tarjetas por sucursal + historial.
+
+### 3 bugs reales encontrados y corregidos
+
+1. **`tsc` emitia `packages/types` y desplazaba la salida a `dist/apps/backend/src/`**
+   Causa: un unico `import type { PaginatedResponse } from '@repo/types'` en
+   `pagination.util.ts` metia el TS fuente del paquete en el program y subia el rootDir
+   inferido a la raiz del monorepo, rompiendo `node dist/main.js`.
+   Fix: el backend define su propio `PaginatedResponse<T>` (mismo contrato) y se agrego
+   `"rootDir": "./src"` al tsconfig para que no vuelva a pasar en silencio.
+   Regla: **el backend no importa TS fuente de otros paquetes del monorepo.**
+
+2. **`prebuild: rimraf dist` + `"incremental": true` => dist VACIO.**
+   `tsc` veia el `tsconfig.tsbuildinfo` al dia y no emitia nada, pero el `dist` ya estaba
+   borrado. Sintoma: build exit 0 y `dist/main.js` inexistente (intermitente, muy confuso).
+   Fix: `prebuild: rimraf dist tsconfig.tsbuildinfo`. Verificado con 3 builds consecutivos.
+
+3. **El dueno (PWA Admin) no podia administrar clientes/empleados.**
+   Los endpoints de gestion usaban `JwtEmpleadoGuard` (claim `tipo: empleado`), asi que el
+   token de dueno (`tipo: dueno`) recibia 401. Fix: `StaffGuard`, que acepta AMBOS tipos
+   verificando cada uno contra su secreto y revalidando el empleado contra la DB.
+   Requirio `JwtGlobalModule` (`@Global`) para exponer `JwtService` a los guards.
+
+### Bug de datos (no de codigo) detectado en el checklist
+
+- Enum `EtiquetaCliente`: mi codigo usaba `RECURRENTE`; el valor real del schema es `REGULAR`.
+- El test "empleado comun ve solo su sucursal" daba falso negativo con el CAJERO porque
+  **el CAJERO y los 20 clientes estan en la misma sucursal (`centro`)**. Re-hecho con el
+  MESERO de `norte`: DUENO 20 / CAJERO(centro) 20 / MESERO(norte) 7, coincidiendo con el SQL.
+
+### Decision a revisar
+
+`GET /clientes` se abrio a los roles de staff (`CAJERO/MESERO/EMPLEADO/DELIVERY`) porque el
+refinamiento 5 era **inalcanzable** si solo `DUENO/ENCARGADO` podian listar. Las MUTACIONES
+siguen restringidas a `DUENO` (regalar-sello, DELETE) y `DUENO/ENCARGADO` (empleados).

@@ -81,7 +81,7 @@ export class ClientesService {
 
     const selectStaff = {
       id: true, nombre: true, telefono: true, etiqueta: true,
-      sellosActuales: true, ultimaVisita: true,
+      sellosActuales: true, puntosActuales: true, ultimaVisita: true,
       ...(porSucursal
         ? { tarjetas: { include: { sucursal: { select: { id: true, nombre: true, slug: true, esPrincipal: true } } } } }
         : {}),
@@ -179,6 +179,7 @@ export class ClientesService {
       telefono: enmascararTelefono(String(cliente.telefono ?? '')),
       etiqueta: cliente.etiqueta,
       sellosActuales: cliente.sellosActuales,
+      puntosActuales: cliente.puntosActuales,
       ultimaVisita: cliente.ultimaVisita ?? null,
       ...(anidadas ? { tarjetas: this.mapTarjetas(anidadas) } : {}),
     };

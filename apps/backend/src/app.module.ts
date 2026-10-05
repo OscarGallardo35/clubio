@@ -16,6 +16,8 @@ import { NegociosModule } from './negocios/negocios.module';
 import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { EmpleadosModule } from './empleados/empleados.module';
+import { VisitasModule } from './visitas/visitas.module';
+import { CartaModule } from './carta/carta.module';
 
 /**
  * Convierte REDIS_URL en opciones de ioredis.
@@ -61,6 +63,9 @@ function redisConnectionFromUrl(raw?: string) {
     ConfiguracionModule,
     ClientesModule,
     EmpleadosModule,
+    // --- Lote 4: fidelizacion + carta ---
+    VisitasModule,
+    CartaModule,
     // Los modulos del Lote 4..5 se agregan despues
   ],
   providers: [

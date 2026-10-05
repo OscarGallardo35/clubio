@@ -259,7 +259,7 @@ Y por fase: el test unit/e2e que indica cada prompt.
 | 1 | Infraestructura base + healthcheck + ESLint | ✅ `a3a0d6d` |
 | 2 | Auth dual (lockout por negocio, claim `tipo`, E.164, rotación de refresh) | ✅ verificado e2e |
 | 3 | Core negocio (negocios, configuracion, clientes, empleados) | ✅ verificado e2e |
-| 4 | Fidelización + Carta (visitas + WS, carta) | ⬜ pendiente |
+| 4 | Fidelización + Carta (visitas + WS, carta) | ✅ verificado e2e |
 | 5 | Soporte (push, resenas, google, estadisticas, webhooks) | ⬜ pendiente |
 
 ## Tareas pendientes (nuevas)
@@ -312,3 +312,39 @@ envelope `{ data, total, page, pageSize }`, soft delete (`eliminadoEn`), auditor
 `GET /clientes` se abrio a los roles de staff (`CAJERO/MESERO/EMPLEADO/DELIVERY`) porque el
 refinamiento 5 era **inalcanzable** si solo `DUENO/ENCARGADO` podian listar. Las MUTACIONES
 siguen restringidas a `DUENO` (regalar-sello, DELETE) y `DUENO/ENCARGADO` (empleados).
+
+---
+
+## Lote 4 — Fidelización + Carta (cerrado)
+
+**Schema**: se agrego `TokenValidacion.sucursalId String?` + `@@index([negocioId, sucursalId])`
+y la relacion inversa en `Sucursal`. Migracion `20261005205119_add_token_validacion_sucursal`
+= `ADD COLUMN` nullable + `CREATE INDEX` + FK (`ON DELETE SET NULL`). Nullable a proposito:
+los tokens previos no la tienen; un backfill les asigna la principal y en Fase 2 pasa a NOT NULL.
+
+**WebSocket** (namespace `/visitas`): salas `cliente:{clienteId}`,
+`sucursal:{sucursalId}:empleados` y `negocio:{negocioId}:duenos`. El empleado entra a la sala de
+su sucursal; con `accesoMultiSucursal` entra a todas las del negocio.
+
+### Bug real encontrado por el e2e
+
+La reutilizacion del token activo **ignoraba la sucursal**: una solicitud a Norte encontraba el
+token activo de Centro, lo reutilizaba y la respuesta informaba "Norte" mientras el token
+apuntaba a Centro. Fix: el `findFirst` filtra tambien por `sucursalId`. Sin ese filtro el
+aislamiento por sucursal era evadible pidiendo el token "equivocado".
+
+### Hallazgo de datos (no bug): `accesoMultiSucursal`
+
+`Maria Encargado` tiene `accesoMultiSucursal = true` en el seed, asi que su aprobacion de un
+token de Norte devuelve 201 (correcto). `Juan Cajero` (false) devuelve 403. La visita se
+registra siempre en la sucursal DEL TOKEN, no en la del empleado que aprueba.
+
+### Diseño verificado
+
+- `solicitar` resuelve la sucursal con `SucursalResolverService` (sin claim de sucursal, el
+  cliente cae a la principal) y la persiste en el token.
+- `aprobar`/`rechazar`/`validar` exigen acceso a la sucursal del token (403 si no).
+- La transaccion marca el token con `updateMany({usado:false})` para evitar doble uso por carrera.
+- Carta: `precio` es `Decimal(10,2)` en la DB y se expone como `number`; el endpoint publico
+  resuelve el negocio desde el slug del tenant (`X-Tenant-Slug`) y aplica los overrides de
+  `ItemCartaSucursal`. El DELETE de carta es baja logica (los pedidos lo referencian).

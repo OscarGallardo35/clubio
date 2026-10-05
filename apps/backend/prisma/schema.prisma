@@ -237,6 +237,7 @@ model Sucursal {
   checkins           CheckinTurno[]
   visitas            Visita[]
   tarjetasCliente    TarjetaClienteSucursal[]
+  tokensValidacion   TokenValidacion[]
   itemsCartaOverride ItemCartaSucursal[]
   usoMensual         UsoMensual[]
 
@@ -549,20 +550,26 @@ model Visita {
 
 // Token de validación del QR #2 (un solo uso, expira en 5 min)
 model TokenValidacion {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   negocioId   String
   clienteId   String
-  token       String   @unique
-  usado       Boolean  @default(false)
+  // Sucursal donde se pidio la visita (Lote 4). Nullable a proposito:
+  // los tokens creados antes de esta migracion no la tienen; un backfill
+  // les asigna la sucursal principal. Pasa a NOT NULL en la Fase 2.
+  sucursalId  String?
+  token       String    @unique
+  usado       Boolean   @default(false)
   expiraEn    DateTime
-  creadoEn    DateTime @default(now())
+  creadoEn    DateTime  @default(now())
 
-  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
-  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  negocio  Negocio   @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  cliente  Cliente   @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  sucursal Sucursal? @relation(fields: [sucursalId], references: [id], onDelete: SetNull)
 
   @@index([token])
   @@index([expiraEn])
   @@index([usado])
+  @@index([negocioId, sucursalId])
 }
 
 // ============================================================================

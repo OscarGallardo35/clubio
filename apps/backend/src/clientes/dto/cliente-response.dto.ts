@@ -52,6 +52,8 @@ export interface ClienteResponseStaff {
   telefono: string;
   etiqueta: EtiquetaCliente;
   sellosActuales: number;
+  /** Dato operativo, no sensible: necesario si el negocio es SOLO_PUNTOS o HIBRIDO. */
+  puntosActuales: number;
   ultimaVisita: Date | null;
   tarjetas?: TarjetaSucursalResponse[];
 }

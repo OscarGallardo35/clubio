@@ -6,6 +6,7 @@ import * as speakeasy from 'speakeasy';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
+import { requireEnv } from '../common/utils/env.util';
 import type { LoginEmpleadoDto } from './dto/login-empleado.dto';
 import type { LoginDuenoDto } from './dto/login-dueno.dto';
 import type { Verificar2FaDto } from './dto/verificar-2fa.dto';
@@ -77,10 +78,10 @@ export class AuthService {
   /** Firma un token con el secreto y la expiracion correspondientes al tipo. */
   private firmar(payload: Record<string, unknown>, tipo: 'empleado' | 'cliente' | 'dueno' | '2fa') {
     const conf = {
-      empleado: { secret: process.env.JWT_EMPLEADO_SECRET, exp: process.env.JWT_EMPLEADO_EXPIRES_IN ?? '12h' },
-      cliente: { secret: process.env.JWT_CLIENTE_SECRET, exp: process.env.JWT_CLIENTE_EXPIRES_IN ?? '30d' },
-      dueno: { secret: process.env.JWT_DUENO_SECRET, exp: process.env.JWT_DUENO_EXPIRES_IN ?? '7d' },
-      '2fa': { secret: process.env.JWT_SECRET, exp: '5m' },
+      empleado: { secret: requireEnv('JWT_EMPLEADO_SECRET', 'dev-empleado-solo-desarrollo'), exp: process.env.JWT_EMPLEADO_EXPIRES_IN ?? '12h' },
+      cliente: { secret: requireEnv('JWT_CLIENTE_SECRET', 'dev-cliente-solo-desarrollo'), exp: process.env.JWT_CLIENTE_EXPIRES_IN ?? '30d' },
+      dueno: { secret: requireEnv('JWT_DUENO_SECRET', 'dev-dueno-solo-desarrollo'), exp: process.env.JWT_DUENO_EXPIRES_IN ?? '7d' },
+      '2fa': { secret: requireEnv('JWT_SECRET', 'dev-general-solo-desarrollo'), exp: '5m' },
     }[tipo];
     return {
       // jti: sin esto, dos tokens del mismo sub/segundo son IDENTICOS y la
@@ -184,7 +185,7 @@ export class AuthService {
   async verificar2FA(dto: Verificar2FaDto, ip?: string, userAgent?: string) {
     let payload: { sub: string; negocioId: string; negocioSlug: string; tipo?: string };
     try {
-      payload = this.jwt.verify(dto.challengeToken, { secret: process.env.JWT_SECRET }) as never;
+      payload = this.jwt.verify(dto.challengeToken, { secret: requireEnv('JWT_SECRET', 'dev-general-solo-desarrollo') }) as never;
     } catch {
       throw new UnauthorizedException('Challenge invalido o expirado');
     }
@@ -231,7 +232,7 @@ export class AuthService {
     const refreshToken = this.jwt.sign(
       // jti unico: permite invalidar el token anterior al rotar (anti-replay)
       { sub: empleado.id, negocioId: negocio.id, tipo: 'refresh', jti: randomUUID() },
-      { secret: process.env.JWT_REFRESH_SECRET, expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d' } as never,
+      { secret: requireEnv('JWT_REFRESH_SECRET', 'dev-refresh-solo-desarrollo'), expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d' } as never,
     );
 
     await this.prisma.sesionDueno.create({
@@ -254,7 +255,7 @@ export class AuthService {
   async refreshDueno(dto: RefreshTokenDto, ip?: string, userAgent?: string) {
     let payload: { sub: string; negocioId: string; tipo?: string };
     try {
-      payload = this.jwt.verify(dto.refreshToken, { secret: process.env.JWT_REFRESH_SECRET }) as never;
+      payload = this.jwt.verify(dto.refreshToken, { secret: requireEnv('JWT_REFRESH_SECRET', 'dev-refresh-solo-desarrollo') }) as never;
     } catch {
       throw new UnauthorizedException('Refresh token invalido o expirado');
     }

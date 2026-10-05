@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { requireEnv } from '../../common/utils/env.util';
 
 export interface JwtEmpleadoPayload {
   sub: string;
@@ -19,7 +20,8 @@ export class JwtEmpleadoStrategy extends PassportStrategy(Strategy, 'jwt-emplead
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_EMPLEADO_SECRET ?? 'dev-empleado',
+      // Secreto PROPIO del contexto empleado (distinto de dueno/cliente).
+      secretOrKey: requireEnv('JWT_EMPLEADO_SECRET', 'dev-empleado-solo-desarrollo'),
     });
   }
 

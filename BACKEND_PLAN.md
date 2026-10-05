@@ -233,12 +233,9 @@ Y por fase: el test unit/e2e que indica cada prompt.
 
 ## Tareas pendientes
 
-- [ ] **Antes del Lote 3** — **Regenerar `packages/types` para que coincida con el schema.**
-      Hoy sus enums NO coinciden con el schema consolidado: `RolEmpleado` en `@repo/types` es
-      `ADMIN_LOCAL / CAMARERO / COCINERO`, pero el schema define
-      `DUENO / ENCARGADO / CAJERO / MESERO / DELIVERY / EMPLEADO`.
-      Por eso el backend importa los enums desde `@prisma/client`.
-      Ejecutar antes del Lote 3.
+- [x] **Regenerar `packages/types`** — HECHO (antes del Lote 3).
+      Reescrito desde el schema: 18 enums identicos + entidades + DTOs de respuesta.
+      `tsc --noEmit` limpio. Sigue SIN importar `@prisma/client` (tipos manuales).
 
 - [x] **Unificar el manejo del `.env`.** HECHO (antes del Lote 2).
       Un solo `/.env` en la raíz: `ConfigModule` con `envFilePath: ['../../.env']`,
@@ -267,10 +264,8 @@ Y por fase: el test unit/e2e que indica cada prompt.
 
 ## Tareas pendientes (nuevas)
 
-- [ ] **Antes de producción** — **Generar secretos JWT distintos** y aleatorios.
-      Hoy `JWT_SECRET`, `JWT_EMPLEADO_SECRET`, `JWT_DUENO_SECRET`, `JWT_CLIENTE_SECRET`,
-      `JWT_REFRESH_SECRET` y `JWT_SUPER_ADMIN_SECRET` tienen el **mismo** placeholder. Con
-      secretos iguales, un token de cliente verifica contra el secreto de dueño y lo único que
-      lo frena es el claim `tipo`.
-- [ ] **Antes del Lote 3** — Regenerar `packages/types` (ver arriba).
+- [x] **Secretos JWT distintos** — HECHO. 6 secretos aleatorios de 64 hex; `requireEnv()` lanza
+      en produccion si falta alguno. Verificado: token forjado con el secreto de cliente y claim
+      `tipo="dueno"` -> **401** (antes solo lo frenaba el claim).
+- [x] Regenerar `packages/types` (ver arriba). HECHO.
 

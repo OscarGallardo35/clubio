@@ -74,17 +74,20 @@ this.jwt.sign({ ...payload, jti: randomUUID() }, { secret, expiresIn });
 
 Detectado por el test e2e: el segundo uso del mismo refresh devolvía `201` en vez de `401`.
 
-## Los secretos JWT son el mismo valor
+## Secretos JWT: deben ser 6 distintos
 
-En `.env`, `JWT_SECRET`, `JWT_EMPLEADO_SECRET`, `JWT_DUENO_SECRET`, `JWT_CLIENTE_SECRET`,
-`JWT_REFRESH_SECRET` y `JWT_SUPER_ADMIN_SECRET` están todos con el **mismo** placeholder
-(`cambiar-en-produccion`). Con secretos iguales, un token de cliente **verifica** contra el
-secreto de dueño: lo único que impide usarlo es el claim `tipo`.
+Si `JWT_EMPLEADO_SECRET`, `JWT_DUENO_SECRET`, `JWT_CLIENTE_SECRET`, `JWT_REFRESH_SECRET` y
+`JWT_SUPER_ADMIN_SECRET` comparten valor, un token de cliente **verifica** correctamente contra
+un endpoint de dueño: la firma es válida y lo único que frena el acceso es el claim `tipo`.
+Eso convierte al claim `tipo` en la **única** barrera en lugar de defensa en profundidad.
 
-En producción cada secreto debe ser distinto y aleatorio:
+Generarlos (uno por contexto, todos distintos):
 ```bash
-node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+En `apps/backend`, `requireEnv()` lanza si falta un secreto cuando `NODE_ENV=production`;
+los fallbacks `dev-*-solo-desarrollo` solo aplican en desarrollo.
 
 
 

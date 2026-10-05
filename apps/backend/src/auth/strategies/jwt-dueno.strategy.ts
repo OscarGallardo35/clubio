@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { requireEnv } from '../../common/utils/env.util';
 
 export interface JwtDuenoPayload {
   sub: string;
@@ -18,7 +19,8 @@ export class JwtDuenoStrategy extends PassportStrategy(Strategy, 'jwt-dueno') {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_DUENO_SECRET ?? 'dev-dueno',
+      // Secreto PROPIO del contexto dueno (distinto de empleado/cliente).
+      secretOrKey: requireEnv('JWT_DUENO_SECRET', 'dev-dueno-solo-desarrollo'),
     });
   }
 

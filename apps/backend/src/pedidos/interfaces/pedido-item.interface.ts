@@ -1,12 +1,9 @@
+
 /**
  * Estructura de cada item DENTRO del JSON Pedido.items.
  *
- * Preparada para modificadores desde ahora (refinamiento 5): el #2.7 va a
- * validar y poblar `modificadores`, pero el frontend y las estadisticas ya
- * pueden contar con la forma final y no hay que migrar el JSON despues.
- *
- * precioBase  = precio de carta del item
- * precioFinal = precioBase + suma de modificadores (hoy === precioBase)
+ * precioBase  = precio de carta del item (con el override de la sucursal si lo hay)
+ * precioFinal = precioBase + suma de precioExtra de las opciones elegidas
  */
 export interface ModificadorElegido {
   grupoId: string;
@@ -14,7 +11,7 @@ export interface ModificadorElegido {
   opcionId: string;
   opcionNombre: string;
   /** Recargo unitario de la opcion (0 si no tiene). */
-  precio: number;
+  precioExtra: number;
 }
 
 export interface ItemPedido {
@@ -24,13 +21,16 @@ export interface ItemPedido {
   precioFinal: number;
   cantidad: number;
   notas?: string;
-  /** Vacio en #2.6; lo completa y valida el #2.7. */
+  /** Un registro por OPCION elegida (vacio si el item no tiene modificadores). */
   modificadores: ModificadorElegido[];
-  /**
-   * (precioFinal + suma de modificadores) * cantidad.
-   * Se guarda ya calculado para que las estadisticas no tengan que reinterpretar.
-   */
+  /** precioFinal * cantidad, ya calculado. */
   subtotal: number;
+}
+
+/** Modificador que manda el cliente: `opcionIds` es SIEMPRE array (aunque el grupo sea UNICA_SELECCION). */
+export interface ModificadorInput {
+  grupoId: string;
+  opcionIds: string[];
 }
 
 /** Entrada cruda que manda el cliente. */
@@ -38,9 +38,9 @@ export interface ItemInput {
   itemId: string;
   cantidad: number;
   notas?: string;
-  /** Aceptado pero IGNORADO en #2.6: el precio siempre se recalcula desde la DB. */
+  /** Aceptado pero IGNORADO: el precio siempre se recalcula desde la DB. */
   precio?: number;
-  modificadores?: Array<{ grupoId: string; opcionId: string }>;
+  modificadores?: ModificadorInput[];
 }
 
 export interface PedidoCtx {

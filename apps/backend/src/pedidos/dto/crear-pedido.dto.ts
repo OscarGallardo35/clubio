@@ -5,6 +5,15 @@ import {
 } from 'class-validator';
 import { ModoPago, TipoPedido } from '@prisma/client';
 
+export class ModificadorInputDto {
+  @IsString()
+  grupoId!: string;
+
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20)
+  @IsString({ each: true })
+  opcionIds!: string[];
+}
+
 export class ItemPedidoInputDto {
   @IsString()
   itemId!: string;
@@ -22,10 +31,15 @@ export class ItemPedidoInputDto {
   @IsOptional()
   precio?: number;
 
-  /** Reservado para el #2.7 (hoy se ignora). */
+  /**
+   * Modificadores elegidos. `opcionIds` es SIEMPRE array, incluso para grupos
+   * UNICA_SELECCION (el #2.7 valida la cantidad contra el grupo).
+   */
   @IsOptional()
-  @IsArray()
-  modificadores?: Array<{ grupoId: string; opcionId: string }>;
+  @IsArray() @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => ModificadorInputDto)
+  modificadores?: ModificadorInputDto[];
 }
 
 export class CrearPedidoDto {

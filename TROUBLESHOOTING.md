@@ -189,3 +189,42 @@ que un `[]` es un valor valido y NO significa "sin override". `configEfectiva()`
 trata el array vacio como vacio (hereda del club); si se usara `??` directo, una
 sucursal con `[]` quedaria con CERO tipos de pedido habilitados.
 
+---
+
+## Fase 2 — Modificadores + Upsell (#2.7)
+
+### `updateMany` NO acepta operaciones de relacion
+
+`disconnect` / `connect` / `set` solo existen en `update` / `create`. En el borrado
+de un grupo con items asignados hay que hacer **un `update` por item** dentro de la
+transaccion:
+
+```
+// MAL: TypeScript lo rechaza y Prisma no lo soporta
+tx.itemCarta.updateMany({ where: {...}, data: { gruposModificadores: { disconnect: { id } } } })
+// BIEN
+for (const it of items) tx.itemCarta.update({ where: { id: it.id }, data: { gruposModificadores: { disconnect: { id } } } })
+```
+
+### `@IsUUID()` no sirve: los IDs son cuid
+
+Los prompts piden `@IsUUID()` para los IDs, pero el schema usa `@default(cuid())`.
+`@IsUUID()` rechazaria **todos** los IDs reales. Se usa `@IsString()`.
+
+### Validar que un 400 venga del lugar que creemos
+
+Un test que manda `nombre: 'X'` (1 char) recibe 400 del **DTO**, no de la validacion
+de negocio que se quiere probar: el test pasa pero no prueba nada. Verificar el
+**mensaje** del error, no solo el status.
+
+### Cargar modificadores de un pedido sin N+1
+
+`calcular-totales` trae en UNA query todos los items con `gruposModificadores` +
+sus `opciones`, y valida en memoria. Un `findMany` por item (o por grupo) seria N+1.
+
+### El precio base lleva el override de sucursal; los extras NO
+
+`precioFinal = precioBase(ItemCartaSucursal de ESA sucursal) + suma(precioExtra)`.
+Los grupos y opciones son del negocio: no existe override de modificadores por
+sucursal en el schema.
+

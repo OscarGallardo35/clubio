@@ -407,3 +407,33 @@ override por sucursal, telefono E.164, cliente logueado vs guest, JSON de items 
 - Limites de rate configurables por env para que las suites e2e no choquen con el
   propio limite (ver TROUBLESHOOTING).
 
+---
+
+## Fase 2 — #2.7 Modificadores + Upsell (cerrado)
+
+22 archivos nuevos + 4 ediciones. **Sin migraciones** (`GrupoModificador`,
+`OpcionModificador`, `ReglaUpsell` y `TipoModificador` ya existian).
+
+Refinamientos: CRUD con transacciones y validaciones en el servicio, bulk-asignar
+(con `reemplazar`), upsell con los 4 limites + `sucursalId` opcional, validacion de
+modificadores en `POST /pedidos`, cache Redis con invalidacion (10 min grupos /
+5 min reglas), auditoria de las 6 acciones, aislamiento multitenant.
+
+### Bug real encontrado
+
+`updateMany` **no acepta operaciones de relacion**: el `disconnect` en el borrado de
+un grupo asignado fallaba. Reemplazado por un `update` por item en la transaccion.
+
+### Cambio de contrato respecto de #2.6
+
+`ItemPedidoInputDto.modificadores` paso de `{ grupoId, opcionId }` a
+`{ grupoId, opcionIds: string[] }` (necesario para MULTIPLE_SELECCION) y
+`ModificadorElegido.precio` se renombro a `precioExtra`.
+
+### Decisiones
+
+- Eliminar un grupo asignado exige `force=true` SIEMPRE (mas seguro que la condicion
+  del prompt, que solo lo pedia si el grupo era obligatorio).
+- `@IsString()` en vez de `@IsUUID()`: los IDs son cuid (ver TROUBLESHOOTING).
+- Rate limits del upsell configurables por env, igual que en pedidos.
+

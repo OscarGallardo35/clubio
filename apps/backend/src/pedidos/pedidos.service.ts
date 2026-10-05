@@ -118,7 +118,7 @@ export class PedidosService {
     };
 
     if (config.menuActivo !== true) {
-      throw new BadRequestException('El menu digital no esta activo en esta sucursal');
+      throw new BadRequestException('El menu digital no esta activo en este negocio');
     }
     if (!config.tiposPedidoHabilitados?.includes(dto.tipo)) {
       throw new BadRequestException(
@@ -147,7 +147,8 @@ export class PedidosService {
     // Refinamiento 3: telefono E.164 (lanza 400 con mensaje claro)
     const telefono = normalizarTelefonoE164(dto.telefono);
 
-    // Refinamiento 6 + recalculo de precios desde la DB + override por sucursal
+    // Refinamiento 6 + recalculo de precios desde la DB + override por sucursal.
+    // `sucursalId` ya esta resuelto arriba: NO se vuelve a resolver.
     const { items, subtotal, costoEnvio, total } = await calcularTotales(
       this.prisma, negocioId, sucursalId, dto.items as ItemInput[], dto.tipo, config,
     );

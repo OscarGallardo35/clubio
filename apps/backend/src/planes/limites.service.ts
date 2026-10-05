@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { EstadoUso, RecursoLimitado } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PlanService, RECURSO_A_FEATURE, esMensual, periodoActual } from './plan.service';
+import { PlanService, RECURSO_A_FEATURE, esMensual, limiteGraciaDe, periodoActual } from './plan.service';
 import { UsoMensualService } from './uso-mensual.service';
 import type { LimiteResult, VerificarLimiteOpts } from './interfaces/limite-result.interface';
 
@@ -39,7 +39,8 @@ export class LimitesService {
     const ilimitado = limite === null;
     const colchon = await this.uso.colchonDe(negocioId);
     const limiteBase = limite ?? 0;
-    const limiteGracia = limiteBase + colchon;
+    // Colchon PROPORCIONAL con tope (ver calcularLimiteGracia).
+    const limiteGracia = limiteGraciaDe(limiteBase, colchon);
 
     const neg = await this.prisma.negocio.findUnique({
       where: { id: negocioId }, select: { payPerUseActivo: true },
@@ -74,12 +75,13 @@ export class LimitesService {
       cantidad: uso.cantidad,
       limiteBase,
       limiteGracia,
+      colchonGracia: limiteGracia - limiteBase,
       usosRestantes: Math.max(0, limiteGracia - uso.cantidad),
       excedente,
       payPerUse,
       ilimitado: false,
       motivo: bloquea
-        ? `Llegaste al limite de ${etiqueta} de tu plan (${limiteBase} + ${colchon} de colchon). Mejora a un plan superior para seguir.`
+        ? `Llegaste al limite de ${etiqueta} de tu plan (${limiteBase} + ${limiteGracia - limiteBase} de colchon). Mejora a un plan superior para seguir.`
         : excedente > 0
           ? `${etiqueta}: excedente de ${excedente} (pay-per-use activo)`
           : estado === 'ADVERTENCIA'

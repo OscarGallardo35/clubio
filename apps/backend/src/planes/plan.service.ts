@@ -38,6 +38,30 @@ export function esMensual(recurso: RecursoLimitado) {
   return RECURSOS_MENSUALES.includes(recurso);
 }
 
+/**
+ * Colchon de gracia PROPORCIONAL con tope.
+ *
+ *   limiteGracia = limiteBase + min(colchonGraciaDefault, ceil(limiteBase * 0.5))
+ *
+ * Antes era en USOS ABSOLUTOS (limiteBase + colchon), y con limites chicos dejaba
+ * el gating decorativo: FREE sucursales = 1 permitia crear 51.
+ *
+ *   1 -> 2 | 100 -> 150 | 500 -> 550 | 5000 -> 5050
+ *
+ * limiteBase = 0 (recurso no incluido en el plan) -> gracia 0: el primer uso excede.
+ */
+export function calcularLimiteGracia(limiteBase: number, colchonConfigurado = 50): number {
+  if (limiteBase <= 0) return 0;
+  return Math.ceil(limiteBase * 0.5) < colchonConfigurado
+    ? Math.ceil(limiteBase * 0.5)
+    : colchonConfigurado;
+}
+
+/** limiteGracia final (base + colchon). */
+export function limiteGraciaDe(limiteBase: number, colchonConfigurado = 50): number {
+  return limiteBase + calcularLimiteGracia(limiteBase, colchonConfigurado);
+}
+
 /** Periodo YYYY-MM (hora local). */
 export function periodoActual(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;

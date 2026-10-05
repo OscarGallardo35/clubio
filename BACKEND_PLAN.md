@@ -547,14 +547,29 @@ resolver), asi que el limite `SUCURSALES` todavia no tiene donde engancharse. El
 2. **Query params booleanos**: `?force=true` daba 400 y `@Type(() => Boolean)`
    convertia `"false"` en `true`. Fix: helper `QueryBool()`.
 
-### Hallazgo de diseno (a decidir)
+### Colchon de gracia: cambiado a PROPORCIONAL con tope
 
-Con el colchon en usos absolutos, `sucursales: 1` de FREE permite 51 sucursales y
-`empleados: 1` permite 51 empleados. Ver TROUBLESHOOTING.
+`limiteGracia = limiteBase + min(colchonGraciaDefault, ceil(limiteBase * 0.5))`.
+Antes era en usos absolutos y con limites chicos dejaba el gating decorativo
+(FREE `sucursales: 1` permitia 51). Ahora: `1->2 | 100->150 | 500->550 | 5000->5050`.
+Formula centralizada en `plan.service` y usada en los 3 puntos que la necesitan.
 
 ### Pendiente para el #2.11
 
 `SucursalService` recien ahora existe, asi que el #2.11 (auditoria multi-sucursal)
 puede verificar que `sucursales` tambien filtra por sucursal y que `UsoMensual`
 no quedo con contadores huerfanos (la reconciliacion semanal los corrige).
+
+---
+
+## Google Reviews API — DIFERIDA (no bloqueante)
+
+**Google Reviews API: diferida hasta tener GBP verificado o un cliente con GBP que
+nos de acceso. El fallback con `placeId` funciona desde ya.**
+
+El producto lanza con el fallback de `placeId` (funcional hoy: `GET /resenas` publico
+con `TenantGuard`, cacheado 5 min, y `GET /resenas/admin` con filtros). La API
+completa de Business Profile queda como "nice to have" para cuando:
+- haya un cliente con GBP verificado que otorgue acceso admin, o
+- Clubio cumpla los 60 dias que pide Google para ese acceso.
 

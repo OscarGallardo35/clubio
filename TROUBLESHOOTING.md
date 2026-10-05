@@ -445,12 +445,22 @@ rechace.
 Ademas `Pedido.sucursalId` es `onDelete: Restrict`: un DELETE real de la fila
 fallaria si tiene pedidos, otra razon para el soft delete.
 
-### El colchon de gracia en USOS ABSOLUTOS hace raros los limites chicos
+### Colchon de gracia: PROPORCIONAL con tope (no usos absolutos)
 
-Con `colchonGraciaDefault = 50`, un plan FREE con `sucursales: 1` permite crear
-**51** sucursales antes de bloquear (1 + 50). Igual con `empleados: 1`. Es
-consecuencia directa de la decision "usos absolutos" (el "150%" del prompt era
-ilustrativo del caso limite 100). Si se quiere un colchon sensato para limites chicos,
-hay que caparlo o hacerlo proporcional (p. ej. `min(50, limiteBase)`), pero eso
-cambia la regla confirmada.
+`limiteGracia = limiteBase + min(colchonGraciaDefault, ceil(limiteBase * 0.5))`
 
+    0 -> 0 | 1 -> 2 | 100 -> 150 | 500 -> 550 | 5000 -> 5050 | 20 -> 30
+
+Antes era en usos ABSOLUTOS (`limiteBase + 50`), y con limites chicos dejaba el
+gating decorativo: **FREE `sucursales: 1` permitia crear 51** (1 + 50). Ahora la
+gracia es 2 y al tercer intento bloquea. `colchonGraciaDefault` (ConfiguracionClub)
+sigue siendo configurable por negocio: es el TOPE del colchon, no el colchon en si.
+
+OJO con la formula: `max(ceil(base*0.5), min(50, base))` **NO** es lo mismo — con
+base 500 da 750 y con 5000 da 7500. La correcta usa `min` para capar en 50.
+
+`limiteBase = 0` (recurso no incluido en el plan) -> gracia 0: el primer uso excede.
+
+La formula vive en `calcularLimiteGracia()` / `limiteGraciaDe()` de `plan.service.ts`
+y la usan los 3 lugares que la necesitan (LimitesService, y las 2 de
+UsoMensualService). No duplicarla.

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { EstadoUso, Prisma, RecursoLimitado } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
-import { PlanService, RECURSO_A_FEATURE, esMensual, periodoActual } from './plan.service';
+import { PlanService, RECURSO_A_FEATURE, esMensual, limiteGraciaDe, periodoActual } from './plan.service';
 
 export const COLCHON_DEFAULT = 50;
 /** Recurso -> campo del evento de auditoria (para el email retroactivo del #32). */
@@ -45,6 +45,7 @@ export class UsoMensualService {
     const colchon = await this.colchonDe(negocioId);
     const limiteBase = limite ?? 0;
     const ilimitado = limite === null;
+    const gracia = limiteGraciaDe(limiteBase, colchon);
 
     try {
       return await this.prisma.usoMensual.create({
@@ -53,7 +54,7 @@ export class UsoMensualService {
           cantidad: 0,
           // limiteBase=0 + ilimitado: se guarda -1 para distinguir "ilimitado"
           limiteBase: ilimitado ? 0 : limiteBase,
-          limiteGracia: ilimitado ? 0 : limiteBase + colchon,
+          limiteGracia: ilimitado ? 0 : gracia,
           estado: 'NORMAL',
         },
       });
@@ -204,11 +205,11 @@ export class UsoMensualService {
           acumulativosCopiados++;
         }
 
-        const { estado, excedente } = this.calcularEstado(cantidad, limiteBase, limiteBase + colchon, false);
+        const { estado, excedente } = this.calcularEstado(cantidad, limiteBase, limiteGraciaDe(limiteBase, colchon), false);
         await this.prisma.usoMensual.create({
           data: {
             negocioId: neg.id, sucursalId: null, recurso, periodo, cantidad,
-            limiteBase, limiteGracia: limiteBase + colchon, estado, excedente,
+            limiteBase, limiteGracia: limiteGraciaDe(limiteBase, colchon), estado, excedente,
           },
         });
         creados++;

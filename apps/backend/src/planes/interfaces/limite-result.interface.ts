@@ -3,7 +3,8 @@ import { EstadoUso, RecursoLimitado } from '@prisma/client';
 /**
  * Resultado de verificar un limite.
  *
- * limiteGracia = limiteBase + colchonGraciaDefault (USOS ABSOLUTOS, no %).
+ * limiteGracia = limiteBase + min(colchonGraciaDefault, ceil(limiteBase * 0.5))
+ * (PROPORCIONAL con tope: 1->2 | 100->150 | 500->550 | 5000->5050).
  *   NORMAL      cantidad <= limiteBase
  *   ADVERTENCIA limiteBase < cantidad <= limiteGracia
  *   EXCEDIDO    cantidad > limiteGracia
@@ -15,6 +16,8 @@ export interface LimiteResult {
   cantidad: number;
   limiteBase: number;
   limiteGracia: number;
+  /** limiteGracia - limiteBase (el colchon efectivo, capado). */
+  colchonGracia?: number;
   usosRestantes: number;
   excedente: number;
   payPerUse: boolean;

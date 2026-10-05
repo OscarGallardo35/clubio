@@ -260,7 +260,7 @@ Y por fase: el test unit/e2e que indica cada prompt.
 | 2 | Auth dual (lockout por negocio, claim `tipo`, E.164, rotación de refresh) | ✅ verificado e2e |
 | 3 | Core negocio (negocios, configuracion, clientes, empleados) | ✅ verificado e2e |
 | 4 | Fidelización + Carta (visitas + WS, carta) | ✅ verificado e2e |
-| 5 | Soporte (push, resenas, google, estadisticas, webhooks) | ⬜ pendiente |
+| 5 | Soporte (push, resenas, google, estadisticas, webhooks) | ✅ verificado e2e |
 
 ## Tareas pendientes (nuevas)
 
@@ -348,3 +348,29 @@ registra siempre en la sucursal DEL TOKEN, no en la del empleado que aprueba.
 - Carta: `precio` es `Decimal(10,2)` en la DB y se expone como `number`; el endpoint publico
   resuelve el negocio desde el slug del tenant (`X-Tenant-Slug`) y aplica los overrides de
   `ItemCartaSucursal`. El DELETE de carta es baja logica (los pedidos lo referencian).
+
+---
+
+## Lote 5 — Soporte (cerrado)
+
+**Sin migraciones nuevas**: el schema consolidado ya tenia `WebhookLog.@@unique([origen, externalId])`,
+`IntegracionGoogle`, `ResenaGoogle.@@unique([negocioId, reviewId])`, `NotificacionPush`,
+`NotificacionPushEmpleado` y `Negocio.placeId`. `crypto.util.ts` ya traia AES-256-GCM.
+
+### Hueco funcional real encontrado por el e2e
+
+El OAuth de Google **no devuelve el `locationId`**: tras conectar, `sincronizar` devolvia
+`origen: "ninguno"` y la Business Profile API nunca se llamaba. Se agrego
+`GET /google/ubicaciones` + `POST /google/ubicacion` para elegir la ficha.
+
+### Decisiones
+
+- **Sin estrategia Passport de Google**: el flujo se implementa a mano (redirect + callback) porque
+  el state de un solo uso en Redis y el cifrado de tokens requieren control propio; ademas asi es
+  testeable sin credenciales reales.
+- **Endpoints de Google configurables por env** para poder probar callback y refresh contra un mock.
+- **`web-push` real, no stub**: VAPID del `.env`; probado end-to-end contra un mock HTTPS con
+  claves ECDH reales (autorizacion `vapid t=...`, payload `aes128gcm`).
+- **Carta/estadisticas**: `Decimal` -> `number` en la API; dashboard con `groupBy` + `$queryRaw`
+  con `date_trunc` (1 query para la serie de 7 dias, sin N+1) y cache Redis de 5 min.
+

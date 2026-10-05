@@ -89,5 +89,56 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 En `apps/backend`, `requireEnv()` lanza si falta un secreto cuando `NODE_ENV=production`;
 los fallbacks `dev-*-solo-desarrollo` solo aplican en desarrollo.
 
+---
 
+## Lote 5 — Soporte (push, Google, resenas, estadisticas, webhooks)
+
+### BullMQ + Upstash: opciones OBLIGATORIAS
+
+`BullModule.forRoot()` arma la conexion desde `REDIS_URL` (ver `app.module.ts`). Upstash necesita:
+
+- `tls: { rejectUnauthorized: false }` cuando la URL es `rediss://` (si no: "TLS error").
+- `enableReadyCheck: false` (Upstash no responde el ready-check como un Redis local).
+- `maxRetriesPerRequest: null` — **obligatorio en BullMQ**: con otro valor, el worker lanza
+  `maxRetriesPerRequest must be null` al arrancar.
+
+### Web Push: el endpoint de prueba tiene que ser HTTPS
+
+`web-push` **siempre** habla TLS: si se apunta `endpoint` a un `http://` local, el error es
+
+```
+write EPROTO ... sslecord\methods	lsany_meth.c:78: wrong version number
+```
+
+No es un bug del codigo. Para probar el envio real sin FCM hay que levantar un mock **HTTPS**
+(cert autofirmado) y arrancar el backend con `NODE_TLS_REJECT_UNAUTHORIZED=0` **solo en el test**.
+
+Los codigos 404/410 significan que el navegador revoco la suscripcion: se desactiva
+(`activa = false`) y NO se reintenta, porque es un fallo permanente.
+
+### Google OAuth: el callback NO devuelve el locationId
+
+El intercambio de codigo solo da `access_token` + `refresh_token`. La ubicacion de cuya ficha
+se leen las resenas hay que elegirla aparte:
+
+1. `GET /api/google/ubicaciones` (descubre cuentas y ubicaciones)
+2. `POST /api/google/ubicacion` con `{ accountId, locationId }`
+
+Sin ese paso, `sincronizar` devuelve `origen: "ninguno"` y no importa ninguna resena.
+
+Los endpoints de Google son sobrescribibles por env (`GOOGLE_OAUTH_AUTH_URL`,
+`GOOGLE_OAUTH_TOKEN_URL`, `GOOGLE_GBP_API_URL`, `GOOGLE_PLACES_URL`) para poder probar el flujo
+completo contra un mock sin credenciales reales.
+
+### Webhooks: idempotencia por constraint, no por SELECT
+
+`WebhooksService.procesar()` inserta en `WebhookLog` y trata `P2002` como "ya procesado".
+Un `SELECT` previo tendria una condicion de carrera entre el check y el insert; el
+`@@unique([origen, externalId])` la elimina.
+
+### Verificacion de sesion
+
+El token de Pub/Sub se compara con `timingSafeEqual` (no `===`): una comparacion normal filtra
+el prefijo correcto por diferencia de tiempo. `timingSafeEqual` exige igual longitud, por eso
+se exige `a.length === b.length` antes.
 

@@ -17,7 +17,13 @@ import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { EmpleadosModule } from './empleados/empleados.module';
 import { VisitasModule } from './visitas/visitas.module';
+// WebhooksModule es @Global (lo usan Google y futuros webhooks)
 import { CartaModule } from './carta/carta.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { PushModule } from './push/push.module';
+import { GoogleModule } from './google/google.module';
+import { ResenasModule } from './resenas/resenas.module';
+import { EstadisticasModule } from './estadisticas/estadisticas.module';
 
 /**
  * Convierte REDIS_URL en opciones de ioredis.
@@ -66,7 +72,12 @@ function redisConnectionFromUrl(raw?: string) {
     // --- Lote 4: fidelizacion + carta ---
     VisitasModule,
     CartaModule,
-    // Los modulos del Lote 4..5 se agregan despues
+    // --- Lote 5: soporte ---
+    WebhooksModule,
+    PushModule,
+    GoogleModule,
+    ResenasModule,
+    EstadisticasModule,
   ],
   providers: [
     // Rate limiting global. Los JWT guards NO se registran globalmente:

@@ -1,0 +1,16 @@
+node_modules/
+.next/
+dist/
+build/
+.turbo/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+coverage/
+.vercel/
+.swc/
+*.tsbuildinfo
+/apps/*/public/sw.js
+/apps/*/public/workbox-*.js

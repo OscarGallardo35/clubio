@@ -1,0 +1,1128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+// Planes comerciales del SaaS
+enum Plan {
+  FREE
+  BASIC
+  PRO
+}
+
+// Roles de empleado (expandidos)
+enum RolEmpleado {
+  DUENO
+  ENCARGADO
+  CAJERO
+  MESERO
+  DELIVERY
+  EMPLEADO
+}
+
+// Modo de fidelización configurable por negocio
+enum ModoFidelizacion {
+  SOLO_VISITAS
+  SOLO_PUNTOS
+  HIBRIDO
+}
+
+// Etiqueta del cliente (segmentación automática)
+enum EtiquetaCliente {
+  NUEVO
+  REGULAR
+  VIP
+  INACTIVO
+}
+
+// Tipo de visita registrada
+enum TipoVisita {
+  VISITA
+  PUNTOS
+  REGALO_MANUAL
+}
+
+// Método por el cual se aprobó la visita
+enum MetodoVisita {
+  QR_ESTATICO
+  QR_DINAMICO
+  MANUAL
+}
+
+// Canal de una campaña de marketing
+enum CanalCampana {
+  PUSH
+  WHATSAPP
+  AMBOS
+}
+
+// Estados de un pedido
+enum EstadoPedido {
+  PENDIENTE
+  CONFIRMADO
+  EN_PREPARACION
+  LISTO
+  ENVIADO
+  ENTREGADO
+  CANCELADO
+  RECHAZADO
+}
+
+// Tipo de pedido
+enum TipoPedido {
+  MESA
+  TAKEAWAY
+  DELIVERY
+}
+
+// Modo de pago
+enum ModoPago {
+  EFECTIVO
+  TRANSFERENCIA
+  MERCADO_PAGO
+  TARJETA
+}
+
+// Tipo de modificador (única o múltiple selección)
+enum TipoModificador {
+  UNICA_SELECCION
+  MULTIPLE_SELECCION
+}
+
+// Modo de asignación de pedidos a empleados
+enum ModoAsignacionPedidos {
+  BROADCAST
+  POR_ROL
+  SOLO_ENCARGADO
+}
+
+// Tipo de turno (rol del día)
+enum TipoTurno {
+  ENCARGADO
+  CAJERO
+  MESERO
+  DELIVERY
+  EMPLEADO
+}
+
+// Cómo se manejan los clientes en multi-sucursal
+enum ModoClientes {
+  GLOBAL
+  POR_SUCURSAL
+}
+
+// Recursos limitados por plan
+enum RecursoLimitado {
+  CLIENTES
+  EMPLEADOS
+  SUCURSALES
+  ITEMS_CARTA
+  PEDIDOS_MES
+  CAMPANAS_PUSH_MES
+}
+
+// Estado del uso de un recurso
+enum EstadoUso {
+  NORMAL
+  ADVERTENCIA
+  EXCEDIDO
+}
+
+// Estado de una suscripción
+enum EstadoSuscripcion {
+  ACTIVA
+  PAUSADA
+  CANCELADA
+  VENCIDA
+  TRIAL
+}
+
+// Estado de un lead en el pipeline comercial
+enum EstadoLead {
+  NUEVO
+  CONTACTADO
+  DEMO_AGENDADA
+  NEGOCIACION
+  CONVERTIDO
+  PERDIDO
+  ARCHIVADO
+}
+
+// ============================================================================
+// MODELOS DE TENANT Y SUCURSALES
+// ============================================================================
+
+// Tenant principal del SaaS (un negocio gastronómico)
+model Negocio {
+  id                 String       @id @default(cuid())
+  nombre             String
+  slug               String       @unique
+  cuit               String?
+  telefono           String?
+  direccion          String?
+  email              String?
+  logoUrl            String?
+  colorPrimario      String       @default("#000000")
+  colorSecundario    String       @default("#FFFFFF")
+  placeId            String?
+  urlMenu            String?
+  urlClub            String?
+  plan               Plan         @default(FREE)
+  modoClientes       ModoClientes @default(GLOBAL)
+  payPerUseActivo    Boolean      @default(false)
+  activo             Boolean      @default(true)
+  creadoEn           DateTime     @default(now())
+  actualizadoEn      DateTime     @updatedAt
+  eliminadoEn        DateTime?
+
+  configuracion         ConfiguracionClub?
+  sucursales            Sucursal[]
+  empleados             Empleado[]
+  clientes              Cliente[]
+  visitas               Visita[]
+  itemsCarta            ItemCarta[]
+  pedidos               Pedido[]
+  gruposModificadores   GrupoModificador[]
+  reglasUpsell          ReglaUpsell[]
+  turnos                Turno[]
+  encargadosDia         EncargadoDia[]
+  checkins              CheckinTurno[]
+  resenas               ResenaGoogle[]
+  integracionGoogle     IntegracionGoogle?
+  notificacionesPush    NotificacionPush[]
+  notificacionesPushEmp NotificacionPushEmpleado[]
+  campanas              CampanaMarketing[]
+  tokensValidacion      TokenValidacion[]
+  usoMensual            UsoMensual[]
+  eventosAuditoria      EventoAuditoria[]
+  suscripcion           Suscripcion?
+  lead                  Lead?
+  impersonaciones       Impersonacion[]
+
+  @@index([slug, activo])
+  @@index([plan])
+}
+
+// Sucursal física de un negocio (multi-sucursal)
+model Sucursal {
+  id                 String   @id @default(cuid())
+  negocioId          String
+  nombre             String
+  slug               String
+  direccion          String?
+  telefono           String?
+  numeroAtendiente   String?
+  colorPrimario      String?
+  colorSecundario    String?
+  activa             Boolean  @default(true)
+  esPrincipal        Boolean  @default(false)
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
+
+  negocio            Negocio                @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  configuracion      ConfiguracionSucursal?
+  empleados          Empleado[]
+  pedidos            Pedido[]
+  turnos             Turno[]
+  encargadosDia      EncargadoDia[]
+  checkins           CheckinTurno[]
+  visitas            Visita[]
+  tarjetasCliente    TarjetaClienteSucursal[]
+  itemsCartaOverride ItemCartaSucursal[]
+  usoMensual         UsoMensual[]
+
+  @@unique([negocioId, slug])
+  @@index([negocioId, activa])
+  @@index([negocioId, esPrincipal])
+}
+
+// ============================================================================
+// CONFIGURACIÓN
+// ============================================================================
+
+// Configuración global del club (una por negocio)
+model ConfiguracionClub {
+  beneficioCumpleanosActivo      Boolean               @default(true)
+  descripcionBeneficioCumpleanos String?               @default("Premio especial en tu cumpleaños")
+  diasValidezCumpleanos          Int                   @default(7)
+  id                             String                @id @default(cuid())
+  negocioId                      String                @unique
+
+  modoFidelizacion            ModoFidelizacion      @default(SOLO_VISITAS)
+  sellosParaPremio            Int                   @default(10)
+  premioTexto                 String
+  sellosBienvenida            Int                   @default(1)
+  limiteVisitasPorDia         Int                   @default(1)
+  horasMinimasEntreVisitas    Int                   @default(4)
+  puntosPorPeso               Decimal?              @db.Decimal(10, 2)
+  premioPorPuntos             Int?
+  requiereValidacionEmpleado  Boolean               @default(true)
+  permiteRegaloManual         Boolean               @default(true)
+  mensajeBienvenida           String?               @db.Text
+  mostrarResenaPostVisita     Boolean               @default(true)
+  permitirOverrideSucursal    Boolean               @default(true)
+  colchonGraciaDefault        Int                   @default(50)
+
+  menuActivo                  Boolean               @default(false)
+
+  tiposPedidoHabilitados      TipoPedido[]          @default([MESA])
+  modosPagoHabilitados        ModoPago[]            @default([EFECTIVO])
+  costoEnvio                  Decimal?              @db.Decimal(10, 2)
+  pedidoMinimoDelivery        Decimal?              @db.Decimal(10, 2)
+  zonaEntrega                 String?               @db.Text
+  modoPagoPorDefecto          ModoPago              @default(EFECTIVO)
+  tipoPedidoPorDefecto        TipoPedido            @default(MESA)
+  forzarTakeawaySiNoHayMesas  Boolean               @default(true)
+  numeroAtendiente            String?
+  usarNumeroAtendienteDistinto Boolean              @default(false)
+  modoAsignacionPedidos       ModoAsignacionPedidos @default(BROADCAST)
+
+  transferenciaAlias          String?
+  transferenciaCbu            String?
+  transferenciaTitular        String?
+  transferenciaBanco          String?
+  transferenciaNotas          String?               @db.Text
+  linkMercadoPago             String?
+
+  upsellActivo                Boolean               @default(true)
+  upsellMaxSugerencias        Int                   @default(3)
+
+  turnosActivos               Boolean               @default(false)
+  checkinObligatorio          Boolean               @default(false)
+  duplicarSemanaAuto          Boolean               @default(false)
+
+  pushInactividad3Dias        Boolean               @default(true)
+  pushCumpleanos              Boolean               @default(false)
+  pushPremioPorVencer         Boolean               @default(true)
+  pushAUnoDelPremio           Boolean               @default(true)
+  pushInactivos30Dias         Boolean               @default(false)
+
+  creadoEn                    DateTime              @default(now())
+  actualizadoEn               DateTime              @updatedAt
+
+  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+}
+
+// Override opcional de la config del club por sucursal
+model ConfiguracionSucursal {
+  id                          String       @id @default(cuid())
+  sucursalId                  String       @unique
+
+  premioTexto                 String?
+  sellosParaPremio            Int?
+  sellosBienvenida            Int?
+
+  limiteVisitasPorDia         Int?
+  horasMinimasEntreVisitas    Int?
+
+  tiposPedidoHabilitados      TipoPedido[]
+  modosPagoHabilitados        ModoPago[]
+  costoEnvio                  Decimal?     @db.Decimal(10, 2)
+  pedidoMinimoDelivery        Decimal?     @db.Decimal(10, 2)
+  zonaEntrega                 String?      @db.Text
+
+  transferenciaAlias          String?
+  transferenciaCbu            String?
+  transferenciaTitular        String?
+  transferenciaBanco          String?
+
+  creadoEn                    DateTime     @default(now())
+  actualizadoEn               DateTime     @updatedAt
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// EMPLEADOS Y AUTENTICACIÓN
+// ============================================================================
+
+// Empleado del negocio (staff, encargado o dueño)
+model Empleado {
+  id                    String      @id @default(cuid())
+  negocioId             String
+  sucursalId            String
+  nombre                String
+  rol                   RolEmpleado @default(EMPLEADO)
+
+  pinHash               String?
+
+  email                 String?
+  passwordHash          String?
+  twoFactorSecret       String?
+  twoFactorEnabled      Boolean     @default(false)
+  emailVerificado       Boolean     @default(false)
+
+  telefono              String?
+  avatarUrl             String?
+
+  accesoMultiSucursal   Boolean     @default(false)
+
+  activo                Boolean     @default(true)
+  ultimoAcceso          DateTime?
+  creadoEn              DateTime    @default(now())
+  eliminadoEn           DateTime?
+
+  negocio            Negocio                    @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  sucursal           Sucursal                   @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  sesiones           SesionEmpleado[]
+  sesionesDueno      SesionDueno[]
+  registrosAcceso    RegistroAcceso[]
+  visitasAprobadas   Visita[]
+  notificaciones     NotificacionPushEmpleado[]
+  resenasRespondidas ResenaGoogle[]             @relation("ResenaRespuesta")
+  turnos             Turno[]
+  pedidosAsignados   Pedido[]                   @relation("PedidoAsignado")
+  encargadoDias      EncargadoDia[]
+  checkins           CheckinTurno[]
+
+  @@unique([negocioId, email])
+  @@unique([negocioId, pinHash])
+  @@index([negocioId, rol, activo])
+  @@index([negocioId, sucursalId, activo])
+}
+
+// Sesión activa de un empleado (staff)
+model SesionEmpleado {
+  id          String   @id @default(cuid())
+  empleadoId  String
+  token       String   @unique
+  expiraEn    DateTime
+  ip          String?
+  userAgent   String?
+  creadoEn    DateTime @default(now())
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([expiraEn])
+  @@index([empleadoId])
+}
+
+// Sesión larga del dueño (con refresh token)
+model SesionDueno {
+  id           String   @id @default(cuid())
+  empleadoId   String
+  token        String   @unique
+  refreshToken String   @unique
+  ip           String?
+  userAgent    String?
+  expiraEn     DateTime
+  creadoEn     DateTime @default(now())
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@index([empleadoId, expiraEn])
+  @@index([refreshToken])
+}
+
+// Registro de intentos de login (auditoría de acceso)
+model RegistroAcceso {
+  id          String   @id @default(cuid())
+  empleadoId  String
+  ip          String
+  userAgent   String
+  exitoso     Boolean
+  creadoEn    DateTime @default(now())
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@index([empleadoId, creadoEn])
+}
+
+// ============================================================================
+// CLIENTES
+// ============================================================================
+
+// Cliente miembro del club (único por negocio)
+model Cliente {
+  id                    String          @id @default(cuid())
+  negocioId             String
+  nombre                String
+  telefono              String
+  email                 String?
+  fechaNacimiento       DateTime?
+  aceptaNotificaciones  Boolean         @default(false)
+  tienePwaInstalada     Boolean         @default(false)
+  sellosActuales        Int             @default(0)
+  puntosActuales        Int             @default(0)
+  totalVisitas          Int             @default(0)
+  premiosCanjeados      Int             @default(0)
+  etiqueta              EtiquetaCliente @default(NUEVO)
+  notasInternas         String?         @db.Text
+  creadoEn              DateTime        @default(now())
+  ultimaVisita          DateTime?
+
+  negocio          Negocio                @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  dispositivos     DispositivoCliente[]
+  visitas          Visita[]
+  tokensValidacion TokenValidacion[]
+  pedidos          Pedido[]
+  notificaciones   NotificacionPush[]
+  tarjetas         TarjetaClienteSucursal[]
+
+  @@unique([negocioId, telefono])
+  @@index([negocioId, ultimaVisita])
+  @@index([negocioId, etiqueta])
+}
+
+// Dispositivo asociado a un cliente (identidad multi-capa)
+model DispositivoCliente {
+  id            String   @id @default(cuid())
+  clienteId     String
+  deviceId      String
+  fingerprint   String?
+  cookieToken   String?
+  userAgent     String
+  ipRegistro    String?
+  ultimoUso     DateTime @default(now())
+  creadoEn      DateTime @default(now())
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([fingerprint])
+  @@index([cookieToken])
+  @@index([clienteId])
+}
+
+// Tarjeta del cliente por sucursal (para modoClientes = POR_SUCURSAL)
+model TarjetaClienteSucursal {
+  id                String    @id @default(cuid())
+  clienteId         String
+  sucursalId        String
+  sellosActuales    Int       @default(0)
+  puntosActuales    Int       @default(0)
+  totalVisitas      Int       @default(0)
+  premiosCanjeados  Int       @default(0)
+  ultimaVisita      DateTime?
+  creadoEn          DateTime  @default(now())
+  actualizadoEn     DateTime  @updatedAt
+
+  cliente  Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+
+  @@unique([clienteId, sucursalId])
+  @@index([sucursalId, ultimaVisita])
+}
+
+// ============================================================================
+// FIDELIZACIÓN (VISITAS Y TOKENS)
+// ============================================================================
+
+// Visita registrada (sello o puntos otorgados)
+model Visita {
+  id                String        @id @default(cuid())
+  negocioId         String
+  sucursalId        String
+  clienteId         String
+  empleadoId        String
+  tipo              TipoVisita
+  sellosOtorgados   Int           @default(1)
+  puntosOtorgados   Int           @default(0)
+  montoConsumido    Decimal?      @db.Decimal(10, 2)
+  aprobadoEn        DateTime      @default(now())
+  metodo            MetodoVisita
+  origen            String?
+  notas             String?       @db.Text
+
+  negocio  Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cliente  Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Restrict)
+
+  @@index([negocioId, sucursalId, aprobadoEn])
+  @@index([negocioId, clienteId, aprobadoEn])
+  @@index([clienteId, aprobadoEn])
+  @@index([empleadoId, aprobadoEn])
+}
+
+// Token de validación del QR #2 (un solo uso, expira en 5 min)
+model TokenValidacion {
+  id          String   @id @default(cuid())
+  negocioId   String
+  clienteId   String
+  token       String   @unique
+  usado       Boolean  @default(false)
+  expiraEn    DateTime
+  creadoEn    DateTime @default(now())
+
+  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([expiraEn])
+  @@index([usado])
+}
+
+// ============================================================================
+// CARTA DIGITAL (QR #1)
+// ============================================================================
+
+// Item de la carta digital (QR #1)
+model ItemCarta {
+  id          String   @id @default(cuid())
+  negocioId   String
+  categoria   String
+  nombre      String
+  descripcion String?
+  precio      Decimal  @db.Decimal(10, 2)
+  fotoUrl     String?
+  etiquetas   String[]
+  disponible  Boolean  @default(true)
+  orden       Int      @default(0)
+  creadoEn    DateTime @default(now())
+
+  negocio             Negocio              @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  gruposModificadores GrupoModificador[]   @relation("ItemCartaGrupoModificador")
+  reglasUpsellOrigen  ReglaUpsell[]        @relation("ReglaUpsellOrigen")
+  reglasUpsellDestino ReglaUpsell[]        @relation("ReglaUpsellDestino")
+  overridesSucursal   ItemCartaSucursal[]
+
+  @@index([negocioId, categoria, orden])
+  @@index([negocioId, disponible])
+}
+
+// Override de precio/disponibilidad de un item en una sucursal
+model ItemCartaSucursal {
+  id            String   @id @default(cuid())
+  itemCartaId   String
+  sucursalId    String
+  precio        Decimal? @db.Decimal(10, 2)
+  disponible    Boolean?
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  itemCarta ItemCarta @relation(fields: [itemCartaId], references: [id], onDelete: Cascade)
+  sucursal  Sucursal  @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+
+  @@unique([itemCartaId, sucursalId])
+}
+
+// ============================================================================
+// MODIFICADORES Y UPSELL
+// ============================================================================
+
+// Grupo reutilizable de modificadores (ej: "Sabor de gaseosa")
+model GrupoModificador {
+  id             String          @id @default(cuid())
+  negocioId      String
+  nombre         String
+  descripcion    String?         @db.Text
+  tipo           TipoModificador @default(UNICA_SELECCION)
+  obligatorio    Boolean         @default(false)
+  minSelecciones Int             @default(0)
+  maxSelecciones Int?
+  orden          Int             @default(0)
+  creadoEn       DateTime        @default(now())
+  actualizadoEn  DateTime        @updatedAt
+
+  negocio    Negocio             @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  opciones   OpcionModificador[]
+  itemsCarta ItemCarta[]         @relation("ItemCartaGrupoModificador")
+
+  @@index([negocioId, orden])
+}
+
+// Opción dentro de un grupo de modificadores
+model OpcionModificador {
+  id                 String   @id @default(cuid())
+  grupoModificadorId String
+  nombre             String
+  precioExtra        Decimal  @default(0) @db.Decimal(10, 2)
+  disponible         Boolean  @default(true)
+  orden              Int      @default(0)
+  creadoEn           DateTime @default(now())
+
+  grupo GrupoModificador @relation(fields: [grupoModificadorId], references: [id], onDelete: Cascade)
+
+  @@index([grupoModificadorId, orden])
+}
+
+// Regla de upsell: si X → sugerir Y
+model ReglaUpsell {
+  id              String   @id @default(cuid())
+  negocioId       String
+  nombre          String
+  activa          Boolean  @default(true)
+  prioridad       Int      @default(0)
+  mensaje         String   @db.Text
+  itemOrigenId    String?
+  categoriaOrigen String?
+  itemDestinoId   String
+  maxVeces        Int?
+  soloUnaVez      Boolean  @default(true)
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  negocio     Negocio    @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  itemOrigen  ItemCarta? @relation("ReglaUpsellOrigen", fields: [itemOrigenId], references: [id], onDelete: SetNull)
+  itemDestino ItemCarta  @relation("ReglaUpsellDestino", fields: [itemDestinoId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId, activa, prioridad])
+}
+
+// ============================================================================
+// PEDIDOS
+// ============================================================================
+
+// Pedido de un cliente (mesa, takeaway o delivery)
+model Pedido {
+  id                   String       @id @default(cuid())
+  negocioId            String
+  sucursalId           String
+  clienteId            String?
+  nombreCliente        String
+  telefono             String
+  direccion            String?
+  origen               String?
+  mesa                 String?
+  tipo                 TipoPedido
+  modoPago             ModoPago
+  items                Json
+  subtotal             Decimal      @db.Decimal(10, 2)
+  costoEnvio           Decimal?     @db.Decimal(10, 2)
+  total                Decimal      @db.Decimal(10, 2)
+  notas                String?      @db.Text
+  estado               EstadoPedido @default(PENDIENTE)
+  motivoRechazo        String?      @db.Text
+
+  empleadoAsignadoId   String?
+  encargadoId          String?
+  numeroAtendiente     String?
+
+  linkToken            String?      @unique
+  linkExpiraEn         DateTime?
+
+  creadoEn             DateTime     @default(now())
+  actualizadoEn        DateTime     @updatedAt
+  confirmadoEn         DateTime?
+  enviadoEn            DateTime?
+  entregadoEn          DateTime?
+
+  negocio          Negocio   @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  sucursal         Sucursal  @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cliente          Cliente?  @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  empleadoAsignado Empleado? @relation("PedidoAsignado", fields: [empleadoAsignadoId], references: [id], onDelete: SetNull)
+
+  @@index([negocioId, sucursalId, estado, creadoEn])
+  @@index([negocioId, telefono])
+  @@index([negocioId, tipo, creadoEn])
+  @@index([linkToken, linkExpiraEn])
+  @@index([empleadoAsignadoId, creadoEn])
+}
+
+// ============================================================================
+// TURNOS Y CHECK-IN
+// ============================================================================
+
+// Turno programado de un empleado
+model Turno {
+  id            String    @id @default(cuid())
+  negocioId     String
+  sucursalId    String
+  empleadoId    String
+  fecha         DateTime  @db.Date
+  horaInicio    String
+  horaFin       String
+  tipoTurno     TipoTurno
+  notas         String?   @db.Text
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  negocio  Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@unique([negocioId, empleadoId, fecha, horaInicio])
+  @@index([negocioId, sucursalId, fecha])
+  @@index([empleadoId, fecha])
+}
+
+// Designación del encargado del día por sucursal
+model EncargadoDia {
+  id         String   @id @default(cuid())
+  negocioId  String
+  sucursalId String
+  empleadoId String
+  fecha      DateTime @db.Date
+  creadoEn   DateTime @default(now())
+
+  negocio  Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@unique([negocioId, sucursalId, fecha])
+  @@index([negocioId, sucursalId, fecha])
+}
+
+// Registro de check-in/check-out de un turno
+model CheckinTurno {
+  id         String    @id @default(cuid())
+  negocioId  String
+  sucursalId String
+  empleadoId String
+  turnoId    String?
+  checkinEn  DateTime  @default(now())
+  checkoutEn DateTime?
+  ip         String?
+  userAgent  String?
+  notas      String?
+
+  negocio  Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId, sucursalId, empleadoId, checkinEn])
+  @@index([negocioId, checkoutEn])
+}
+
+// ============================================================================
+// RESEÑAS E INTEGRACIÓN CON GOOGLE
+// ============================================================================
+
+// Reseña de Google Business Profile
+model ResenaGoogle {
+  id                  String   @id @default(cuid())
+  negocioId           String
+  reviewId            String
+  autorNombre         String
+  autorFotoUrl        String?
+  estrellas           Int
+  texto               String?  @db.Text
+  fechaResena         DateTime
+  respondida          Boolean  @default(false)
+  respuestaTexto      String?  @db.Text
+  respuestaEmpleadoId String?
+  creadoEn            DateTime @default(now())
+
+  negocio           Negocio   @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  respuestaEmpleado Empleado? @relation("ResenaRespuesta", fields: [respuestaEmpleadoId], references: [id], onDelete: SetNull)
+
+  @@unique([negocioId, reviewId])
+  @@index([negocioId, fechaResena])
+  @@index([negocioId, estrellas])
+}
+
+// Tokens OAuth de Google Business Profile (encriptados con AES-256-GCM)
+model IntegracionGoogle {
+  id                 String   @id @default(cuid())
+  negocioId          String   @unique
+  accessToken        String   @db.Text
+  refreshToken       String   @db.Text
+  expiryDate         DateTime
+  googleAccountId    String?
+  googleLocationId   String?
+  googleAccountName  String?
+  googleLocationName String?
+  estado             String   @default("CONECTADO")
+  conectadoEn        DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
+
+  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId])
+}
+
+// ============================================================================
+// NOTIFICACIONES PUSH Y MARKETING
+// ============================================================================
+
+// Suscripción push de un cliente
+model NotificacionPush {
+  id          String   @id @default(cuid())
+  negocioId   String
+  clienteId   String
+  endpoint    String   @unique
+  auth        String
+  p256dh      String
+  activa      Boolean  @default(true)
+  ultimoUso   DateTime @default(now())
+  creadoEn    DateTime @default(now())
+
+  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId, clienteId])
+  @@index([activa, ultimoUso])
+}
+
+// Suscripción push de un empleado/dueño
+model NotificacionPushEmpleado {
+  id          String   @id @default(cuid())
+  negocioId   String
+  empleadoId  String
+  endpoint    String   @unique
+  auth        String
+  p256dh      String
+  activa      Boolean  @default(true)
+  ultimoUso   DateTime @default(now())
+  creadoEn    DateTime @default(now())
+
+  negocio  Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId, empleadoId])
+  @@index([activa, ultimoUso])
+}
+
+// Campaña de marketing (push o WhatsApp)
+model CampanaMarketing {
+  id                String       @id @default(cuid())
+  negocioId         String
+  titulo            String
+  mensaje           String       @db.Text
+  url               String?
+  icono             String?
+  segmento          String
+  canal             CanalCampana @default(PUSH)
+  esAutomatizacion  Boolean      @default(false)
+  enviadaEn         DateTime?
+  totalEnviados     Int          @default(0)
+  totalFallidos     Int          @default(0)
+  totalAbiertos     Int          @default(0)
+  creadaEn          DateTime     @default(now())
+
+  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId, enviadaEn])
+  @@index([negocioId, esAutomatizacion])
+}
+
+// ============================================================================
+// PLANES Y LÍMITES
+// ============================================================================
+
+// Features y límites por plan (configurable desde super-admin)
+model PlanFeature {
+  id            String   @id @default(cuid())
+  plan          Plan
+  feature       String
+  habilitada    Boolean  @default(false)
+  limite        Int?
+  metadata      Json?
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@unique([plan, feature])
+  @@index([plan, habilitada])
+}
+
+// Uso mensual de recursos limitados por plan
+model UsoMensual {
+  id            String          @id @default(cuid())
+  negocioId     String
+  sucursalId    String?
+  recurso       RecursoLimitado
+  periodo       String
+  cantidad      Int             @default(0)
+  limiteBase    Int
+  limiteGracia  Int
+  estado        EstadoUso       @default(NORMAL)
+  payPerUse     Boolean         @default(false)
+  excedente     Int             @default(0)
+  notificado100 Boolean         @default(false)
+  notificado150 Boolean         @default(false)
+  creadoEn      DateTime        @default(now())
+  actualizadoEn DateTime        @updatedAt
+
+  negocio  Negocio   @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  sucursal Sucursal? @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+
+  @@unique([negocioId, sucursalId, recurso, periodo])
+  @@index([negocioId, periodo])
+  @@index([recurso, periodo, estado])
+}
+
+// ============================================================================
+// LEADS (LANDING PAGE)
+// ============================================================================
+
+// Lead captado desde la landing page
+model Lead {
+  id                 String     @id @default(cuid())
+  nombreNegocio      String
+  nombreContacto     String
+  email              String
+  telefono           String
+  tipoNegocio        String
+  ciudad             String?
+  cantidadSucursales Int        @default(1)
+  planInteresado     Plan       @default(FREE)
+  mensaje            String?    @db.Text
+  origen             String     @default("landing")
+  utmSource          String?
+  utmMedium          String?
+  utmCampaign        String?
+  estado             EstadoLead @default(NUEVO)
+  asignadoA          String?
+  notasInternas      String?    @db.Text
+  negocioId          String?    @unique
+  creadoEn           DateTime   @default(now())
+  actualizadoEn      DateTime   @updatedAt
+  contactadoEn       DateTime?
+  convertidoEn       DateTime?
+
+  negocio Negocio? @relation(fields: [negocioId], references: [id], onDelete: SetNull)
+
+  @@index([estado, creadoEn])
+  @@index([email])
+  @@index([planInteresado])
+  @@index([origen, creadoEn])
+}
+
+// ============================================================================
+// SUPER-ADMIN (DUEÑO DEL SAAS)
+// ============================================================================
+
+// Super-administrador del SaaS
+model SuperAdmin {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String
+  nombre           String
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean  @default(true)
+  activo           Boolean  @default(true)
+  creadoEn         DateTime @default(now())
+  ultimoAcceso     DateTime?
+
+  sesiones        SesionSuperAdmin[]
+  auditoria       EventoAuditoriaSuperAdmin[]
+  impersonaciones Impersonacion[]
+
+  @@index([email])
+}
+
+// Sesión del super-admin (con refresh token rotation)
+model SesionSuperAdmin {
+  id           String   @id @default(cuid())
+  superAdminId String
+  token        String   @unique
+  refreshToken String   @unique
+  ip           String?
+  userAgent    String?
+  expiraEn     DateTime
+  creadoEn     DateTime @default(now())
+
+  superAdmin SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+
+  @@index([superAdminId, expiraEn])
+  @@index([refreshToken])
+}
+
+// Suscripción / billing de un negocio (estructura lista para Stripe/MP)
+model Suscripcion {
+  id               String            @id @default(cuid())
+  negocioId        String            @unique
+  plan             Plan              @default(FREE)
+  estado           EstadoSuscripcion @default(ACTIVA)
+  precioMensual    Decimal?          @db.Decimal(10, 2)
+  moneda           String            @default("ARS")
+  fechaInicio      DateTime          @default(now())
+  fechaProximoPago DateTime?
+  fechaCancelacion DateTime?
+  metodoPago       String?
+  externalId       String?
+  notas            String?           @db.Text
+  creadoEn         DateTime          @default(now())
+  actualizadoEn    DateTime          @updatedAt
+
+  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+
+  @@index([estado, fechaProximoPago])
+  @@index([plan])
+}
+
+// Registro de impersonaciones del super-admin (auditoría obligatoria)
+model Impersonacion {
+  id           String   @id @default(cuid())
+  superAdminId String
+  negocioId    String
+  empleadoId   String
+  token        String   @unique
+  motivo       String   @db.Text
+  ip           String?
+  expiraEn     DateTime
+  creadoEn     DateTime @default(now())
+
+  superAdmin SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+  negocio    Negocio    @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+
+  @@index([superAdminId, creadoEn])
+  @@index([negocioId, creadoEn])
+  @@index([token])
+}
+
+// Comunicación masiva por email del super-admin
+model ComunicacionMasiva {
+  id            String    @id @default(cuid())
+  asunto        String
+  cuerpo        String    @db.Text
+  destinatarios Json
+  totalEnviados Int       @default(0)
+  totalFallidos Int       @default(0)
+  enviadaEn     DateTime?
+  creadaEn      DateTime  @default(now())
+
+  @@index([enviadaEn])
+}
+
+// ============================================================================
+// AUDITORÍA Y WEBHOOKS
+// ============================================================================
+
+// Auditoría de eventos de negocio
+model EventoAuditoria {
+  id         String   @id @default(cuid())
+  negocioId  String
+  empleadoId String?
+  clienteId  String?
+  accion     String
+  detalle    Json?
+  ip         String?
+  creadoEn   DateTime @default(now())
+
+  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId, creadoEn])
+  @@index([accion, creadoEn])
+}
+
+// Auditoría de eventos del super-admin
+model EventoAuditoriaSuperAdmin {
+  id           String   @id @default(cuid())
+  superAdminId String
+  negocioId    String?
+  accion       String
+  detalle      Json?
+  ip           String?
+  userAgent    String?
+  creadoEn     DateTime @default(now())
+
+  superAdmin SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+
+  @@index([superAdminId, creadoEn])
+  @@index([accion, creadoEn])
+  @@index([negocioId, creadoEn])
+}
+
+// Idempotencia de webhooks (Google Pub/Sub, Mercado Pago, etc.)
+model WebhookLog {
+  id          String   @id @default(cuid())
+  origen      String
+  externalId  String
+  payload     Json
+  procesadoEn DateTime @default(now())
+
+  @@unique([origen, externalId])
+  @@index([procesadoEn])
+}

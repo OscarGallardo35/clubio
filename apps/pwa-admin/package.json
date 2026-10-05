@@ -1,0 +1,37 @@
+{
+  "name": "@mi-saas/pwa-admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA Admin para SaaS de fidelización gastronómica",
+  "scripts": {
+    "dev": "next dev -p 3003",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "format": "prettier --write \"app/**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "next": "^14.0.0",
+    "@repo/types": "workspace:*",
+    "@repo/validators": "workspace:*",
+    "@repo/utils": "workspace:*",
+    "@repo/ui": "workspace:*",
+    "@repo/api-client": "workspace:*",
+    "zod": "^3.0.0",
+    "socket.io-client": "^4.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@repo/config": "workspace:*",
+    "tailwindcss": "^3.0.0",
+    "postcss": "^8.0.0",
+    "autoprefixer": "^10.0.0",
+    "prettier": "^3.0.0"
+  }
+}

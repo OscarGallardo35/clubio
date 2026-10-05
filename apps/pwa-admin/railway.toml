@@ -1,0 +1,13 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/pwa-admin/Dockerfile"
+
+[deploy]
+startCommand = "node apps/pwa-admin/server.js"
+healthcheckPath = "/"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+[env]
+NODE_ENV = "production"

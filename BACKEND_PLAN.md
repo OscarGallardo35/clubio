@@ -437,3 +437,33 @@ un grupo asignado fallaba. Reemplazado por un `update` por item en la transaccio
 - `@IsString()` en vez de `@IsUUID()`: los IDs son cuid (ver TROUBLESHOOTING).
 - Rate limits del upsell configurables por env, igual que en pedidos.
 
+---
+
+## Fase 2 — #2.8 Turnos + Asignacion (cerrado)
+
+15 archivos nuevos + 5 ediciones. **Sin migraciones**: `Turno`, `EncargadoDia`,
+`CheckinTurno`, `TipoTurno` y `ModoAsignacionPedidos` ya existian.
+
+Refinamientos aplicados: reuso de `SucursalResolverService` y `WsJwtGuard`; CRUD con
+validacion de solapamiento; vista semanal cacheada (TTL 10 min); encargado del dia
+unico por sucursal (TTL 1 h); check-in/out idempotente; los 4 crons; los 3 modos de
+asignacion con sus fallbacks; `PATCH /pedidos/:id/tomar` atomico; WS a
+`empleado:{id}` con fallback; `@IsString()` en los IDs (cuid).
+
+### Bug/gap real encontrado
+
+`emitirPedidoNuevo` en la sala individual dejaba afuera a `negocio:{id}:duenos`:
+la PWA Admin dejaba de ver los pedidos entrantes en vivo. Detectado por el test de
+WS que esperaba al dueno entre los destinatarios.
+
+### Decisiones
+
+- `AsignacionPedidosService` **solo calcula** (no emite ni conoce el gateway):
+  `TurnosModule` no importa `PedidosModule` y no hace falta `forwardRef`.
+- Turnos que cruzan medianoche soportados en la validacion, el solapamiento y el
+  "quien esta en turno ahora".
+- El fallback de `checkinObligatorio=true` sin nadie con check-in notifica a los
+  programados: prefiero avisar de mas que dejar un pedido sin atender.
+- El detalle de la asignacion no se devuelve desde `POST /pedidos` (endpoint
+  publico): va a auditoria.
+

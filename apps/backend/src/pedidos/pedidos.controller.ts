@@ -114,6 +114,17 @@ export class PedidosController {
     return this.pedidos.cambiarEstado(emp.negocioId, id, dto, this.ctx(emp, ip));
   }
 
+  /** #2.8: el empleado toma el pedido (solo en modo BROADCAST). */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
+  @Patch(':id/tomar')
+  tomar(@CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string) {
+    return this.pedidos.tomarPedido(emp.negocioId, id, {
+      id: emp.id, nombre: (emp as unknown as { nombre?: string }).nombre ?? emp.id,
+      sucursalId: emp.sucursalId,
+    });
+  }
+
   @UseGuards(StaffGuard, TenantGuard, RolesGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
   @Get(':id')

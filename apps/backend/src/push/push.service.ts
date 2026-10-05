@@ -205,6 +205,25 @@ export class PushService {
     return { encolados: jobs.length };
   }
 
+  /** Envia a UN empleado concreto (#2.8: notificacion individual del pedido). */
+  async enviarAEmpleado(
+    negocioId: string, empleadoId: string,
+    payload: { title: string; body: string; url?: string; tag?: string },
+  ) {
+    if (!this.habilitado) return { encolados: 0, motivo: 'VAPID no configurado' };
+    const activas = await this.prisma.notificacionPushEmpleado.count({
+      where: { negocioId, empleadoId, activa: true },
+    });
+    if (!activas) return { encolados: 0, motivo: 'sin suscripciones' };
+
+    const job = await this.cola.add(
+      'enviar',
+      { negocioId, destino: 'empleado', id: empleadoId, titulo: payload.title, cuerpo: payload.body, url: payload.url },
+      { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
+    );
+    return { encolados: 1, jobId: job.id };
+  }
+
   /** Envia a un cliente concreto (novedades de su pedido). */
   async enviarACliente(
     clienteId: string,

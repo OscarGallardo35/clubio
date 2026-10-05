@@ -228,3 +228,87 @@ sus `opciones`, y valida en memoria. Un `findMany` por item (o por grupo) seria 
 Los grupos y opciones son del negocio: no existe override de modificadores por
 sucursal en el schema.
 
+---
+
+## Fase 2 — Turnos + Asignacion (#2.8)
+
+### CAMBIO DE CONTRATO DEL WEBSOCKET (afecta al #2.6)
+
+| | #2.6 | #2.8 |
+|---|---|---|
+| Destino de `pedido:nuevo` | `sucursal:{id}:empleados` | `empleado:{id}` de **cada notificado** |
+| Fallback | — | `sucursal:{id}:empleados` si la lista queda vacia |
+| Duenos | `negocio:{id}:duenos` | igual (van en la MISMA cadena `.to()`) |
+
+El test del #2.6 (que miraba la sala de la sucursal) sigue pasando: con un solo
+empleado en turno, la notificacion individual y la de sucursal coinciden; y si no
+hay nadie en turno, el fallback emite a la sala de la sucursal.
+
+`empleado:{empleadoId}` ya existia en el gateway (lo usaba `enviarAEmpleado`); el
+staff ahora **tambien se une a esa sala en el handshake** para poder recibirla.
+
+### Los duenos siguen recibiendo los pedidos entrantes
+
+Al pasar de la sala de sucursal a la individual es facil dejar afuera a
+`negocio:{id}:duenos` y romper la PWA Admin sin que ningun test de staff lo note.
+Va en la misma cadena `.to()` para no duplicar al dueno con `accesoMultiSucursal`,
+que esta en las dos salas.
+
+### `horaInicio` / `horaFin` son `String`, y el unique NO evita solapamientos
+
+El schema los guarda como `String` (`"18:00"`), asi que:
+- Hay que validar el formato: sin `^([01]\d|2[0-3]):[0-5]\d$`, `"8:00"` contra
+  `"18:00"` rompe cualquier comparacion.
+- `@@unique([negocioId, empleadoId, fecha, horaInicio])` **no impide solapar**:
+  `18:00-23:00` y `20:00-22:00` tienen distinto `horaInicio` y pasarian. El
+  solapamiento se valida en el servicio (`franjasSeSolapan`).
+
+### Turnos que cruzan medianoche
+
+Un turno `22:00-02:00` tiene `horaFin < horaInicio`. Comparar de forma lineal hace
+que **nunca** matchee. Hay que:
+- Para "esta en turno ahora": `ahora >= inicio || ahora <= fin`.
+- Para solapamiento: expandir cada franja a intervalos, partir la que cruza en
+  `[inicio,24:00]` + `[00:00,fin]` y comparar tambien las versiones `+24h`.
+- Al buscar quien esta en turno, mirar **tambien los turnos de ayer**: a las 01:00
+  el turno de las 22:00 de ayer sigue vigente.
+
+### `updateMany` con el filtro en el WHERE = operacion atomica
+
+Para "tomar un pedido" (modo BROADCAST) hay una carrera real entre dos meseros. Un
+`findFirst` + `update` tiene una ventana entre el chequeo y la escritura. La forma
+correcta:
+
+```
+const r = await prisma.pedido.updateMany({
+  where: { id, negocioId, empleadoAsignadoId: null },  // el filtro VA ACA
+  data: { empleadoAsignadoId: empleado.id },
+});
+if (r.count === 0) throw new ConflictException('Otro empleado ya tomo este pedido');
+```
+
+Probado con dos requests simultaneas: `[200, 409]`.
+
+### No devolver datos internos desde un endpoint PUBLICO
+
+`POST /pedidos` es publico (PWA Cliente + guests). Devolver `empleadoAsignadoId`,
+`encargadoId` o la lista de notificados **filtra IDs de empleados a un anonimo**.
+El detalle de la asignacion va a `EventoAuditoria` (`asignacionModo`,
+`asignacionMotivo`, `notificadosIds`) y a los logs, no a la respuesta.
+
+### Los crons deben ser disparadores finos
+
+Poner la logica dentro del metodo `@Cron` la vuelve intesteable (no se puede
+esperar a la medianoche). La logica vive en el servicio
+(`transicionEncargado`, `duplicarSemanaAutomatica`, `cerrarHuerfanos`,
+`recordarTurnosDelDia`) y el cron solo la invoca: asi se prueba invocando el
+servicio con el reloj/fecha que se quiera.
+
+### Un 400 puede venir del DTO y no de la validacion que queres probar
+
+(Refuerzo de la leccion del #2.7.) Si mandas `nombre: "X"` (1 caracter) el 400 es
+del `@MinLength`, no de la regla de negocio. Verificar SIEMPRE el **mensaje**.
+Igual con el rate limit: `POST /pedidos` es 10/hora/IP por defecto, asi que un e2e
+con mas de 10 pedidos empieza a recibir 429 y los fallos posteriores parecen bugs
+del producto. Para tests: `RATE_PEDIDOS_CREATE_LIMIT` alto.
+

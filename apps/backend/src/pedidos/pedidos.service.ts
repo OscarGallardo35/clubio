@@ -1,6 +1,7 @@
 
 import {
-  BadRequestException, ForbiddenException, GoneException, Injectable, Logger, NotFoundException,
+  BadRequestException, ConflictException, ForbiddenException, GoneException, Injectable,
+  Logger, NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { EstadoPedido, Prisma } from '@prisma/client';
@@ -9,6 +10,7 @@ import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { PushService } from '../push/push.service';
+import { AsignacionPedidosService } from '../turnos/asignacion-pedidos.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { requireEnv } from '../common/utils/env.util';
@@ -38,6 +40,7 @@ export class PedidosService {
     private readonly push: PushService,
     private readonly gateway: PedidosGateway,
     private readonly jwt: JwtService,
+    private readonly asignacion: AsignacionPedidosService,
   ) {}
 
   /**
@@ -153,6 +156,13 @@ export class PedidosService {
       this.prisma, negocioId, sucursalId, dto.items as ItemInput[], dto.tipo, config,
     );
 
+    // #2.8: a quien notificar y si ya queda un empleado asignado.
+    // Se calcula ANTES del create para guardar empleadoAsignadoId / encargadoId
+    // / numeroAtendiente en la misma escritura (sin update extra).
+    const dest = await this.asignacion.determinarDestinatarios(negocioId, {
+      sucursalId, tipo: dto.tipo,
+    });
+
     // Link corto de 128 bits, con reintento ante colision del unique
     let pedido: Record<string, any> | null = null;
     let linkToken = '';
@@ -176,6 +186,9 @@ export class PedidosService {
             total: new Prisma.Decimal(total),
             notas: dto.notas?.trim() ?? null,
             estado: EstadoPedido.PENDIENTE,
+            empleadoAsignadoId: dest.empleadoAsignado,
+            encargadoId: dest.encargadoId,
+            numeroAtendiente: dest.numeroAtendiente,
             linkToken,
             linkExpiraEn: calcularExpiracion(),
           },
@@ -196,27 +209,48 @@ export class PedidosService {
 
     await this.auditoria.registrar({
       negocioId, accion: 'pedido.creado',
-      detalle: { pedidoId: pedido.id, sucursalId, tipo: dto.tipo, total, items: items.length },
+      detalle: {
+        pedidoId: pedido.id, sucursalId, tipo: dto.tipo, total, items: items.length,
+        // Detalle de la asignacion: va a auditoria (no en la respuesta publica)
+        asignacionModo: dest.modoEfectivo,
+        asignacionMotivo: dest.motivo,
+        empleadoAsignadoId: dest.empleadoAsignado,
+        encargadoId: dest.encargadoId,
+        notificados: dest.empleadosNotificados.length,
+        notificadosIds: dest.empleadosNotificados,
+      },
     });
 
-    // WebSocket: SOLO la sucursal destino + duenos
-    this.gateway.emitirNuevo({
+    // #2.8: WebSocket a los empleados NOTIFICADOS (empleado:{id}).
+    // emitirPedidoNuevo cae a la sala de la sucursal si la lista viene vacia.
+    this.gateway.emitirPedidoNuevo({
       negocioId, sucursalId, pedidoId: pedido.id, linkToken,
       nombreCliente: pedido.nombreCliente, total, tipo: dto.tipo,
       mesa: pedido.mesa, creadoEn: pedido.creadoEn,
+      empleadosNotificados: dest.empleadosNotificados,
+      empleadoAsignadoId: dest.empleadoAsignado,
+      numeroAtendiente: dest.numeroAtendiente,
     });
 
-    // Push al staff de esa sucursal (no bloquea: encola)
-    await this.push.enviarAEmpleadosDelNegocio(
-      negocioId,
-      {
-        title: 'Nuevo pedido',
-        body: `${pedido.nombreCliente}: ${items.length} item(s) - $${total}`,
-        url: `/pedidos`,
-        tag: 'pedido-nuevo',
-      },
-      sucursalId,
-    ).catch((e) => this.logger.warn(`Push de pedido nuevo fallo: ${(e as Error).message}`));
+    // Push a cada notificado (encola, no bloquea). Si no hay notificados cae
+    // al aviso por sucursal para no dejar el pedido sin avisar.
+    const aviso = {
+      title: 'Nuevo pedido',
+      body: `${pedido.nombreCliente}: ${items.length} item(s) - $${total}`,
+      url: '/pedidos',
+      tag: 'pedido-nuevo',
+    };
+    if (dest.empleadosNotificados.length) {
+      await Promise.all(
+        dest.empleadosNotificados.map((empId) =>
+          this.push.enviarAEmpleado(negocioId, empId, aviso)
+            .catch((e) => this.logger.warn(`Push a ${empId} fallo: ${(e as Error).message}`)),
+        ),
+      );
+    } else {
+      await this.push.enviarAEmpleadosDelNegocio(negocioId, aviso, sucursalId)
+        .catch((e) => this.logger.warn(`Push de pedido nuevo fallo: ${(e as Error).message}`));
+    }
 
     return {
       pedidoId: pedido.id,
@@ -226,7 +260,62 @@ export class PedidosService {
       expiraEn: pedido.linkExpiraEn,
       total,
       sucursalId,
+      // OJO: NO se devuelve el detalle de la asignacion (empleadoAsignadoId /
+      // encargadoId / notificados). Este endpoint es PUBLICO (lo llama la PWA
+      // Cliente y un guest): exponer IDs de empleados seria una fuga. El detalle
+      // queda en la auditoria y en los logs del server.
     };
+  }
+
+  /**
+   * #2.8: un empleado TOMA el pedido (modo BROADCAST).
+   *
+   * El filtro `empleadoAsignadoId: null` va DENTRO del WHERE del updateMany: es
+   * atomico. Un findFirst + update tendria una ventana entre el chequeo y la
+   * escritura, y dos meseros podrian quedarse con el mismo pedido.
+   */
+  async tomarPedido(negocioId: string, pedidoId: string, empleado: { id: string; nombre: string; sucursalId?: string | null }) {
+    const pedido = await this.prisma.pedido.findFirst({
+      where: { id: pedidoId, negocioId },
+      select: { id: true, estado: true, empleadoAsignadoId: true, sucursalId: true, nombreCliente: true, tipo: true },
+    });
+    if (!pedido) throw new NotFoundException('Pedido no encontrado');
+
+    const config = await this.prisma.configuracionClub.findUnique({
+      where: { negocioId }, select: { modoAsignacionPedidos: true },
+    });
+    if (config?.modoAsignacionPedidos !== 'BROADCAST') {
+      throw new BadRequestException(
+        'Solo se pueden tomar pedidos cuando el modo de asignacion es BROADCAST',
+      );
+    }
+    if (pedido.empleadoAsignadoId === empleado.id) {
+      return { ok: true, yaAsignado: true, pedidoId, empleadoAsignadoId: empleado.id };
+    }
+
+    const r = await this.prisma.pedido.updateMany({
+      where: { id: pedidoId, negocioId, empleadoAsignadoId: null },
+      data: { empleadoAsignadoId: empleado.id },
+    });
+    if (r.count === 0) {
+      throw new ConflictException('Otro empleado ya tomo este pedido');
+    }
+
+    await this.auditoria.registrar({
+      negocioId, accion: 'pedido.tomado', empleadoId: empleado.id,
+      detalle: { pedidoId, empleadoAsignado: empleado.nombre },
+    });
+
+    // Avisar a los demas notificados
+    const dest = await this.asignacion.determinarDestinatarios(negocioId, {
+      sucursalId: pedido.sucursalId, tipo: pedido.tipo,
+    });
+    this.gateway.emitirPedidoAsignado(negocioId, pedido.sucursalId, {
+      pedidoId, empleadoAsignadoId: empleado.id, nombreEmpleado: empleado.nombre,
+      empleadosNotificados: dest.empleadosNotificados.filter((e) => e !== empleado.id),
+    });
+
+    return { ok: true, pedidoId, empleadoAsignadoId: empleado.id };
   }
 
   /** GET /pedidos/publico/:linkToken — el token ES la autenticacion. */

@@ -253,3 +253,24 @@ Y por fase: el test unit/e2e que indica cada prompt.
   un `ZodValidationPipe` custom.
 - **Enums en el backend**: siempre desde `@prisma/client`, nunca desde `@repo/types` (desactualizado).
 
+---
+
+## Progreso
+
+| Lote | Contenido | Estado |
+|---|---|---|
+| 1 | Infraestructura base + healthcheck + ESLint | ✅ `a3a0d6d` |
+| 2 | Auth dual (lockout por negocio, claim `tipo`, E.164, rotación de refresh) | ✅ verificado e2e |
+| 3 | Core negocio (negocios, configuracion, clientes, empleados) | ⬜ pendiente |
+| 4 | Fidelización + Carta (visitas + WS, carta) | ⬜ pendiente |
+| 5 | Soporte (push, resenas, google, estadisticas, webhooks) | ⬜ pendiente |
+
+## Tareas pendientes (nuevas)
+
+- [ ] **Antes de producción** — **Generar secretos JWT distintos** y aleatorios.
+      Hoy `JWT_SECRET`, `JWT_EMPLEADO_SECRET`, `JWT_DUENO_SECRET`, `JWT_CLIENTE_SECRET`,
+      `JWT_REFRESH_SECRET` y `JWT_SUPER_ADMIN_SECRET` tienen el **mismo** placeholder. Con
+      secretos iguales, un token de cliente verifica contra el secreto de dueño y lo único que
+      lo frena es el claim `tipo`.
+- [ ] **Antes del Lote 3** — Regenerar `packages/types` (ver arriba).
+

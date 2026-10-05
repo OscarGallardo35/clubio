@@ -58,4 +58,33 @@ Formatos aceptados por `crypto.util.ts`:
 Si la validación falla, el error incluye el comando exacto para regenerarla.
 Guardar el valor en `.env` (ignorado) y en `.env.secrets`.
 
+## Refresh token determinístico rompe la rotación (anti-replay)
+
+`jwt.sign({ sub, negocioId, tipo: 'refresh' }, { secret, expiresIn })` produce el **mismo
+string** si se firma dentro del mismo segundo (mismo `iat`). Consecuencia: al rotar, el token
+"nuevo" es **idéntico** al viejo, así que el replay del token anterior sigue siendo válido y la
+rotación no invalida nada.
+
+Fix: agregar un `jti` único al payload.
+
+```ts
+import { randomUUID } from 'crypto';
+this.jwt.sign({ ...payload, jti: randomUUID() }, { secret, expiresIn });
+```
+
+Detectado por el test e2e: el segundo uso del mismo refresh devolvía `201` en vez de `401`.
+
+## Los secretos JWT son el mismo valor
+
+En `.env`, `JWT_SECRET`, `JWT_EMPLEADO_SECRET`, `JWT_DUENO_SECRET`, `JWT_CLIENTE_SECRET`,
+`JWT_REFRESH_SECRET` y `JWT_SUPER_ADMIN_SECRET` están todos con el **mismo** placeholder
+(`cambiar-en-produccion`). Con secretos iguales, un token de cliente **verifica** contra el
+secreto de dueño: lo único que impide usarlo es el claim `tipo`.
+
+En producción cada secreto debe ser distinto y aleatorio:
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+
 

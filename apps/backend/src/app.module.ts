@@ -6,7 +6,9 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
 
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './common/redis/redis.module';
 import { HealthModule } from './health/health.module';
+import { AuthModule } from './auth/auth.module';
 
 /**
  * Convierte REDIS_URL en opciones de ioredis.
@@ -41,8 +43,10 @@ function redisConnectionFromUrl(raw?: string) {
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     BullModule.forRoot({ connection: redisConnectionFromUrl(process.env.REDIS_URL) }),
     PrismaModule,
+    RedisModule,
     HealthModule,
-    // Los modulos de features se agregan por lote (Lote 2..5)
+    AuthModule,
+    // Los modulos de features se agregan por lote (Lote 3..5)
   ],
   providers: [
     // Rate limiting global. Los JWT guards NO se registran globalmente:

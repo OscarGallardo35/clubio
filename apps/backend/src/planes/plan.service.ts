@@ -132,11 +132,23 @@ export class PlanService {
 
   // --------- CUD de features (los cablea el #9 Super-Admin) ---------
 
-  /** Actualiza una feature y invalida el cache. Lo llama el #9. */
+  /**
+   * Actualiza una feature y invalida el cache. Lo llama el #9 (Super-Admin).
+   *
+   * `auditarComo` decide DONDE queda el registro:
+   *   'negocio'      -> EventoAuditoria       (requiere ctx.negocioId)
+   *   'super-admin'  -> EventoAuditoriaSuperAdmin (requiere ctx.superAdminId)
+   * El default es 'negocio' para no cambiar el comportamiento actual; el #9 pasa
+   * 'super-admin', que es el caso real (un cambio de plan es de plataforma y no
+   * pertenece a ningun negocio).
+   */
   async actualizarFeature(
     plan: Plan, feature: string,
     dto: { habilitada?: boolean; limite?: number | null },
-    ctx?: { empleadoId?: string; negocioId?: string; ip?: string },
+    ctx?: {
+      empleadoId?: string; negocioId?: string; ip?: string;
+      auditarComo?: 'negocio' | 'super-admin'; superAdminId?: string;
+    },
   ) {
     const datos: Prisma.PlanFeatureUpdateInput = {};
     if (dto.habilitada !== undefined) datos.habilitada = dto.habilitada;
@@ -162,12 +174,24 @@ export class PlanService {
     await this.invalidar(plan);
 
     const detalle = { plan, feature, habilitada: fila.habilitada, limite: fila.limite, creada: !existente };
-    // EventoAuditoria.negocioId es OBLIGATORIO: un cambio de plan es una accion
-    // de plataforma y no tiene negocio. Si se pasa null, AuditoriaService se
-    // traga el error (por diseno) y el evento se pierde en silencio.
-    // -> Se audita solo cuando hay negocio, y SIEMPRE queda el log del server.
-    this.logger.log(`plan.feature_actualizada ${plan}/${feature} -> ${JSON.stringify(detalle)}`);
-    if (ctx?.negocioId) {
+    const como = ctx?.auditarComo ?? 'negocio';
+
+    // EventoAuditoria.negocioId es OBLIGATORIO, asi que un cambio de plan (que no
+    // pertenece a ningun negocio) NO se puede registrar ahi: el #9 pasa
+    // auditarComo: 'super-admin' y el evento va a EventoAuditoriaSuperAdmin.
+    // Siempre queda ademas el log del server.
+    this.logger.log(`plan.feature_actualizada [${como}] ${plan}/${feature} -> ${JSON.stringify(detalle)}`);
+
+    if (como === 'super-admin') {
+      if (!ctx?.superAdminId) {
+        this.logger.warn('auditarComo=super-admin sin superAdminId: el evento no se registra');
+      } else {
+        await this.auditoria.registrarSuperAdmin({
+          superAdminId: ctx.superAdminId, negocioId: ctx.negocioId ?? null,
+          accion: 'plan.feature_actualizada', ip: ctx.ip, detalle,
+        });
+      }
+    } else if (ctx?.negocioId) {
       await this.auditoria.registrar({
         negocioId: ctx.negocioId, accion: 'plan.feature_actualizada',
         empleadoId: ctx?.empleadoId, ip: ctx?.ip, detalle,
@@ -177,15 +201,25 @@ export class PlanService {
   }
 
   /** Pay-per-use por negocio. Lo llama el #9. */
-  async setPayPerUse(negocioId: string, activo: boolean, ctx?: { empleadoId?: string; ip?: string }) {
+  async setPayPerUse(
+    negocioId: string, activo: boolean,
+    ctx?: { empleadoId?: string; ip?: string; auditarComo?: 'negocio' | 'super-admin'; superAdminId?: string },
+  ) {
     const neg = await this.prisma.negocio.update({
       where: { id: negocioId }, data: { payPerUseActivo: activo },
       select: { id: true, payPerUseActivo: true },
     });
-    await this.auditoria.registrar({
-      negocioId, accion: activo ? 'plan.pay_per_use_activado' : 'plan.pay_per_use_desactivado',
-      empleadoId: ctx?.empleadoId, ip: ctx?.ip, detalle: { negocioId },
-    });
+    const accion = activo ? 'plan.pay_per_use_activado' : 'plan.pay_per_use_desactivado';
+    this.logger.log(`${accion} negocio=${negocioId}`);
+    if ((ctx?.auditarComo ?? 'negocio') === 'super-admin' && ctx?.superAdminId) {
+      await this.auditoria.registrarSuperAdmin({
+        superAdminId: ctx.superAdminId, negocioId, accion, ip: ctx.ip, detalle: { negocioId },
+      });
+    } else {
+      await this.auditoria.registrar({
+        negocioId, accion, empleadoId: ctx?.empleadoId, ip: ctx?.ip, detalle: { negocioId },
+      });
+    }
     return neg;
   }
 

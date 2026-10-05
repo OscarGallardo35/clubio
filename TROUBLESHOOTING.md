@@ -382,3 +382,27 @@ recurso, y ademas le da datos al reporte mensual).
 `DELIVERY` depende del `tipo` del pedido: va como validacion en el servicio
 (`exigirFeature`), no como `@RequiereFeature(...)`, que es estatico por handler.
 
+### REGLA: los query params numericos necesitan `@Type(() => Number)`
+
+`transform: true` en el `ValidationPipe` **no convierte tipos solo**: todo lo que
+llega por `@Query()` es `string`. Un `@IsInt()` sobre `?meses=6` falla y devuelve 400.
+Siempre:
+
+```
+import { Type } from 'class-transformer';
+@IsOptional() @Type(() => Number) @IsInt() @Min(1) meses?: number;
+```
+
+### Auditoria de plataforma vs de negocio (dos tablas)
+
+`EventoAuditoria.negocioId` es **obligatorio**; `EventoAuditoriaSuperAdmin` tiene
+`negocioId` nullable y `superAdminId` obligatorio. Una accion que no pertenece a
+ningun negocio (cambiar una PlanFeature) va a la segunda:
+
+- `PlanService.actualizarFeature` y `setPayPerUse` aceptan
+  `ctx.auditarComo: 'negocio' | 'super-admin'` (default `'negocio'`).
+- Con `'super-admin'` se usa `AuditoriaService.registrarSuperAdmin()`, que exige
+  `superAdminId`; si falta, **avisa por log y no registra** (no rompe).
+- Siempre queda ademas el `Logger` del server, porque `AuditoriaService` se traga
+  los errores a proposito y un evento perdido no deja rastro.
+

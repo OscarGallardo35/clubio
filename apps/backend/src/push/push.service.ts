@@ -172,6 +172,63 @@ export class PushService {
     return { encolados: jobs.length, destinatarios: clienteIds.length };
   }
 
+  /**
+   * Envia a TODOS los empleados suscritos del negocio.
+   * Con `sucursalId` solo avisa al staff de esa sucursal (multi-sucursal).
+   */
+  async enviarAEmpleadosDelNegocio(
+    negocioId: string,
+    payload: { title: string; body: string; url?: string; tag?: string },
+    sucursalId?: string | null,
+  ) {
+    if (!this.habilitado) return { encolados: 0, motivo: 'VAPID no configurado' };
+
+    const suscripciones = await this.prisma.notificacionPushEmpleado.findMany({
+      where: {
+        negocioId, activa: true,
+        ...(sucursalId ? { empleado: { sucursalId, activo: true, eliminadoEn: null } } : {}),
+      },
+      select: { empleadoId: true },
+      distinct: ['empleadoId'],
+    });
+    if (!suscripciones.length) return { encolados: 0, motivo: 'sin suscripciones' };
+
+    const jobs = await Promise.all(
+      suscripciones.map((s) =>
+        this.cola.add(
+          'enviar',
+          { negocioId, destino: 'empleado', id: s.empleadoId, titulo: payload.title, cuerpo: payload.body, url: payload.url },
+          { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
+        ),
+      ),
+    );
+    return { encolados: jobs.length };
+  }
+
+  /** Envia a un cliente concreto (novedades de su pedido). */
+  async enviarACliente(
+    clienteId: string,
+    payload: { title: string; body: string; url?: string; tag?: string },
+  ) {
+    if (!this.habilitado) return { encolados: 0, motivo: 'VAPID no configurado' };
+
+    const suscripciones = await this.prisma.notificacionPush.findFirst({
+      where: { clienteId, activa: true },
+      select: { negocioId: true },
+    });
+    if (!suscripciones) return { encolados: 0, motivo: 'sin suscripciones' };
+
+    const job = await this.cola.add(
+      'enviar',
+      {
+        negocioId: suscripciones.negocioId, destino: 'cliente', id: clienteId,
+        titulo: payload.title, cuerpo: payload.body, url: payload.url,
+      },
+      { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
+    );
+    return { encolados: 1, jobId: job.id };
+  }
+
   /** Encola un aviso puntual (lo usa el flujo de visitas). */
   async encolarAvisoStaff(negocioId: string, empleadoId: string, titulo: string, cuerpo: string) {
     if (!this.habilitado) return { encolados: 0, motivo: 'VAPID no configurado' };

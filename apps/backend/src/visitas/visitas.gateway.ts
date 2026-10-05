@@ -87,8 +87,12 @@ export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect 
     origen?: string;
   }) {
     const cuerpo = { ...payload, emitidoEn: new Date().toISOString() };
-    this.server.to(VisitasGateway.salaSucursal(payload.sucursalId)).emit('visita:solicitada', cuerpo);
-    this.server.to(VisitasGateway.salaDuenos(payload.negocioId)).emit('visita:solicitada', cuerpo);
+    // Encadenado: un dueno con accesoMultiSucursal esta en la sala de sucursal
+    // Y en la de duenos; con dos .emit() separados recibia el evento DUPLICADO.
+    this.server
+      .to(VisitasGateway.salaSucursal(payload.sucursalId))
+      .to(VisitasGateway.salaDuenos(payload.negocioId))
+      .emit('visita:solicitada', cuerpo);
     return cuerpo;
   }
 

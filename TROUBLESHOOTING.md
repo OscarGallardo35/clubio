@@ -107,7 +107,8 @@ los fallbacks `dev-*-solo-desarrollo` solo aplican en desarrollo.
 `web-push` **siempre** habla TLS: si se apunta `endpoint` a un `http://` local, el error es
 
 ```
-write EPROTO ... sslecord\methods	lsany_meth.c:78: wrong version number
+write EPROTO ... ssl
+ecord\methods	lsany_meth.c:78: wrong version number
 ```
 
 No es un bug del codigo. Para probar el envio real sin FCM hay que levantar un mock **HTTPS**
@@ -141,4 +142,50 @@ Un `SELECT` previo tendria una condicion de carrera entre el check y el insert; 
 El token de Pub/Sub se compara con `timingSafeEqual` (no `===`): una comparacion normal filtra
 el prefijo correcto por diferencia de tiempo. `timingSafeEqual` exige igual longitud, por eso
 se exige `a.length === b.length` antes.
+
+---
+
+## Fase 2 — Pedidos (#2.6)
+
+### Socket.IO: `.to(a).to(b).emit()` es OBLIGATORIO, no dos `.emit()` seguidos
+
+Un socket que esta en dos salas recibe **dos copias** si se hacen dos emisiones
+separadas. Pasa en cuanto un usuario pertenece a dos salas a la vez:
+
+- el cliente esta en `cliente:{clienteId}` **y** en `pedido:{pedidoId}`;
+- un dueno con `accesoMultiSucursal` esta en la sala de su sucursal **y** en `negocio:{negocioId}:duenos`.
+
+Encadenar las salas (`server.to(a).to(b).emit(...)`) las une y Socket.IO entrega
+**una sola** copia por socket. Este bug estuvo en `/visitas` desde el Lote 4 y se
+corrigio junto con `/pedidos`.
+
+### Rate limiting: limites configurables por env
+
+`POST /pedidos` limita a 10 por hora por IP y `GET /pedidos/publico/:linkToken` a
+30 por minuto (anti fuerza bruta). Una suite e2e que cree 15 pedidos choca con su
+propio limite y devuelve 429. Por eso los limites se leen de
+`RATE_PEDIDOS_CREATE_LIMIT` / `RATE_PEDIDOS_CREATE_TTL_MS` y
+`RATE_PEDIDOS_LINK_LIMIT` / `RATE_PEDIDOS_LINK_TTL_MS`, con esos defaults.
+Nota: al ser un decorador, `process.env` se lee al DEFINIR la clase, asi que el
+override tiene que venir como variable de entorno real del proceso, no del `.env`.
+
+### El cliente puede cancelar desde PENDIENTE (no reusar la tabla del staff)
+
+La tabla de transiciones es la del **staff** (`PENDIENTE -> CONFIRMADO | RECHAZADO`).
+El CLIENTE si puede cancelar un pedido `PENDIENTE` o `CONFIRMADO`. Reusar
+`transicionValidaParaTipo` en `cancelarPedido` devolvia 400 en un caso legitimo;
+esa ruta valida los estados explicitamente.
+
+### `menuActivo` es por NEGOCIO, no por sucursal
+
+Vive solo en `ConfiguracionClub` y no esta en la lista de overrides de
+`ConfiguracionSucursal`. Si en algun momento hace falta apagarlo por sucursal hay
+que agregar la columna + migracion.
+
+### Arrays vacios en `ConfiguracionSucursal` = heredar, no override
+
+`tiposPedidoHabilitados` y `modosPagoHabilitados` son no-nulables sin default, asi
+que un `[]` es un valor valido y NO significa "sin override". `configEfectiva()`
+trata el array vacio como vacio (hereda del club); si se usara `??` directo, una
+sucursal con `[]` quedaria con CERO tipos de pedido habilitados.
 

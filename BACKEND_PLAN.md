@@ -374,3 +374,36 @@ El OAuth de Google **no devuelve el `locationId`**: tras conectar, `sincronizar`
 - **Carta/estadisticas**: `Decimal` -> `number` en la API; dashboard con `groupBy` + `$queryRaw`
   con `date_trunc` (1 query para la serie de 7 dias, sin N+1) y cache Redis de 5 min.
 
+---
+
+## Fase 2 — #2.6 Pedidos (cerrado)
+
+13 archivos nuevos + 3 ediciones (`app.module`, `push.service`, `.env.example`).
+**Sin migraciones**: `Pedido`, los 3 enums y los campos de pedidos de
+`ConfiguracionClub`/`ConfiguracionSucursal` ya existian.
+
+Refinamientos aplicados: `menuActivo` (config efectiva), tipos/modos habilitados con
+override por sucursal, telefono E.164, cliente logueado vs guest, JSON de items con
+`{ itemId, nombre, precioBase, precioFinal, cantidad, notas?, modificadores: [], subtotal }`
+(listo para #2.7), validacion de items por negocio+disponibilidad, y rate limiting
+(10/hora en crear, 30/min en el link publico).
+
+### 2 bugs reales encontrados
+
+1. **`cancelarPedido` reusaba la tabla de transiciones del staff**, donde
+   `PENDIENTE -> CANCELADO` no existe (para el staff es `-> CONFIRMADO | RECHAZADO`).
+   El cliente no podia cancelar su pedido recien creado: 400. Fix: esa ruta valida
+   `PENDIENTE | CONFIRMADO` explicitamente.
+2. **Eventos WebSocket duplicados**: dos `.emit()` separados a salas que un mismo
+   socket integra (`cliente:` + `pedido:`, y `sucursal:` + `duenos:`) entregan el
+   evento dos veces. Fix: encadenar `.to(a).to(b).emit()`. **El mismo bug estaba en
+   `/visitas` desde el Lote 4** y se corrigio en los dos gateways.
+
+### Decisiones
+
+- WebSocket a `sucursal:{sucursalId}:empleados` en vez de `negocio:{negocioId}:empleados`
+  (correccion sobre el prompt: un pedido de Norte no debe sonar en Centro).
+- Sin asignacion de empleado: `empleadoAsignadoId` / `modoAsignacionPedidos` son del #2.8.
+- Limites de rate configurables por env para que las suites e2e no choquen con el
+  propio limite (ver TROUBLESHOOTING).
+

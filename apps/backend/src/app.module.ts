@@ -19,6 +19,7 @@ import { EmpleadosModule } from './empleados/empleados.module';
 import { VisitasModule } from './visitas/visitas.module';
 // WebhooksModule es @Global (lo usan Google y futuros webhooks)
 import { CartaModule } from './carta/carta.module';
+import { PedidosModule } from './pedidos/pedidos.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { PushModule } from './push/push.module';
 import { GoogleModule } from './google/google.module';
@@ -72,6 +73,8 @@ function redisConnectionFromUrl(raw?: string) {
     // --- Lote 4: fidelizacion + carta ---
     VisitasModule,
     CartaModule,
+    // --- Fase 2: pedidos ---
+    PedidosModule,
     // --- Lote 5: soporte ---
     WebhooksModule,
     PushModule,

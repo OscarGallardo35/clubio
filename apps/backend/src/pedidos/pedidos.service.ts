@@ -11,6 +11,7 @@ import { SucursalResolverService } from '../sucursales/sucursal-resolver.service
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { PushService } from '../push/push.service';
 import { AsignacionPedidosService } from '../turnos/asignacion-pedidos.service';
+import { LimitesService } from '../planes/limites.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { requireEnv } from '../common/utils/env.util';
@@ -41,6 +42,7 @@ export class PedidosService {
     private readonly gateway: PedidosGateway,
     private readonly jwt: JwtService,
     private readonly asignacion: AsignacionPedidosService,
+    private readonly limites: LimitesService,
   ) {}
 
   /**
@@ -110,6 +112,15 @@ export class PedidosService {
   async crearPedido(negocioId: string, dto: CrearPedidoDto, clienteId?: string | null) {
     const sucursal = await this.resolverSucursalPedido(negocioId, dto, clienteId);
     const sucursalId = sucursal.id as string;
+
+    // Gating por plan. DELIVERY es condicional al tipo: no puede ser decorador,
+    // se valida en el servicio.
+    if (dto.tipo === 'DELIVERY') {
+      await this.limites.exigirFeature(negocioId, 'delivery');
+    }
+    // PEDIDOS_MES: con pay-per-use NO bloquea (verificar adentro lo contempla),
+    // solo se cobra el excedente y se avisa al 100%/150%.
+    await this.limites.exigirLimite(negocioId, 'PEDIDOS_MES');
 
     // Refinamientos 1 y 2: config EFECTIVA (global + override de la sucursal)
     const config = await this.configuracion.configEfectiva(negocioId, sucursalId) as unknown as {
@@ -220,6 +231,9 @@ export class PedidosService {
         notificadosIds: dest.empleadosNotificados,
       },
     });
+
+    // Cuenta el pedido recien creado (despues de escribir, no antes).
+    await this.limites.incrementarUso(negocioId, 'PEDIDOS_MES');
 
     // #2.8: WebSocket a los empleados NOTIFICADOS (empleado:{id}).
     // emitirPedidoNuevo cae a la sala de la sucursal si la lista viene vacia.

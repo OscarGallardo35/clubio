@@ -312,3 +312,73 @@ Igual con el rate limit: `POST /pedidos` es 10/hora/IP por defecto, asi que un e
 con mas de 10 pedidos empieza a recibir 429 y los fallos posteriores parecen bugs
 del producto. Para tests: `RATE_PEDIDOS_CREATE_LIMIT` alto.
 
+---
+
+## Fase 2 — Gating por plan y limites (#2.9)
+
+### `build: OK` mirando `error TS` NO alcanza: usar el exit code
+
+`nest build` puede fallar y el error **no** aparecer como `error TS`: con un
+`ReferenceError` de una constante borrada por error, tsc reporto `Found 3 error(s)`
+y `pnpm` salio con codigo 1, pero un `grep "error TS"` no encontro nada y el chequeo
+dio "OK". Peor: `lint` tampoco lo detecta (eslint no type-checkea), asi que la
+unica senal confiable es el **exit code**. Chequear siempre `returncode == 0`.
+
+### Unique compuesto con columna NULLABLE no deduplica
+
+`UsoMensual` tiene `@@unique([negocioId, sucursalId, recurso, periodo])` con
+`sucursalId` nullable. En Postgres los **NULL no colisionan entre si**, asi que ese
+unique no impide dos filas con `sucursalId = null`; y Prisma no acepta `null` en el
+`where` de un unique compuesto, asi que el `upsert` ni compila. Patron correcto:
+`findFirst` + `create` con reintento ante `P2002`.
+
+### Los query params llegan como STRING
+
+`@IsInt()` sobre `@Query() dto.meses` rechaza `?meses=6` y devuelve 400.
+`transform: true` en el `ValidationPipe` no convierte solo: hace falta
+`@Type(() => Number)` de class-transformer.
+
+### El filtro de excepciones se comia los campos propios
+
+`HttpExceptionFilter` reconstruia la respuesta con solo `message` y `error`, asi que
+un `throw new ForbiddenException({ message, recurso, estado, limiteBase, limiteGracia })`
+llegaba al cliente sin `recurso/estado/limiteBase/limiteGracia` (la PWA no podia
+mostrar el detalle). Ademas ponia `"error": "InternalServerError"` en un 403, porque
+el nombre se tomaba del payload y solo habia fallback para las excepciones no-HTTP.
+Ahora se preservan los campos extra y `error` sale del status real.
+
+### `EventoAuditoria.negocioId` es obligatorio: no hay auditoria de plataforma
+
+Un evento sin negocio (cambiar una PlanFeature desde el super-admin) no se puede
+auditar: al pasar `negocioId: null`, `AuditoriaService` **se traga el error a
+proposito** ("nunca lanza") y el evento desaparece sin aviso. Se deja el `Logger`
+del server y se audita solo si hay negocio. Para el #9 hace falta una de dos:
+`negocioId` nullable (migracion) o una tabla de auditoria de plataforma aparte.
+
+### Cuidado: escribir PlanFeature por fuera del servicio deja el cache viejo
+
+`PlanService` cachea `plan:features:{plan}` 10 min. Un `prisma.planFeature.update()`
+crudo (o un UPDATE por SQL) **no invalida** el cache, asi que el gating sigue con el
+valor viejo hasta 10 min. Siempre usar `PlanService.actualizarFeature()`.
+
+### Nombres de campos que no siguen el patron del resto del schema
+
+- `Sucursal.activa` (femenino) vs `Empleado.activo` / `Negocio.activo`.
+- `CampanaMarketing.creadaEn` vs `Pedido.creadoEn` (el recurso cuenta campanas del
+  periodo: usar `creadaEn`).
+- `ItemCarta` **no tiene** soft delete: `carta.eliminar` pone `disponible = false` y
+  **la fila sigue existiendo**. La reconciliacion cuenta todas las filas, asi que en
+  ese endpoint NO se decrementa `ITEMS_CARTA` (si no, el cron del domingo revierte).
+
+### La reconciliacion y el contador tienen que contar LO MISMO
+
+`CAMPANAS_PUSH_MES` se reconciliaba contando filas de `CampanaMarketing` del periodo,
+pero `push.enviarPromocion` no creaba esa fila: el contador subia por incremento y el
+domingo se ponia en 0. Se crea la campana al enviar (es la fuente de verdad del
+recurso, y ademas le da datos al reporte mensual).
+
+### Gating condicional no puede ser decorador
+
+`DELIVERY` depende del `tipo` del pedido: va como validacion en el servicio
+(`exigirFeature`), no como `@RequiereFeature(...)`, que es estatico por handler.
+

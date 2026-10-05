@@ -16,6 +16,8 @@ import { CurrentEmpleado } from '../common/decorators/current-empleado.decorator
 import { StaffGuard } from '../common/guards/staff.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 import { JwtClienteGuard } from '../common/guards/jwt-cliente.guard';
 import type { PedidoCtx } from './interfaces/pedido-item.interface';
 
@@ -40,7 +42,7 @@ export class PedidosController {
    * Rate limit: 10 por hora por IP (refinamiento 7).
    */
   @Public()
-  @UseGuards(TenantGuard)
+  @UseGuards(TenantGuard, PlanGuard)
   // Refinamiento 7: 10 por hora por IP. Configurable por env para poder
   // correr suites e2e sin que el propio limite corte los tests.
   @Throttle({
@@ -49,6 +51,7 @@ export class PedidosController {
       ttl: Number(process.env.RATE_PEDIDOS_CREATE_TTL_MS ?? 3_600_000),
     },
   })
+  @RequiereFeature('pedidos')
   @Post()
   async crear(
     @Tenant() tenant: string | null,
@@ -104,8 +107,9 @@ export class PedidosController {
     return this.pedidos.listarPedidos(emp.negocioId, filtros, { sucursalId: emp.sucursalId, rol: emp.rol });
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
+  @RequiereFeature('pedidos')
   @Patch(':id/estado')
   cambiarEstado(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,

@@ -15,13 +15,15 @@ import { CurrentEmpleado } from '../common/decorators/current-empleado.decorator
 import { StaffGuard } from '../common/guards/staff.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 
 interface EmpleadoAuth { id: string; negocioId: string; rol: RolEmpleado; sucursalId: string }
 
 const LECTURA = [RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY];
 
 @Controller('turnos')
-@UseGuards(StaffGuard, TenantGuard, RolesGuard)
+@UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
 export class TurnosController {
   constructor(
     private readonly turnos: TurnosService,
@@ -35,18 +37,21 @@ export class TurnosController {
   // Rutas literales ANTES de ':id'
 
   @Roles(...LECTURA)
+  @RequiereFeature('turnos')
   @Get()
   listar(@CurrentEmpleado() emp: EmpleadoAuth, @Query() filtros: FiltrarTurnosDto) {
     return this.turnos.listar(emp.negocioId, filtros, this.ctx(emp, ''));
   }
 
   @Roles(...LECTURA)
+  @RequiereFeature('turnos')
   @Get('semana')
   semana(@CurrentEmpleado() emp: EmpleadoAuth, @Query() dto: VistaSemanalDto) {
     return this.turnos.vistaSemanal(emp.negocioId, dto, this.ctx(emp, ''));
   }
 
   @Roles(...LECTURA)
+  @RequiereFeature('turnos')
   @Get('empleado/:empleadoId/semana')
   semanaEmpleado(
     @CurrentEmpleado() emp: EmpleadoAuth,
@@ -58,42 +63,49 @@ export class TurnosController {
 
   // ---- check-in (el propio empleado) ----
   @Roles(...LECTURA)
+  @RequiereFeature('turnos')
   @Get('checkin/estado')
   estadoCheckin(@CurrentEmpleado() emp: EmpleadoAuth) {
     return this.checkin.estado(emp.negocioId, emp.id);
   }
 
   @Roles(...LECTURA)
+  @RequiereFeature('turnos')
   @Get('presentes')
   presentes(@CurrentEmpleado() emp: EmpleadoAuth) {
     return this.checkin.presentes(emp.negocioId, emp.sucursalId);
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('turnos')
   @Post('bulk')
   bulk(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: BulkCrearTurnosDto, @Ip() ip: string) {
     return this.turnos.crearBulk(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('turnos')
   @Post('duplicar-semana')
   duplicarSemana(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: DuplicarSemanaDto, @Ip() ip: string) {
     return this.turnos.duplicarSemana(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('turnos')
   @Post('duplicar-dia')
   duplicarDia(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: DuplicarDiaDto, @Ip() ip: string) {
     return this.turnos.duplicarDia(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('turnos')
   @Patch('encargado')
   asignarEncargado(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: AsignarEncargadoDto, @Ip() ip: string) {
     return this.turnos.asignarEncargado(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('turnos')
   @Delete('encargado/:fecha')
   eliminarEncargado(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('fecha') fecha: string,
@@ -103,18 +115,21 @@ export class TurnosController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('turnos')
   @Post()
   crear(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CrearTurnoDto, @Ip() ip: string) {
     return this.turnos.crear(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @Roles(...LECTURA)
+  @RequiereFeature('turnos')
   @Get(':id')
   obtener(@CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string) {
     return this.turnos.obtener(emp.negocioId, id);
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('turnos')
   @Patch(':id')
   actualizar(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -124,6 +139,7 @@ export class TurnosController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('turnos')
   @Delete(':id')
   eliminar(@CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string, @Ip() ip: string) {
     return this.turnos.eliminar(emp.negocioId, id, this.ctx(emp, ip));

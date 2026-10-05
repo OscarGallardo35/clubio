@@ -9,6 +9,8 @@ import { FiltrarCartaDto } from './dto/filtrar-carta.dto';
 import { StaffGuard } from '../common/guards/staff.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentEmpleado } from '../common/decorators/current-empleado.decorator';
@@ -39,8 +41,9 @@ export class CartaController {
     return this.carta.listarAdmin(emp.negocioId, filtros);
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('menu')
   @Post()
   crear(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CrearItemCartaDto, @Ip() ip: string) {
     return this.carta.crear(emp.negocioId, dto, this.ctx(emp, ip));
@@ -53,8 +56,9 @@ export class CartaController {
     return this.carta.reordenar(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('menu')
   @Patch(':id/disponibilidad')
   disponibilidad(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -63,8 +67,9 @@ export class CartaController {
     return this.carta.toggleDisponibilidad(emp.negocioId, id, dto.disponible, this.ctx(emp, ip));
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('menu')
   @Patch(':id')
   actualizar(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -73,8 +78,9 @@ export class CartaController {
     return this.carta.actualizar(emp.negocioId, id, dto, this.ctx(emp, ip));
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('menu')
   @Delete(':id')
   eliminar(@CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string, @Ip() ip: string) {
     return this.carta.eliminar(emp.negocioId, id, this.ctx(emp, ip));

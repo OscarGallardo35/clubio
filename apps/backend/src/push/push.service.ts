@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import * as webpush from 'web-push';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
+import { LimitesService } from '../planes/limites.service';
 import type { EnviarPromocionDto } from './dto/enviar-promocion.dto';
 import type { SuscribirPushDto } from './dto/suscribir-push.dto';
 
@@ -32,6 +33,7 @@ export class PushService {
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     @InjectQueue(COLA_PUSH) private readonly cola: Queue<PushJob>,
+    private readonly limites: LimitesService,
   ) {
     this.vapidPublicKey = (process.env.VAPID_PUBLIC_KEY ?? '').trim();
     this.vapidPrivada = (process.env.VAPID_PRIVATE_KEY ?? '').trim();
@@ -126,6 +128,8 @@ export class PushService {
    */
   async enviarPromocion(negocioId: string, dto: EnviarPromocionDto, empleadoId?: string) {
     this.exigirVapid();
+    // CAMPANAS_PUSH_MES: cuenta campanas por mes.
+    await this.limites.exigirLimite(negocioId, 'CAMPANAS_PUSH_MES');
 
     let clienteIds: string[];
     if (dto.clienteIds?.length) {
@@ -164,10 +168,24 @@ export class PushService {
       ),
     );
 
+    // Se registra la campana: es la FUENTE DE VERDAD de CAMPANAS_PUSH_MES
+    // (la reconciliacion semanal cuenta filas de CampanaMarketing del periodo, asi
+    // que si no se creara aca el contador se pondria en 0 el domingo).
+    await this.prisma.campanaMarketing.create({
+      data: {
+        negocioId, titulo: dto.titulo, mensaje: dto.cuerpo,
+        url: dto.url ?? null, segmento: dto.segmento ?? 'TODOS',
+        canal: 'PUSH', esAutomatizacion: false,
+        enviadaEn: new Date(), totalEnviados: jobs.length,
+      },
+    });
+
     await this.auditoria.registrar({
       negocioId, accion: 'push.promocion_encolada', empleadoId,
       detalle: { titulo: dto.titulo, segmento: dto.segmento ?? 'TODOS', destinatarios: jobs.length },
     });
+
+    await this.limites.incrementarUso(negocioId, 'CAMPANAS_PUSH_MES');
 
     return { encolados: jobs.length, destinatarios: clienteIds.length };
   }

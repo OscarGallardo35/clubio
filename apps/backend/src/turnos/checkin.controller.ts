@@ -8,13 +8,15 @@ import { CurrentEmpleado } from '../common/decorators/current-empleado.decorator
 import { StaffGuard } from '../common/guards/staff.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 
 interface EmpleadoAuth { id: string; negocioId: string; rol: RolEmpleado; sucursalId: string }
 
 const LECTURA = [RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY];
 
 @Controller('checkin')
-@UseGuards(StaffGuard, TenantGuard, RolesGuard)
+@UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
 export class CheckinController {
   constructor(private readonly checkin: CheckinService) {}
 
@@ -23,12 +25,14 @@ export class CheckinController {
   }
 
   @Roles(...LECTURA)
+  @RequiereFeature('checkin')
   @Get('estado')
   estado(@CurrentEmpleado() emp: EmpleadoAuth) {
     return this.checkin.estado(emp.negocioId, emp.id);
   }
 
   @Roles(...LECTURA)
+  @RequiereFeature('checkin')
   @Post()
   entrar(
     @CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CheckinDto,
@@ -38,6 +42,7 @@ export class CheckinController {
   }
 
   @Roles(...LECTURA)
+  @RequiereFeature('checkin')
   @Post('salir')
   salir(
     @CurrentEmpleado() emp: EmpleadoAuth,

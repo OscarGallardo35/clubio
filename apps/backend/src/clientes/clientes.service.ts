@@ -3,6 +3,7 @@ import { ModoClientes, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
+import { LimitesService } from '../planes/limites.service';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { enmascararTelefono, normalizarTelefonoE164 } from '../common/utils/phone.util';
 import { esRolPrivilegiado } from './dto/cliente-response.dto';
@@ -31,6 +32,7 @@ export class ClientesService {
     private readonly auditoria: AuditoriaService,
     private readonly segmentos: SegmentosService,
     private readonly resolver: SucursalResolverService,
+    private readonly limites: LimitesService,
   ) {}
 
   /**
@@ -205,6 +207,10 @@ export class ClientesService {
       select: { id: true, eliminadoEn: true },
     });
 
+    // Alta NUEVA solamente si no existia: revivir un soft-deleted no consume cupo.
+    const esNuevo = !existente;
+    if (esNuevo) await this.limites.exigirLimite(negocioId, 'CLIENTES');
+
     // Si existia soft-deleted, se revive.
     const cliente = existente
       ? await this.prisma.cliente.update({
@@ -233,6 +239,7 @@ export class ClientesService {
       negocioId, accion: 'cliente.creado', empleadoId: ctx.empleadoId,
       clienteId: cliente.id, detalle: { telefono, revivido: !!existente }, ip: ctx.ip,
     });
+    if (esNuevo) await this.limites.incrementarUso(negocioId, 'CLIENTES');
     return cliente;
   }
 
@@ -259,6 +266,8 @@ export class ClientesService {
     await this.auditoria.registrar({
       negocioId, accion: 'cliente.eliminado', empleadoId: ctx.empleadoId, clienteId, ip: ctx.ip,
     });
+    // Soft delete: libera cupo (la reconciliacion cuenta eliminadoEn: null).
+    await this.limites.decrementarUso(negocioId, 'CLIENTES');
     return cliente;
   }
 

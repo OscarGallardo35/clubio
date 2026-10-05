@@ -24,6 +24,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     let message: unknown = 'Error interno del servidor';
     let error = 'InternalServerError';
+    // Campos propios del payload (feature, recurso, estado, limiteBase, ...).
+    // Antes se descartaban: un 403 con detalle llegaba al cliente solo con el
+    // message, asi que la PWA no podia mostrar el detalle del limite.
+    let extra: Record<string, unknown> = {};
 
     if (typeof payload === 'string') {
       message = payload;
@@ -31,6 +35,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const p = payload as Record<string, unknown>;
       message = p.message ?? message;
       error = (p.error as string) ?? error;
+      const { statusCode: _sc, message: _m, error: _e, ...resto } = p;
+      extra = resto;
+    }
+
+    // El nombre del error sale del STATUS real, no del payload: si no, un 403
+    // sin campo `error` se reportaba como "InternalServerError".
+    if (error === 'InternalServerError' && isHttp) {
+      error = HttpStatus[status] ?? `HTTP_${status}`;
     }
 
     if (!isHttp) {
@@ -38,6 +50,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     res.status(status).json({
+      ...extra,
       statusCode: status,
       message,
       error,

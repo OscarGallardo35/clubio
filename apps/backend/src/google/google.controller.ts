@@ -8,6 +8,8 @@ import { CurrentEmpleado } from '../common/decorators/current-empleado.decorator
 import { StaffGuard } from '../common/guards/staff.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 
 interface EmpleadoAuth { id: string; negocioId: string; rol: RolEmpleado }
 
@@ -23,8 +25,9 @@ export class GoogleController {
   }
 
   /** Devuelve la URL de consentimiento; el admin redirige al usuario ahi. */
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('google_business')
   @Get('conectar')
   conectar(@CurrentEmpleado() emp: EmpleadoAuth) {
     return this.google.urlAutorizacion(emp.negocioId, emp.id);
@@ -35,6 +38,7 @@ export class GoogleController {
    * La seguridad la aporta el `state` de un solo uso guardado en Redis.
    */
   @Public()
+  @RequiereFeature('google_business')
   @Get('callback')
   async callback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
     await this.google.callback(code, state);
@@ -43,15 +47,17 @@ export class GoogleController {
   }
 
   /** Cuentas y ubicaciones disponibles para elegir cual sincronizar. */
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('google_business')
   @Get('ubicaciones')
   ubicaciones(@CurrentEmpleado() emp: EmpleadoAuth) {
     return this.google.descubrirUbicaciones(emp.negocioId);
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO)
+  @RequiereFeature('google_business')
   @Post('ubicacion')
   seleccionarUbicacion(
     @CurrentEmpleado() emp: EmpleadoAuth,
@@ -60,8 +66,9 @@ export class GoogleController {
     return this.google.seleccionarUbicacion(emp.negocioId, emp.id, dto);
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO)
+  @RequiereFeature('google_business')
   @Delete('desconectar')
   desconectar(@CurrentEmpleado() emp: EmpleadoAuth) {
     return this.google.desconectar(emp.negocioId, emp.id);

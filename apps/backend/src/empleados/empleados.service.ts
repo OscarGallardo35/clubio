@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import { Prisma, RolEmpleado } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
+import { LimitesService } from '../planes/limites.service';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import type { CrearEmpleadoDto } from './dto/crear-empleado.dto';
 import type { ActualizarEmpleadoDto } from './dto/actualizar-empleado.dto';
@@ -27,6 +28,7 @@ export class EmpleadosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
+    private readonly limites: LimitesService,
   ) {}
 
   async listar(negocioId: string, q: { page?: string; pageSize?: string; sucursalId?: string; rol?: RolEmpleado }, ctx: AuthCtxEmp) {
@@ -60,6 +62,8 @@ export class EmpleadosService {
   }
 
   async crear(negocioId: string, dto: CrearEmpleadoDto, ctx: AuthCtxEmp) {
+    await this.limites.exigirLimite(negocioId, 'EMPLEADOS');
+
     const sucursal = await this.prisma.sucursal.findFirst({
       where: { id: dto.sucursalId, negocioId }, select: { id: true },
     });
@@ -91,6 +95,7 @@ export class EmpleadosService {
       negocioId, accion: 'empleado.creado', empleadoId: ctx.empleadoId,
       detalle: { empleadoCreadoId: empleado.id, rol: empleado.rol, sucursalId: empleado.sucursalId }, ip: ctx.ip,
     });
+    await this.limites.incrementarUso(negocioId, 'EMPLEADOS');
     return empleado;
   }
 
@@ -130,6 +135,8 @@ export class EmpleadosService {
       negocioId, accion: 'empleado.desactivado', empleadoId: ctx.empleadoId,
       detalle: { empleadoId: id }, ip: ctx.ip,
     });
+    // Desactivar libera cupo (la reconciliacion cuenta solo activo && !eliminadoEn).
+    await this.limites.decrementarUso(negocioId, 'EMPLEADOS');
     return empleado;
   }
 

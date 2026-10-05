@@ -12,6 +12,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentEmpleado } from '../common/decorators/current-empleado.decorator';
 import { StaffGuard } from '../common/guards/staff.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { getPagination } from '../common/utils/pagination.util';
 
@@ -20,7 +22,7 @@ interface EmpleadoAuth {
 }
 
 @Controller('clientes')
-@UseGuards(StaffGuard, TenantGuard, RolesGuard)
+@UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
 export class ClientesController {
   constructor(private readonly clientes: ClientesService) {}
 
@@ -30,6 +32,7 @@ export class ClientesController {
 
   // Lectura abierta a staff: el servicio filtra por sucursal a los no privilegiados.
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
+  @RequiereFeature('crm')
   @Get()
   listar(@CurrentEmpleado() emp: EmpleadoAuth, @Query() filtros: FiltrarClientesDto) {
     return this.clientes.listar(emp.negocioId, filtros, this.ctx(emp, ''));
@@ -65,6 +68,7 @@ export class ClientesController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('crm')
   @Patch(':id')
   actualizar(
     @CurrentEmpleado() emp: EmpleadoAuth,

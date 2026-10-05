@@ -11,6 +11,8 @@ import { JwtClienteGuard } from '../common/guards/jwt-cliente.guard';
 import { StaffGuard } from '../common/guards/staff.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 
 interface ClienteAuth { id: string; negocioId: string }
 interface EmpleadoAuth { id: string; negocioId: string; rol: RolEmpleado }
@@ -26,13 +28,15 @@ export class PushController {
     return this.push.vapidPublica();
   }
 
-  @UseGuards(JwtClienteGuard, TenantGuard)
+  @UseGuards(JwtClienteGuard, TenantGuard, PlanGuard)
+  @RequiereFeature('push')
   @Post('suscribir')
   suscribirCliente(@CurrentCliente() cli: ClienteAuth, @Body() dto: SuscribirPushDto) {
     return this.push.suscribirCliente(cli.negocioId, cli.id, dto);
   }
 
-  @UseGuards(JwtClienteGuard, TenantGuard)
+  @UseGuards(JwtClienteGuard, TenantGuard, PlanGuard)
+  @RequiereFeature('push')
   @Delete('suscribir')
   desuscribirCliente(@Body() dto: { endpoint: string }) {
     return this.push.desuscribir(dto.endpoint);
@@ -40,7 +44,8 @@ export class PushController {
 
   // ---- staff ----
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @RequiereFeature('push')
   @Post('suscribir-empleado')
   suscribirEmpleado(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: SuscribirPushDto) {
     return this.push.suscribirEmpleado(emp.negocioId, emp.id, dto);
@@ -54,8 +59,9 @@ export class PushController {
   }
 
   /** Envia una promocion: encola y responde (el envio real es en background). */
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
   @Post('promocion')
   promocion(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: EnviarPromocionDto) {
     return this.push.enviarPromocion(emp.negocioId, dto, emp.id);

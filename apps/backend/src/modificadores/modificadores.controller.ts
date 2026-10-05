@@ -17,13 +17,15 @@ import { CurrentEmpleado } from '../common/decorators/current-empleado.decorator
 import { StaffGuard } from '../common/guards/staff.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 
 interface EmpleadoAuth { id: string; negocioId: string; rol: RolEmpleado }
 
 const LECTURA = [RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY];
 
 @Controller('modificadores')
-@UseGuards(StaffGuard, TenantGuard, RolesGuard)
+@UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
 export class ModificadoresController {
   constructor(
     private readonly modificadores: ModificadoresService,
@@ -44,12 +46,14 @@ export class ModificadoresController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Post('grupos')
   crear(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CrearGrupoDto, @Ip() ip: string) {
     return this.modificadores.crearGrupo(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Post('grupos/reordenar')
   reordenar(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: ReordenarGruposDto, @Ip() ip: string) {
     return this.modificadores.reordenarGrupos(emp.negocioId, dto, this.ctx(emp, ip));
@@ -63,18 +67,21 @@ export class ModificadoresController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Post('items/bulk-asignar')
   bulkAsignar(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: AsignarBulkDto, @Ip() ip: string) {
     return this.asignacion.bulkAsignar(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Post('items/bulk-desasignar')
   bulkDesasignar(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: DesasignarBulkDto, @Ip() ip: string) {
     return this.asignacion.bulkDesasignar(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Post('items/:itemId/grupos')
   asignarItem(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('itemId') itemId: string,
@@ -90,6 +97,7 @@ export class ModificadoresController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Patch('grupos/:id')
   actualizar(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -99,12 +107,14 @@ export class ModificadoresController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Patch('grupos/:id/duplicar')
   duplicar(@CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string, @Ip() ip: string) {
     return this.modificadores.duplicarGrupo(emp.negocioId, id, this.ctx(emp, ip));
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Delete('grupos/:id')
   eliminar(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -115,6 +125,7 @@ export class ModificadoresController {
 
   // ---- opciones ----
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Post('grupos/:id/opciones')
   crearOpcion(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -124,6 +135,7 @@ export class ModificadoresController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Post('grupos/:id/opciones/reordenar')
   reordenarOpciones(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -133,6 +145,7 @@ export class ModificadoresController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Patch('grupos/:id/opciones/:opcionId')
   actualizarOpcion(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -142,6 +155,7 @@ export class ModificadoresController {
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('modificadores')
   @Delete('grupos/:id/opciones/:opcionId')
   eliminarOpcion(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,

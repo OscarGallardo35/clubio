@@ -14,6 +14,8 @@ import { CurrentEmpleado } from '../common/decorators/current-empleado.decorator
 import { StaffGuard } from '../common/guards/staff.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PlanGuard } from '../planes/plan.guard';
+import { RequiereFeature } from '../planes/requiere-feature.decorator';
 
 interface EmpleadoAuth { id: string; negocioId: string; rol: RolEmpleado }
 
@@ -35,13 +37,14 @@ export class UpsellController {
    * 60/min por IP (refinamiento 3) para evitar abuso.
    */
   @Public()
-  @UseGuards(TenantGuard)
+  @UseGuards(TenantGuard, PlanGuard)
   @Throttle({
     default: {
       limit: Number(process.env.RATE_UPSELL_LIMIT ?? 60),
       ttl: Number(process.env.RATE_UPSELL_TTL_MS ?? 60_000),
     },
   })
+  @RequiereFeature('upsell')
   @Post('calcular')
   async calcular(@Tenant() tenant: string | null, @Body() dto: CalcularUpsellDto) {
     const negocioId = await this.upsell.negocioPorSlug(tenant);
@@ -55,8 +58,9 @@ export class UpsellController {
     return this.upsell.listar(emp.negocioId);
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('upsell')
   @Post('reglas')
   crear(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CrearReglaDto, @Ip() ip: string) {
     return this.upsell.crear(emp.negocioId, dto, this.ctx(emp, ip));
@@ -69,8 +73,9 @@ export class UpsellController {
     return this.upsell.obtener(emp.negocioId, id);
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('upsell')
   @Patch('reglas/:id')
   actualizar(
     @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
@@ -79,8 +84,9 @@ export class UpsellController {
     return this.upsell.actualizar(emp.negocioId, id, dto, this.ctx(emp, ip));
   }
 
-  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('upsell')
   @Delete('reglas/:id')
   eliminar(@CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string, @Ip() ip: string) {
     return this.upsell.eliminar(emp.negocioId, id, this.ctx(emp, ip));

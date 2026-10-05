@@ -467,3 +467,55 @@ WS que esperaba al dueno entre los destinatarios.
 - El detalle de la asignacion no se devuelve desde `POST /pedidos` (endpoint
   publico): va a auditoria.
 
+---
+
+## Fase 2 — #2.9 Gating por plan, limites y colchon de gracia (cerrado)
+
+12 archivos nuevos + ediciones en 9 controladores y 5 servicios. **Sin migraciones**:
+`PlanFeature`, `UsoMensual`, `RecursoLimitado`, `EstadoUso` y `Suscripcion` ya
+existian, y el seed ya carga las 19 features de los 3 planes.
+
+### Dos dimensiones en la MISMA tabla
+
+`PlanFeature.feature` guarda las banderas booleanas (`menu`, `turnos`, `upsell`...) y
+las 6 cuotas numericas (`clientes`, `empleados`, `sucursales`, `items_carta`,
+`pedidos_mes`, `campanas_push_mes`). El mapeo `RecursoLimitado -> feature` es 1:1 con
+el enum en minusculas: no hace falta tabla intermedia.
+
+### Colchon = USOS ABSOLUTOS
+
+`limiteGracia = limiteBase + colchonGraciaDefault (50)`.
+NORMAL <= 100% | ADVERTENCIA <= gracia | EXCEDIDO > gracia.
+Con `clientes` de BASIC (500) la gracia es 550, no 750: el "150%" del prompt es
+ilustrativo del caso de limite 100.
+
+### Decisiones (confirmadas por el usuario)
+
+- **Super-admin**: los 3 endpoints NO se hacen ahora (el modulo es el #9). Quedan los
+  metodos `PlanService.actualizarFeature / setPayPerUse` y
+  `UsoMensualService.resetearUsoMensual` para que el #9 solo cablee los controllers
+  con su `SuperAdminGuard`. No se exponen sin auth.
+- **Email**: no hay proveedor en el monorepo. Se hace push + `EventoAuditoria`, y el
+  evento guarda `asunto`, `cuerpo`, `feature`, `periodo` y `umbral` para que el #32
+  (Resend) pueda mandarlos retroactivamente.
+- `verificarLimite` NO incrementa; el `incrementarUso` va DESPUES de escribir.
+- El fallback de una feature inexistente **niega** (no abre la puerta).
+
+### Bugs reales encontrados
+
+1. **`HttpExceptionFilter` descartaba los campos propios** del payload: un 403 con
+   `recurso/estado/limiteBase/limiteGracia` llegaba solo con `message`, y encima
+   rotulado `"error": "InternalServerError"`. Arreglado (afecta a TODOS los modulos).
+2. **`@IsInt()` sobre query params** sin `@Type(() => Number)`:
+   `GET /planes/uso-mensual/historico?meses=6` daba 400.
+3. **`plan.feature_actualizada` no se auditaba** sin negocio y el error se perdia en
+   silencio (`EventoAuditoria.negocioId` es obligatorio).
+4. **`CAMPANAS_PUSH_MES` desincronizado**: la reconciliacion contaba
+   `CampanaMarketing` pero `enviarPromocion` no creaba la fila.
+
+### Pendiente para el #2.10
+
+**No existe `SucursalService.crear`** (la carpeta `sucursales/` solo tiene el
+resolver), asi que el limite `SUCURSALES` todavia no tiene donde engancharse. El
+`LimitesService` ya lo soporta: el #2.10 solo agrega la llamada al crear sucursales.
+

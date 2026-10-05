@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
+import { LimitesService } from '../planes/limites.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import type { CrearItemCartaDto } from './dto/crear-item-carta.dto';
 import type { ActualizarItemCartaDto } from './dto/actualizar-item-carta.dto';
@@ -23,6 +24,7 @@ export class CartaService {
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly resolver: SucursalResolverService,
+    private readonly limites: LimitesService,
   ) {}
 
   /**
@@ -121,6 +123,9 @@ export class CartaService {
   }
 
   async crear(negocioId: string, dto: CrearItemCartaDto, ctx: CartaCtx) {
+    // Limite ANTES de escribir: si no entra, 403 con el detalle del plan.
+    await this.limites.exigirLimite(negocioId, 'ITEMS_CARTA');
+
     const item = await this.prisma.itemCarta.create({
       data: {
         negocioId,
@@ -138,6 +143,8 @@ export class CartaService {
       negocioId, accion: 'carta.item_creado', empleadoId: ctx.empleadoId,
       detalle: { itemId: item.id, nombre: item.nombre }, ip: ctx.ip,
     });
+    // Incremento DESPUES de crear: una creacion fallida no infla el contador.
+    await this.limites.incrementarUso(negocioId, 'ITEMS_CARTA');
     return serializar(item);
   }
 
@@ -174,6 +181,9 @@ export class CartaService {
       negocioId, accion: 'carta.item_desactivado', empleadoId: ctx.empleadoId,
       detalle: { itemId: id }, ip: ctx.ip,
     });
+    // OJO: NO se decrementa ITEMS_CARTA. Esto NO borra la fila (pone
+    // disponible=false), y la reconciliacion cuenta todas las filas: decrementar
+    // aca desincronizaria el contador y el cron del domingo lo revertiria.
     return item;
   }
 

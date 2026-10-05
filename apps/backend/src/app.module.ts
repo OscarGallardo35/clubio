@@ -23,6 +23,7 @@ import { PedidosModule } from './pedidos/pedidos.module';
 import { ModificadoresModule } from './modificadores/modificadores.module';
 import { UpsellModule } from './upsell/upsell.module';
 import { TurnosModule } from './turnos/turnos.module';
+import { PlanesModule } from './planes/planes.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { PushModule } from './push/push.module';
 import { GoogleModule } from './google/google.module';
@@ -81,6 +82,7 @@ function redisConnectionFromUrl(raw?: string) {
     ModificadoresModule,
     UpsellModule,
     TurnosModule,
+    PlanesModule,
     // --- Lote 5: soporte ---
     WebhooksModule,
     PushModule,

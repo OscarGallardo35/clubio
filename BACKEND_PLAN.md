@@ -228,3 +228,28 @@ Y por fase: el test unit/e2e que indica cada prompt.
 - `02_documentacion_y_schema/Docker_Compose_Config.yml`
 - `01_prompts_por_modulo/07_Integraciones/` (Google GBP, push) — posterior
 - `01_prompts_por_modulo/08_Testing/` — posterior
+
+---
+
+## Tareas pendientes
+
+- [ ] **Antes del Lote 3** — **Regenerar `packages/types` para que coincida con el schema.**
+      Hoy sus enums NO coinciden con el schema consolidado: `RolEmpleado` en `@repo/types` es
+      `ADMIN_LOCAL / CAMARERO / COCINERO`, pero el schema define
+      `DUENO / ENCARGADO / CAJERO / MESERO / DELIVERY / EMPLEADO`.
+      Por eso el backend importa los enums desde `@prisma/client`.
+      Ejecutar antes del Lote 3.
+
+- [x] **Unificar el manejo del `.env`.** HECHO (antes del Lote 2).
+      Un solo `/.env` en la raíz: `ConfigModule` con `envFilePath: ['../../.env']`,
+      scripts de Prisma con `dotenv -e ../../.env --`, y `apps/backend/.env` eliminado.
+
+---
+
+## Decisiones tomadas
+
+- **Validación**: `class-validator` en los DTOs del backend; Zod (`@repo/validators`) queda para
+  las PWAs. Si aparece una regla de negocio compleja (ej. validar un pedido completo), se evalúa
+  un `ZodValidationPipe` custom.
+- **Enums en el backend**: siempre desde `@prisma/client`, nunca desde `@repo/types` (desactualizado).
+

@@ -34,7 +34,9 @@ function redisConnectionFromUrl(raw?: string) {
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    // Fuente UNICA de verdad del entorno: /.env en la raiz del monorepo.
+    // El cwd del backend es apps/backend, por eso '../../'.
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env'] }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     BullModule.forRoot({ connection: redisConnectionFromUrl(process.env.REDIS_URL) }),

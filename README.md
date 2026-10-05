@@ -112,40 +112,46 @@ mi-saas/
 
 ### 1. Clonar el repositorio
 
-\`\`\`bash
+```bash
 git clone https://github.com/tu-usuario/mi-saas.git
 cd mi-saas
-\`\`\`
+```
 
 ### 2. Activar pnpm
 
-\`\`\`bash
+```bash
 corepack enable
 corepack prepare pnpm@9.12.0 --activate
-\`\`\`
+```
 
 ### 3. Instalar dependencias
 
-\`\`\`bash
+```bash
 pnpm install
-\`\`\`
+```
 
 ### 4. Configurar variables de entorno
 
-\`\`\`bash
+Hay **un único `.env`, en la raíz del monorepo** (fuente única de verdad).
+
+```bash
 cp .env.example .env
-# Editar .env con tus valores locales
-\`\`\`
+# Editar .env con tus valores
+```
+
+- El backend lo carga con `ConfigModule` (`envFilePath: ['../../.env']`).
+- Los comandos de Prisma (`db:*`) lo cargan con `dotenv -e ../../.env --`.
+- **NO** crear `apps/backend/.env`: el backend no lo lee y se desincroniza del de la raíz.
 
 ### 5. Levantar Postgres y Redis
 
-\`\`\`bash
+```bash
 docker compose up -d
-\`\`\`
+```
 
 ### 6. Configurar base de datos
 
-\`\`\`bash
+```bash
 # Generar cliente Prisma
 pnpm db:generate
 
@@ -154,13 +160,13 @@ pnpm db:migrate
 
 # (Opcional) Seed con datos de prueba
 pnpm db:seed
-\`\`\`
+```
 
 ### 7. Iniciar desarrollo
 
-\`\`\`bash
+```bash
 pnpm dev
-\`\`\`
+```
 
 **URLs disponibles:**
 - Backend: http://localhost:3000
@@ -172,27 +178,27 @@ pnpm dev
 
 | Script | Descripción |
 |--------|-------------|
-| \`pnpm dev\` | Inicia todas las apps en modo desarrollo (Turborepo) |
-| \`pnpm build\` | Compila todas las apps |
-| \`pnpm lint\` | Ejecuta ESLint en todo el monorepo |
-| \`pnpm format\` | Formatea código con Prettier |
-| \`pnpm typecheck\` | Valida tipos TypeScript |
-| \`pnpm clean\` | Limpia builds, node_modules y cache |
-| \`pnpm db:generate\` | Genera cliente Prisma |
-| \`pnpm db:migrate\` | Ejecuta migraciones en desarrollo |
-| \`pnpm db:deploy\` | Ejecuta migraciones en producción |
-| \`pnpm db:studio\` | Abre Prisma Studio (UI visual de BD) |
-| \`pnpm db:seed\` | Ejecuta seed con datos de prueba |
+| `pnpm dev` | Inicia todas las apps en modo desarrollo (Turborepo) |
+| `pnpm build` | Compila todas las apps |
+| `pnpm lint` | Ejecuta ESLint en todo el monorepo |
+| `pnpm format` | Formatea código con Prettier |
+| `pnpm typecheck` | Valida tipos TypeScript |
+| `pnpm clean` | Limpia builds, node_modules y cache |
+| `pnpm db:generate` | Genera cliente Prisma |
+| `pnpm db:migrate` | Ejecuta migraciones en desarrollo |
+| `pnpm db:deploy` | Ejecuta migraciones en producción |
+| `pnpm db:studio` | Abre Prisma Studio (UI visual de BD) |
+| `pnpm db:seed` | Ejecuta seed con datos de prueba |
 
 ## Variables de Entorno
 
 ### General
-\`\`\`env
+```env
 NODE_ENV=development
-\`\`\`
+```
 
 ### Backend
-\`\`\`env
+```env
 PORT=3000
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mi_saas?schema=public
 REDIS_URL=redis://localhost:6379
@@ -229,42 +235,42 @@ GOOGLE_PUBSUB_VERIFICATION_TOKEN=
 
 # Google Places API
 GOOGLE_PLACES_API_KEY=
-\`\`\`
+```
 
 ### Frontend (PWAs)
-\`\`\`env
+```env
 NEXT_PUBLIC_API_URL=http://localhost:3000
 NEXT_PUBLIC_WS_URL=ws://localhost:3000
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=
 NEXT_PUBLIC_PLACES_API_KEY=
 NEXT_PUBLIC_DEFAULT_TENANT=bar-slug
 NEXT_PUBLIC_APP_VERSION=1.0.0
-\`\`\`
+```
 
 ## Migraciones de Prisma
 
 ### Crear nueva migración
 
-\`\`\`bash
+```bash
 # Después de cambiar schema.prisma
 pnpm db:migrate --name nombre_migracion
-\`\`\`
+```
 
 ### Aplicar migraciones
 
-\`\`\`bash
+```bash
 # Desarrollo
 pnpm db:migrate
 
 # Producción
 pnpm db:deploy
-\`\`\`
+```
 
 ### Visualizar base de datos
 
-\`\`\`bash
+```bash
 pnpm db:studio
-\`\`\`
+```
 
 ## Deploy en Railway
 
@@ -281,63 +287,63 @@ Ir a [railway.app](https://railway.app) y crear una cuenta.
 
 #### a) PostgreSQL
 - New → Database → PostgreSQL
-- Railway crea automáticamente \`DATABASE_URL\`
+- Railway crea automáticamente `DATABASE_URL`
 
 #### b) Redis
 - New → Database → Redis
-- Railway crea automáticamente \`REDIS_URL\`
+- Railway crea automáticamente `REDIS_URL`
 
 #### c) Backend (NestJS)
 - New → GitHub Repo → Seleccionar tu repo
 - Settings:
   - Root Directory: (leave blank para monorepo)
   - Build Command: (usar Dockerfile)
-  - Dockerfile Path: \`apps/backend/Dockerfile\`
-  - Start Command: \`node dist/main.js\`
+  - Dockerfile Path: `apps/backend/Dockerfile`
+  - Start Command: `node dist/main.js`
   - Port: 3000
 - Environment:
-  - \`NODE_ENV\` = \`production\`
-  - \`JWT_SECRET\` = (generar valor fuerte)
-  - \`JWT_*_SECRET\` = (generar valores fuertes)
-  - Otros secrets según \`.env.example\`
-- Agregar variable interna: \`RUN_MIGRATIONS_ON_START=true\`
+  - `NODE_ENV` = `production`
+  - `JWT_SECRET` = (generar valor fuerte)
+  - `JWT_*_SECRET` = (generar valores fuertes)
+  - Otros secrets según `.env.example`
+- Agregar variable interna: `RUN_MIGRATIONS_ON_START=true`
 
 #### d) PWA Cliente
 - New → GitHub Repo
 - Settings:
-  - Dockerfile Path: \`apps/pwa-cliente/Dockerfile\`
-  - Start Command: \`node apps/pwa-cliente/server.js\`
+  - Dockerfile Path: `apps/pwa-cliente/Dockerfile`
+  - Start Command: `node apps/pwa-cliente/server.js`
   - Port: 3000
   - Environment: mismo que Backend
 
 #### e) PWA Staff
-- Repetir proceso con \`apps/pwa-staff/Dockerfile\`
+- Repetir proceso con `apps/pwa-staff/Dockerfile`
 
 #### f) PWA Admin
-- Repetir proceso con \`apps/pwa-admin/Dockerfile\`
+- Repetir proceso con `apps/pwa-admin/Dockerfile`
 
 ### 4. Configurar dominios
 
 En Railway, para cada servicio:
 
-- Backend → Domain → \`api.dominio.com\`
-- PWA Cliente → Domain → \`app.dominio.com\`
-- PWA Staff → Domain → \`staff.dominio.com\`
-- PWA Admin → Domain → \`admin.dominio.com\`
+- Backend → Domain → `api.dominio.com`
+- PWA Cliente → Domain → `app.dominio.com`
+- PWA Staff → Domain → `staff.dominio.com`
+- PWA Admin → Domain → `admin.dominio.com`
 
 ### 5. Desplegar
 
-\`\`\`bash
+```bash
 # Hacer push a main (Railway deploya automáticamente)
 git push origin main
-\`\`\`
+```
 
 ## Configuración de Cloudflare
 
 ### 1. Añadir dominio
 
 - Dashboard → Websites → Add site
-- Ingresar \`dominio.com\`
+- Ingresar `dominio.com`
 - Usar nameservers de Cloudflare
 
 ### 2. Crear registros DNS
@@ -350,7 +356,7 @@ git push origin main
 | CNAME | admin | pwa-admin.up.railway.app | ✓ |
 | CNAME | * | pwa-cliente.up.railway.app | ✓ |
 
-*Reemplazar \`*.up.railway.app\` con los valores reales de Railway*
+*Reemplazar `*.up.railway.app` con los valores reales de Railway*
 
 ### 3. SSL/TLS
 
@@ -363,16 +369,16 @@ git push origin main
 Crear las siguientes reglas:
 
 **Regla 1: Estáticos (1 año)**
-- Path: \`(*.js OR *.css OR *.png OR *.woff2 OR *.svg)\`
+- Path: `(*.js OR *.css OR *.png OR *.woff2 OR *.svg)`
 - Cache Level: Cache Everything
 - Edge TTL: 1 year
 
 **Regla 2: HTML (No cachear)**
-- Path: \`(index.html OR sw.js)\`
+- Path: `(index.html OR sw.js)`
 - Cache Level: Bypass
 
 **Regla 3: API (No cachear)**
-- Path: \`/api/*\`
+- Path: `/api/*`
 - Cache Level: Bypass
 
 ### 5. Optimizaciones
@@ -392,7 +398,7 @@ Crear las siguientes reglas:
 
 ## Subdominios por Tenant
 
-La arquitectura soporta subdominios dinámicos: \`{tenant-slug}.dominio.com\`
+La arquitectura soporta subdominios dinámicos: `{tenant-slug}.dominio.com`
 
 ### Configuración
 
@@ -401,7 +407,7 @@ La arquitectura soporta subdominios dinámicos: \`{tenant-slug}.dominio.com\`
    * CNAME pwa-cliente.up.railway.app
    ```
 
-2. En backend, extraer tenant desde header \`X-Tenant-Slug\`:
+2. En backend, extraer tenant desde header `X-Tenant-Slug`:
    ```typescript
    const tenant = req.headers['x-tenant-slug'] as string
    ```
@@ -415,7 +421,7 @@ La arquitectura soporta subdominios dinámicos: \`{tenant-slug}.dominio.com\`
 
 ### 1. Row-Level Security (RLS) en PostgreSQL
 
-Todas las queries incluyen \`WHERE negocioId = $tenantId\`:
+Todas las queries incluyen `WHERE negocioId = $tenantId`:
 
 ```sql
 CREATE POLICY tenant_isolation ON clientes
@@ -440,19 +446,19 @@ CREATE POLICY tenant_isolation ON clientes
 
 ### Error: "Cannot find module '@repo/types'"
 
-- Ejecutar: \`pnpm install\`
-- Verificar rutas en \`tsconfig.base.json\`
+- Ejecutar: `pnpm install`
+- Verificar rutas en `tsconfig.base.json`
 
 ### Error: "database: unknown database \"mi_saas\""
 
-- Verificar \`DATABASE_URL\` en \`.env\`
-- Ejecutar: \`pnpm db:migrate\`
+- Verificar `DATABASE_URL` en `.env`
+- Ejecutar: `pnpm db:migrate`
 
 ### Error: "CORS error"
 
-- Verificar \`CORS_ORIGINS\` en backend \`.env\`
-- En development: \`http://localhost:3001,http://localhost:3002,http://localhost:3003\`
-- En production: \`https://app.dominio.com,https://staff.dominio.com,https://admin.dominio.com\`
+- Verificar `CORS_ORIGINS` en backend `.env`
+- En development: `http://localhost:3001,http://localhost:3002,http://localhost:3003`
+- En production: `https://app.dominio.com,https://staff.dominio.com,https://admin.dominio.com`
 
 ### Error: "Port 3000 already in use"
 
@@ -462,7 +468,7 @@ lsof -i :3000 | grep LISTEN | awk '{print $2}' | xargs kill -9
 
 # O usar puerto diferente
 PORT=3100 pnpm dev
-\`\`\`
+```
 
 ### Redis connection refused
 
@@ -472,7 +478,7 @@ docker compose ps
 
 # Si no está, iniciar
 docker compose up -d redis
-\`\`\`
+```
 
 ## Roadmap Futuro
 
@@ -495,10 +501,10 @@ docker compose up -d redis
 ## Consideraciones Importantes
 
 ### Archivos a NUNCA commitear
-- \`.env\` (credenciales)
-- \`apps/*/node_modules\`
-- \`packages/*/node_modules\`
-- \`dist/\`, \`.next/\`
+- `.env` (credenciales)
+- `apps/*/node_modules`
+- `packages/*/node_modules`
+- `dist/`, `.next/`
 
 ### Secretos en Producción
 - En Railway, usar UI → Settings → Environment
@@ -516,11 +522,11 @@ docker compose up -d redis
 
 ## Contribuir
 
-1. Crear rama: \`git checkout -b feature/nombre\`
+1. Crear rama: `git checkout -b feature/nombre`
 2. Hacer cambios y testear localmente
-3. \`pnpm lint && pnpm format\`
-4. Hacer commit: \`git commit -m 'feat: descripción'\`
-5. Push: \`git push origin feature/nombre\`
+3. `pnpm lint && pnpm format`
+4. Hacer commit: `git commit -m 'feat: descripción'`
+5. Push: `git push origin feature/nombre`
 6. Crear Pull Request
 
 ## Licencia

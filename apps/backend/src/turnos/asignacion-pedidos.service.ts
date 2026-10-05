@@ -2,6 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TipoTurno } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { CheckinService } from './checkin.service';
 import { enTurnoAhora, fechaSoloDia, hoy } from './helpers/horarios';
 import type { Destinatarios, EmpleadoEnTurno } from './interfaces/empleado-en-turno.interface';
@@ -35,6 +36,7 @@ export class AsignacionPedidosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly checkin: CheckinService,
+    private readonly resolver: SucursalResolverService,
   ) {}
 
   /** Empleados con turno vigente AHORA en una sucursal (incluye los de ayer por medianoche). */
@@ -111,10 +113,12 @@ export class AsignacionPedidosService {
       where: { negocioId },
       select: {
         modoAsignacionPedidos: true, turnosActivos: true,
-        checkinObligatorio: true, numeroAtendiente: true,
+        checkinObligatorio: true,
       },
     });
-    const numeroAtendiente = config?.numeroAtendiente ?? null;
+    // #2.11: el numero de atencion se resuelve sucursal -> club -> null (antes se
+    // leia SOLO el del club, asi que una sucursal con su propio numero lo ignoraba).
+    const numeroAtendiente = await this.resolver.resolverNumeroAtendiente(negocioId, pedido.sucursalId);
     const modo = config?.modoAsignacionPedidos ?? 'BROADCAST';
     const encargadoId = await this.encargadoDelDia(negocioId, pedido.sucursalId);
 

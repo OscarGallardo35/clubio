@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import * as speakeasy from 'speakeasy';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
 import { requireEnv } from '../common/utils/env.util';
 import type { LoginEmpleadoDto } from './dto/login-empleado.dto';
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly redis: RedisService,
+    private readonly resolver: SucursalResolverService,
   ) {}
 
   // =========================================================================
@@ -45,7 +47,7 @@ export class AuthService {
   private async resolverNegocio(slug: string) {
     const negocio = await this.prisma.negocio.findFirst({
       where: { slug, activo: true },
-      select: { id: true, slug: true, nombre: true },
+      select: { id: true, slug: true, nombre: true, modoClientes: true },
     });
     if (!negocio) throw new UnauthorizedException('Credenciales invalidas');
     return negocio;
@@ -318,7 +320,32 @@ export class AuthService {
           select: { id: true, nombre: true, telefono: true, sellosActuales: true, totalVisitas: true },
         });
 
-    return { ...this.emitirTokenCliente(cliente.id, negocio), cliente, recienCreado: !existente };
+    // #2.11: alta publica. Se resuelve la sucursal del QR y se le crea la tarjeta,
+    // igual que hace el alta manual del staff (antes el cliente que se registraba
+    // solo quedaba SIN TarjetaClienteSucursal con modoClientes = POR_SUCURSAL).
+    const sucursal = await this.resolver.resolverSucursal(negocio.id, {
+      sucursalId: dto.sucursalId,
+      sucursalSlug: dto.sucursalSlug,
+    });
+    await this.prisma.tarjetaClienteSucursal.upsert({
+      where: {
+        clienteId_sucursalId: { clienteId: cliente.id, sucursalId: sucursal.id as string },
+      },
+      update: {},
+      create: { clienteId: cliente.id, sucursalId: sucursal.id as string },
+    });
+
+    return {
+      // El claim `sucursalId` solo se agrega con modoClientes = POR_SUCURSAL:
+      // con GLOBAL la sucursal se resuelve por request (y el claim seria ruido).
+      ...this.emitirTokenCliente(
+        cliente.id, negocio,
+        negocio.modoClientes === 'POR_SUCURSAL' ? (sucursal.id as string) : null,
+      ),
+      cliente,
+      sucursal: { id: sucursal.id, nombre: sucursal.nombre, slug: sucursal.slug },
+      recienCreado: !existente,
+    };
   }
 
   async recuperarCliente(dto: RecuperarClienteDto) {
@@ -331,14 +358,28 @@ export class AuthService {
     });
     if (!cliente) throw new UnauthorizedException('No hay un cliente con ese telefono');
 
-    return { ...this.emitirTokenCliente(cliente.id, negocio), cliente };
+    // Se mantiene la sucursal del cliente si el negocio es POR_SUCURSAL.
+    let sucursalId: string | null = null;
+    if (negocio.modoClientes === 'POR_SUCURSAL') {
+      const tarjeta = await this.prisma.tarjetaClienteSucursal.findFirst({
+        where: { clienteId: cliente.id, sucursal: { negocioId: negocio.id, activa: true } },
+        orderBy: [{ ultimaVisita: 'desc' }, { creadoEn: 'desc' }],
+        select: { sucursalId: true },
+      });
+      sucursalId = tarjeta?.sucursalId ?? null;
+    }
+    return { ...this.emitirTokenCliente(cliente.id, negocio, sucursalId), cliente };
   }
 
-  private emitirTokenCliente(clienteId: string, negocio: { id: string; slug: string }) {
-    const { token, expiraEn } = this.firmar(
-      { sub: clienteId, negocioId: negocio.id, negocioSlug: negocio.slug },
-      'cliente',
-    );
+  /**
+   * #2.11: el JWT del cliente lleva `sucursalId` solo si el negocio usa
+   * modoClientes = POR_SUCURSAL (asi el resolver lo toma como fuente 4). Con
+   * GLOBAL el claim no se agrega: la sucursal se resuelve por request.
+   */
+  private emitirTokenCliente(clienteId: string, negocio: { id: string; slug: string }, sucursalId?: string | null) {
+    const payload: Record<string, unknown> = { sub: clienteId, negocioId: negocio.id, negocioSlug: negocio.slug };
+    if (sucursalId) payload.sucursalId = sucursalId;
+    const { token, expiraEn } = this.firmar(payload, 'cliente');
     return {
       accessToken: token,
       expiresIn: Math.floor((expiraEn.getTime() - Date.now()) / 1000),

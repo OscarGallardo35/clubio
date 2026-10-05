@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfiguracionService } from '../configuracion/configuracion.service';
+import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import type { ActualizarNegocioDto } from './dto/actualizar-negocio.dto';
 
@@ -14,6 +16,8 @@ const PUBLICO = {
 export class NegociosService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly configuracion: ConfiguracionService,
+    private readonly resolver: SucursalResolverService,
     private readonly auditoria: AuditoriaService,
   ) {}
 
@@ -40,13 +44,29 @@ export class NegociosService {
     };
   }
 
-  /** Endpoint publico por slug (PWA Cliente, sin auth). */
-  async publicoPorSlug(slug: string) {
+  /**
+   * Endpoint publico por slug (PWA Cliente, sin auth).
+   *
+   * #2.11: acepta `?sucursalSlug=` — devuelve la config EFECTIVA de ESA sucursal
+   * (global + override) en vez de solo el global, y el numero de atencion
+   * resuelto (sucursal -> club -> null).
+   */
+  async publicoPorSlug(slug: string, sucursalSlug?: string) {
     const negocio = await this.prisma.negocio.findFirst({
       where: { slug, activo: true },
       select: { ...PUBLICO },
     });
     if (!negocio) throw new NotFoundException('Negocio no encontrado');
+
+    // Sucursal pedida (si viene): tiene que ser del negocio y estar activa.
+    let sucursal = null as { id: string; nombre: string; slug: string; esPrincipal: boolean; direccion: string | null; telefono: string | null } | null;
+    if (sucursalSlug) {
+      sucursal = await this.prisma.sucursal.findFirst({
+        where: { negocioId: negocio.id, slug: sucursalSlug.toLowerCase(), activa: true },
+        select: { id: true, nombre: true, slug: true, esPrincipal: true, direccion: true, telefono: true },
+      });
+      if (!sucursal) throw new NotFoundException(`La sucursal "${sucursalSlug}" no existe o no esta activa`);
+    }
 
     const [config, sucursales] = await Promise.all([
       this.prisma.configuracionClub.findUnique({
@@ -64,7 +84,22 @@ export class NegociosService {
       }),
     ]);
 
-    return { ...negocio, configuracion: config, sucursales };
+    // Con sucursal pedida, la config que se devuelve es la EFECTIVA (con override).
+    const configuracion = sucursal
+      ? await this.configuracion.configEfectivaCacheada(negocio.id, sucursal.id)
+      : config;
+
+    const numeroAtendiente = await this.resolver.resolverNumeroAtendiente(
+      negocio.id, sucursal?.id ?? null,
+    );
+
+    return {
+      ...negocio,
+      configuracion,
+      numeroAtendiente,
+      sucursalActiva: sucursal,
+      sucursales,
+    };
   }
 
   /** Los 2 QRs fijos (no hay modos de mesa). */

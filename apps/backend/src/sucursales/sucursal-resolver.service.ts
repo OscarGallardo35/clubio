@@ -4,16 +4,25 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 
 export interface ResolverSucursalOpts {
-  /** 1) query param ?sucursalId= */
+  /** 1) query param ?sucursalId= (debe ser del negocio y estar activa) */
   sucursalId?: string | null;
-  /** 2) header X-Sucursal-Slug */
+  /** 2) header X-Sucursal-Slug o ?sucursalSlug= */
   sucursalSlug?: string | null;
-  /** 3) claim sucursalId del JWT (via empleado) */
+  /** 3) claim del JWT de STAFF (el empleado pertenece a una sucursal) */
   empleadoId?: string | null;
+  /**
+   * 4) cliente registrado con modoClientes = POR_SUCURSAL: se usa la sucursal de
+   *    su TarjetaClienteSucursal mas reciente. Con modoClientes = GLOBAL se ignora.
+   */
+  clienteId?: string | null;
 }
 
 const TTL_RESOLVE = 300;   // 5 min
 const TTL_EMPLEADO = 600;  // 10 min
+const TTL_PEDIDO = 600;    // 10 min
+export const CACHE_CONFIG_EFECTIVA = (negocioId: string, sucursalId: string) =>
+  `config:efectiva:${negocioId}:${sucursalId}`;
+export const TTL_CONFIG_EFECTIVA = 300; // 5 min
 
 const CAMPOS = {
   id: true, negocioId: true, nombre: true, slug: true, activa: true,
@@ -34,7 +43,10 @@ export class SucursalResolverService {
   ) {}
 
   private hash(opts: ResolverSucursalOpts): string {
-    const raw = JSON.stringify([opts.sucursalId ?? '', opts.sucursalSlug ?? '', opts.empleadoId ?? '']);
+    const raw = JSON.stringify([
+      opts.sucursalId ?? '', opts.sucursalSlug ?? '',
+      opts.empleadoId ?? '', opts.clienteId ?? '',
+    ]);
     return createHash('sha1').update(raw).digest('hex').slice(0, 12);
   }
 
@@ -45,10 +57,10 @@ export class SucursalResolverService {
 
     let sucursal: Record<string, unknown> | null = null;
 
-    // 1) query param
+    // 1) query param (tiene que ser del negocio y estar ACTIVA)
     if (opts.sucursalId) {
       sucursal = await this.prisma.sucursal.findFirst({
-        where: { id: opts.sucursalId, negocioId },
+        where: { id: opts.sucursalId, negocioId, activa: true },
         select: CAMPOS,
       });
     }
@@ -56,7 +68,7 @@ export class SucursalResolverService {
     // 2) header X-Sucursal-Slug
     if (!sucursal && opts.sucursalSlug) {
       sucursal = await this.prisma.sucursal.findFirst({
-        where: { negocioId, slug: opts.sucursalSlug.toLowerCase() },
+        where: { negocioId, slug: opts.sucursalSlug.toLowerCase(), activa: true },
         select: CAMPOS,
       });
     }
@@ -66,10 +78,26 @@ export class SucursalResolverService {
       sucursal = (await this.resolverSucursalDeEmpleado(opts.empleadoId)) as Record<string, unknown> | null;
     }
 
-    // 4) principal
+    // 4) cliente registrado con modoClientes = POR_SUCURSAL -> su tarjeta mas reciente
+    if (!sucursal && opts.clienteId) {
+      const negocio = await this.prisma.negocio.findUnique({
+        where: { id: negocioId }, select: { modoClientes: true },
+      });
+      if (negocio?.modoClientes === 'POR_SUCURSAL') {
+        const tarjeta = await this.prisma.tarjetaClienteSucursal.findFirst({
+          where: { clienteId: opts.clienteId, sucursal: { negocioId, activa: true } },
+          orderBy: [{ ultimaVisita: 'desc' }, { creadoEn: 'desc' }],
+          select: { sucursal: { select: CAMPOS } },
+        });
+        sucursal = (tarjeta?.sucursal ?? null) as Record<string, unknown> | null;
+      }
+      // Con modoClientes = GLOBAL se ignora la tarjeta y se cae a la principal.
+    }
+
+    // 5) principal
     if (!sucursal) {
       sucursal = await this.prisma.sucursal.findFirst({
-        where: { negocioId, esPrincipal: true },
+        where: { negocioId, esPrincipal: true, activa: true },
         select: CAMPOS,
       });
       if (!sucursal) {
@@ -101,6 +129,48 @@ export class SucursalResolverService {
     return sucursal;
   }
 
+  /** Sucursal de un pedido (la del QR / la que eligio el cliente). */
+  async resolverSucursalDePedido(pedidoId: string) {
+    const cacheKey = `sucursal:pedido:${pedidoId}`;
+    const cached = await this.redis.get(cacheKey).catch(() => null);
+    if (cached) return JSON.parse(cached) as Record<string, unknown>;
+
+    const pedido = await this.prisma.pedido.findUnique({
+      where: { id: pedidoId },
+      select: { sucursal: { select: CAMPOS } },
+    });
+    if (!pedido?.sucursal) return null;
+
+    await this.redis.set(cacheKey, JSON.stringify(pedido.sucursal), TTL_PEDIDO).catch(() => undefined);
+    return pedido.sucursal as unknown as Record<string, unknown>;
+  }
+
+  /**
+   * Numero de atencion (WhatsApp) EFECTIVO:
+   *   Sucursal.numeroAtendiente -> ConfiguracionClub.numeroAtendiente -> null
+   *
+   * OJO: si el negocio activa `usarNumeroAtendienteDistinto`, el de la sucursal
+   * tiene prioridad. Si no, se respeta el del club. En ambos casos, si el de la
+   * sucursal es null se cae al del club.
+   */
+  async resolverNumeroAtendiente(negocioId: string, sucursalId?: string | null): Promise<string | null> {
+    const club = await this.prisma.configuracionClub.findUnique({
+      where: { negocioId },
+      select: { numeroAtendiente: true, usarNumeroAtendienteDistinto: true },
+    });
+    if (!sucursalId) return club?.numeroAtendiente ?? null;
+
+    const sucursal = await this.prisma.sucursal.findFirst({
+      where: { id: sucursalId, negocioId },
+      select: { numeroAtendiente: true },
+    });
+
+    if (club?.usarNumeroAtendienteDistinto) {
+      return sucursal?.numeroAtendiente ?? club?.numeroAtendiente ?? null;
+    }
+    return club?.numeroAtendiente ?? sucursal?.numeroAtendiente ?? null;
+  }
+
   /** Invalida el cache al cambiar sucursales (llamado por el CRUD de sucursales). */
   /**
    * Invalida el cache de resolucion de un negocio.
@@ -112,6 +182,7 @@ export class SucursalResolverService {
    */
   async invalidar(negocioId: string, empleadoId?: string) {
     await this.redis.delByPattern(`sucursal:resolve:${negocioId}:*`).catch(() => 0);
+    await this.redis.delByPattern(CACHE_CONFIG_EFECTIVA(negocioId, '*')).catch(() => 0);
     if (empleadoId) await this.redis.del(`sucursal:empleado:${empleadoId}`).catch(() => undefined);
   }
 }

@@ -103,6 +103,8 @@ export class ConfiguracionSucursalService {
       create: data,
     });
 
+    // La config efectiva cacheada de esa sucursal quedo vieja.
+    await this.configuracion.invalidarConfigEfectiva(negocioId, sucursalId);
     await this.auditoria.registrar({
       negocioId, accion: 'sucursal.override_actualizado', empleadoId: ctx.empleadoId,
       detalle: { sucursalId, campos: Object.keys(dto) }, ip: ctx.ip,
@@ -113,6 +115,7 @@ export class ConfiguracionSucursalService {
   async eliminarOverride(negocioId: string, sucursalId: string, ctx: CtxConfigSucursal) {
     await this.exigirSucursal(negocioId, sucursalId);
     const r = await this.prisma.configuracionSucursal.deleteMany({ where: { sucursalId } });
+    await this.configuracion.invalidarConfigEfectiva(negocioId, sucursalId);
     await this.auditoria.registrar({
       negocioId, accion: 'sucursal.override_eliminado', empleadoId: ctx.empleadoId,
       detalle: { sucursalId, existia: r.count > 0 }, ip: ctx.ip,

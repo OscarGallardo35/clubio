@@ -464,3 +464,55 @@ base 500 da 750 y con 5000 da 7500. La correcta usa `min` para capar en 50.
 La formula vive en `calcularLimiteGracia()` / `limiteGraciaDe()` de `plan.service.ts`
 y la usan los 3 lugares que la necesitan (LimitesService, y las 2 de
 UsoMensualService). No duplicarla.
+
+---
+
+## Fase 2 — Refactor multi-sucursal (#2.11)
+
+### El build NO valida el grafo de dependencias: hay que ARRANCAR el server
+
+`pnpm build` da exit 0 y `lint` tambien, pero si un modulo no importa el modulo
+dueño de un provider, la app **no arranca**:
+
+```
+Nest can't resolve dependencies of the NegociosService (..., ?, ...).
+Please make sure that the argument ConfiguracionService at index [1] is available
+in the NegociosModule context.
+```
+
+Es un error de RUNTIME, no de compilacion. Despues de cada cambio de modulos hay que
+levantar el server (o al menos `curl /api/health`) antes de dar algo por bueno.
+
+### `@Global()` no alcanza para todo: el provider tiene que estar EXPORTADO
+
+`SucursalResolverService` vive en `SucursalesModule` (@Global) y funciona en todos
+lados sin importar nada. Pero `ConfiguracionService` (en `ConfiguracionModule`) solo
+llega a quien **importe** ese modulo: por eso `NegociosModule` necesito
+`imports: [ConfiguracionModule]`.
+
+### Cuidado con los ciclos al inyectar servicios entre si
+
+`ConfiguracionService` inyecta `SucursalResolverService` y al reves seria un ciclo de
+providers que Nest no resuelve sin `forwardRef`. Por eso `resolverConfiguracionEfectiva`
+**no** vive en el resolver: la config efectiva cacheada
+(`configEfectivaCacheada`) esta en `ConfiguracionService`, que es quien tiene el merge.
+
+### El override de una sucursal GANA sobre el club, siempre
+
+Al invalidar el cache de config efectiva de un negocio esperaba ver el valor nuevo
+del club, pero la sucursal tenia `premioTexto` propio: el valor efectivo sigue siendo
+el de la sucursal. Es correcto: para probar que el cambio del club se propaga hay que
+mirar un campo que la sucursal **no** overridee.
+
+### El JWT del cliente solo lleva `sucursalId` con `modoClientes = POR_SUCURSAL`
+
+Con `GLOBAL` el claim no se agrega: la sucursal se resuelve por request (query, header
+o principal). Agregarlo siempre no rompe nada (el resolver lo ignora si el modo es
+GLOBAL) pero contradice el contrato y ensucia el token.
+
+### Los endpoints de un mismo recurso pueden no compartir verbo
+
+`/sucursales/:id/configuracion` es **POST** (upsert), no PATCH. Un PATCH devuelve 405 y
+el override nunca se guarda: si un test "falla" al verificar que el cambio se
+propago, primero confirmar que el metodo HTTP es el correcto.
+

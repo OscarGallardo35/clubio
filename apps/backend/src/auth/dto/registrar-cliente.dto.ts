@@ -16,4 +16,17 @@ export class RegistrarClienteDto {
 
   @IsString()
   negocioSlug!: string;
+
+  /**
+   * #2.11: sucursal donde se registra el cliente (la del QR). Si no viene, se usa
+   * la principal. Se guarda en la TarjetaClienteSucursal.
+   */
+  @IsOptional()
+  @IsString()
+  sucursalSlug?: string;
+
+  /** Compatibilidad con el header X-Sucursal-Slug. */
+  @IsOptional()
+  @IsString()
+  sucursalId?: string;
 }

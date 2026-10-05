@@ -573,3 +573,54 @@ completa de Business Profile queda como "nice to have" para cuando:
 - haya un cliente con GBP verificado que otorgue acceso admin, o
 - Clubio cumpla los 60 dias que pide Google para ese acceso.
 
+---
+
+## Fase 2 — #2.11 Refactor multi-sucursal (en curso)
+
+### Auditoria inicial (evidencia, no checklist)
+
+```text
+visitas        34 refs sucursalId + resolver OK     pedidos   32 + resolver OK
+turnos/checkin 84 + resolver OK                     carta      4 + resolver OK
+clientes       16 + resolver OK                     config     8 + resolver OK
+upsell           7 + resolver OK                    empleados 12 (filtra por rol)
+estadisticas    11 refs                             push       4 refs
+modificadores / resenas / negocios: sin sucursalId (correcto por diseno)
+WS: visitas.gateway 4 emits a sala de sucursal | pedidos.gateway 12/13
+modoClientes GLOBAL vs POR_SUCURSAL: implementado en clientes, visitas y pedidos
+TarjetaClienteSucursal: visitas (tx), clientes (upsert), pedidos (lectura)
+```
+
+### Gaps encontrados y cerrados
+
+1. **`numeroAtendiente` ignoraba la sucursal**: `asignacion-pedidos.service` leia solo
+   `ConfiguracionClub.numeroAtendiente`. Ahora usa
+   `resolverNumeroAtendiente()` (sucursal -> club -> null), respetando
+   `usarNumeroAtendienteDistinto`.
+2. **Al resolver le faltaban 2 fuentes y 3 metodos**: se agrego `clienteId` (fuente 4,
+   solo con `modoClientes = POR_SUCURSAL`: la `TarjetaClienteSucursal` mas reciente),
+   `resolverSucursalDePedido`, `resolverNumeroAtendiente` y la invalidacion del cache
+   de config.
+3. **El alta PUBLICA de cliente no creaba `TarjetaClienteSucursal`** (solo el alta
+   manual del staff). Con `POR_SUCURSAL` un cliente que se registraba solo quedaba sin
+   tarjeta. Ahora se resuelve la sucursal del QR y se le crea.
+4. **El JWT del cliente no llevaba `sucursalId`** (punto 12 del prompt). Ahora se
+   agrega solo con `modoClientes = POR_SUCURSAL`.
+5. **`GET /negocios/publico/:slug` no aceptaba `?sucursalSlug`**: ahora devuelve la
+   config EFECTIVA de esa sucursal, `sucursalActiva` y el `numeroAtendiente` resuelto.
+6. **`configEfectiva` pegaba 2 queries por request**: se agrego
+   `configEfectivaCacheada()` (TTL 5 min) con invalidacion al tocar el club, el
+   override de una sucursal, o al cambiar/eliminar la sucursal.
+
+### Decisiones
+
+- `resolverConfiguracionEfectiva` **no** se implemento en el resolver (seria un ciclo
+  de providers con `ConfiguracionService`): la version cacheada vive en
+  `ConfiguracionService`.
+- Los WebSockets ya emitian a salas por sucursal: no se tocaron, solo se verifican.
+
+### Bug real encontrado en el propio refactor
+
+El JWT del cliente se firmaba con `sucursalId` **siempre**, aunque el negocio fuera
+GLOBAL. Corregido para que el claim aparezca solo con `POR_SUCURSAL`.
+

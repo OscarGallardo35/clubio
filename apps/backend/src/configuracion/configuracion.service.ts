@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
-import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
+import { SucursalResolverService, CACHE_CONFIG_EFECTIVA, TTL_CONFIG_EFECTIVA } from '../sucursales/sucursal-resolver.service';
+import { RedisService } from '../common/redis/redis.service';
 import type { ActualizarConfiguracionDto } from './dto/actualizar-configuracion.dto';
 
 /** Campos que una sucursal puede sobreescribir (null = hereda del global). */
@@ -20,6 +21,7 @@ export class ConfiguracionService {
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly resolver: SucursalResolverService,
+    private readonly redis: RedisService,
   ) {}
 
   async obtener(negocioId: string) {
@@ -36,6 +38,35 @@ export class ConfiguracionService {
     });
     if (!negocio) throw new NotFoundException('Negocio no encontrado');
     return { negocio, configuracion: await this.configEfectiva(negocio.id, sucursalId) };
+  }
+
+  /**
+   * Igual que configEfectiva pero con cache Redis (TTL 5 min). Es la que deben
+   * usar los caminos calientes (carta, pedidos, visitas): configEfectiva pega 2
+   * queries a la BD en CADA request.
+   *
+   * Se invalida desde invalidarConfigEfectiva() al tocar el club, el override de
+   * una sucursal, o al cambiar/eliminar una sucursal.
+   */
+  async configEfectivaCacheada(negocioId: string, sucursalId?: string) {
+    if (!sucursalId) return this.configEfectiva(negocioId);
+
+    const clave = CACHE_CONFIG_EFECTIVA(negocioId, sucursalId);
+    const cacheado = await this.redis.get(clave).catch(() => null);
+    if (cacheado) {
+      try { return JSON.parse(cacheado); } catch { await this.redis.del(clave).catch(() => undefined); }
+    }
+    const efectiva = await this.configEfectiva(negocioId, sucursalId);
+    await this.redis.set(clave, JSON.stringify(efectiva), TTL_CONFIG_EFECTIVA).catch(() => undefined);
+    return efectiva;
+  }
+
+  async invalidarConfigEfectiva(negocioId: string, sucursalId?: string) {
+    if (sucursalId) {
+      await this.redis.del(CACHE_CONFIG_EFECTIVA(negocioId, sucursalId)).catch(() => undefined);
+    } else {
+      await this.redis.delByPattern(CACHE_CONFIG_EFECTIVA(negocioId, '*')).catch(() => 0);
+    }
   }
 
   /**
@@ -77,6 +108,7 @@ export class ConfiguracionService {
       where: { negocioId },
       data: { ...dto },
     });
+    await this.invalidarConfigEfectiva(negocioId);
     await this.auditoria.registrar({
       negocioId, accion: 'configuracion.actualizada', empleadoId: ctx.empleadoId,
       detalle: { campos: Object.keys(dto) }, ip: ctx.ip,

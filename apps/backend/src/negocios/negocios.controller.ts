@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Ip, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Ip, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { RolEmpleado } from '@prisma/client';
 import { NegociosService } from './negocios.service';
 import { ActualizarNegocioDto } from './dto/actualizar-negocio.dto';
@@ -16,8 +16,8 @@ export class NegociosController {
   /** Publico: la PWA Cliente resuelve el negocio por slug. */
   @Public()
   @Get('publico/:slug')
-  publico(@Param('slug') slug: string) {
-    return this.negocios.publicoPorSlug(slug);
+  publico(@Param('slug') slug: string, @Query('sucursalSlug') sucursalSlug?: string) {
+    return this.negocios.publicoPorSlug(slug, sucursalSlug);
   }
 
   @UseGuards(JwtDuenoGuard, TenantGuard, RolesGuard)

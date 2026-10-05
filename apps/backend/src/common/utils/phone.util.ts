@@ -54,3 +54,19 @@ export function normalizarTelefonoE164(input: string, countryCode = '54'): strin
 
   return e164;
 }
+
+/**
+ * Enmascara un telefono para mostrarlo a roles no privilegiados.
+ *   +549****8888  ->  "+549****8888"
+ * Conserva el codigo de pais y los ultimos 4 digitos.
+ */
+export function enmascararTelefono(telefono: string): string {
+  const raw = (telefono ?? '').trim();
+  if (!raw) return '';
+
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length <= 6) return '*'.repeat(digits.length || 1);
+
+  const prefijo = raw.startsWith('+') ? digits.slice(0, 3) : digits.slice(0, 2);
+  return `+${prefijo}****${digits.slice(-4)}`;
+}

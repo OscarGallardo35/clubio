@@ -43,10 +43,11 @@ export class ClientesController {
     @Query() q: { page?: string; pageSize?: string },
   ) {
     const { page, pageSize } = getPagination(q);
-    return this.clientes.obtener(emp.negocioId, id, page, pageSize);
+    return this.clientes.obtener(emp.negocioId, id, page, pageSize, emp.rol);
   }
 
-  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
+  /** Historial detallado: solo admin (el staff no ve el historial). */
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
   @Get(':id/visitas')
   visitas(
     @CurrentEmpleado() emp: EmpleadoAuth,

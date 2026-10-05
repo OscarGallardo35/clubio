@@ -4,7 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { getPagination, paginar } from '../common/utils/pagination.util';
-import { normalizarTelefonoE164 } from '../common/utils/phone.util';
+import { enmascararTelefono, normalizarTelefonoE164 } from '../common/utils/phone.util';
+import { esRolPrivilegiado } from './dto/cliente-response.dto';
+import type { ClienteResponseStaff, TarjetaSucursalResponse } from './dto/cliente-response.dto';
 import { SegmentosService } from './segmentos.service';
 import type { CrearClienteManualDto } from './dto/crear-cliente-manual.dto';
 import type { ActualizarClienteDto } from './dto/actualizar-cliente.dto';
@@ -21,7 +23,6 @@ export interface AuthCtx {
 }
 
 /** Roles con visibilidad total del negocio. */
-const ROLES_PRIVILEGIADOS = ['DUENO', 'ENCARGADO'];
 
 @Injectable()
 export class ClientesService {
@@ -32,9 +33,14 @@ export class ClientesService {
     private readonly resolver: SucursalResolverService,
   ) {}
 
-  /** Refinamiento 2: formato { data, total, page, pageSize }. */
+  /**
+   * Refinamiento 2: formato { data, total, page, pageSize }.
+   * Filtrado de campos por rol: admin ve todo; staff solo lo necesario para
+   * verificar la tarjeta, con el telefono enmascarado.
+   */
   async listar(negocioId: string, filtros: FiltrarClientesDto, ctx: AuthCtx) {
     const { page, pageSize, skip, take } = getPagination(filtros);
+    const privilegiado = esRolPrivilegiado(ctx.rol);
 
     const where: Prisma.ClienteWhereInput = {
       negocioId,
@@ -49,20 +55,37 @@ export class ClientesService {
     }
 
     // Sucursal pedida explicitamente (si es privilegiado)
-    const esPrivilegiado = ROLES_PRIVILEGIADOS.includes(ctx.rol);
-    if (esPrivilegiado && filtros.sucursalId) {
+    if (privilegiado && filtros.sucursalId) {
       where.tarjetas = { some: { sucursalId: filtros.sucursalId } };
     }
 
     // Refinamiento 5: empleado comun solo ve su sucursal (si el negocio es POR_SUCURSAL)
-    if (!esPrivilegiado) {
+    let porSucursal = false;
+    if (!privilegiado) {
       const negocio = await this.prisma.negocio.findUnique({
         where: { id: negocioId }, select: { modoClientes: true },
       });
-      if (negocio?.modoClientes === ModoClientes.POR_SUCURSAL) {
+      porSucursal = negocio?.modoClientes === ModoClientes.POR_SUCURSAL;
+      if (porSucursal) {
         where.tarjetas = { some: { sucursalId: ctx.sucursalId ?? '__sin_sucursal__' } };
       }
     }
+
+    // Proyeccion: el staff NO recibe email, notasInternas ni fechaNacimiento.
+    const selectAdmin = {
+      id: true, nombre: true, telefono: true, email: true, etiqueta: true,
+      sellosActuales: true, puntosActuales: true, totalVisitas: true,
+      premiosCanjeados: true, ultimaVisita: true, creadoEn: true,
+      notasInternas: true, fechaNacimiento: true, aceptaNotificaciones: true,
+    } satisfies Prisma.ClienteSelect;
+
+    const selectStaff = {
+      id: true, nombre: true, telefono: true, etiqueta: true,
+      sellosActuales: true, ultimaVisita: true,
+      ...(porSucursal
+        ? { tarjetas: { include: { sucursal: { select: { id: true, nombre: true, slug: true, esPrincipal: true } } } } }
+        : {}),
+    } satisfies Prisma.ClienteSelect;
 
     const [data, total] = await Promise.all([
       this.prisma.cliente.findMany({
@@ -70,20 +93,29 @@ export class ClientesService {
         orderBy: { ultimaVisita: 'desc' },
         skip,
         take,
-        select: {
-          id: true, nombre: true, telefono: true, email: true, etiqueta: true,
-          sellosActuales: true, puntosActuales: true, totalVisitas: true,
-          premiosCanjeados: true, ultimaVisita: true, creadoEn: true,
-        },
+        select: privilegiado ? selectAdmin : selectStaff,
       }),
       this.prisma.cliente.count({ where }),
     ]);
 
-    return paginar(data, total, page, pageSize);
+    const dataFinal = privilegiado ? data : (data as Record<string, unknown>[]).map((c) => this.aStaff(c));
+    return paginar(dataFinal, total, page, pageSize);
   }
 
-  /** Refinamiento 7: tarjetas por sucursal (si POR_SUCURSAL) + historial paginado. */
-  async obtener(negocioId: string, clienteId: string, visitasPage = 1, visitasPageSize = 10) {
+  /**
+   * Refinamiento 7: tarjetas por sucursal (si POR_SUCURSAL) + historial paginado.
+   * ADMIN: cliente completo + historial. STAFF: solo la tarjeta para verificar
+   * en el mostrador, sin email, sin notasInternas y sin historial.
+   */
+  async obtener(
+    negocioId: string,
+    clienteId: string,
+    visitasPage: number,
+    visitasPageSize: number,
+    rol: string,
+  ) {
+    const privilegiado = esRolPrivilegiado(rol);
+
     const cliente = await this.prisma.cliente.findFirst({
       where: { id: clienteId, negocioId, eliminadoEn: null },
     });
@@ -100,6 +132,17 @@ export class ClientesService {
         })
       : [];
 
+    const config = await this.prisma.configuracionClub.findUnique({
+      where: { negocioId }, select: { sellosParaPremio: true },
+    });
+    const progreso = this.segmentos.progreso(cliente.sellosActuales, config?.sellosParaPremio ?? 10);
+
+    // --- STAFF: vista reducida, sin historial ni datos sensibles ---
+    if (!privilegiado) {
+      return { cliente: this.aStaff({ ...cliente, tarjetas }), progreso };
+    }
+
+    // --- ADMIN: vista completa ---
     const [visitas, totalVisitas] = await Promise.all([
       this.prisma.visita.findMany({
         where: { negocioId, clienteId },
@@ -111,21 +154,46 @@ export class ClientesService {
       this.prisma.visita.count({ where: { negocioId, clienteId } }),
     ]);
 
-    const config = await this.prisma.configuracionClub.findUnique({
-      where: { negocioId }, select: { sellosParaPremio: true },
-    });
+    // eliminadoEn siempre es null aca (el where ya lo filtra): no ensuciar la respuesta
+    const { eliminadoEn: _omitido, ...clientePublico } = cliente;
 
     return {
       cliente: {
-        ...cliente,
+        ...clientePublico,
         sellosActuales: cliente.sellosActuales,
         puntosActuales: cliente.puntosActuales,
         totalVisitas: cliente.totalVisitas,
       },
-      progreso: this.segmentos.progreso(cliente.sellosActuales, config?.sellosParaPremio ?? 10),
+      progreso,
       tarjetasPorSucursal: tarjetas,
       historialVisitas: { data: visitas, total: totalVisitas, page: visitasPage, pageSize: visitasPageSize },
     };
+  }
+
+  /** Proyeccion reducida para staff: telefono enmascarado y sin campos sensibles. */
+  private aStaff(cliente: Record<string, any>): ClienteResponseStaff {
+    const anidadas = Array.isArray(cliente.tarjetas) ? cliente.tarjetas : undefined;
+    return {
+      id: cliente.id,
+      nombre: cliente.nombre,
+      telefono: enmascararTelefono(String(cliente.telefono ?? '')),
+      etiqueta: cliente.etiqueta,
+      sellosActuales: cliente.sellosActuales,
+      ultimaVisita: cliente.ultimaVisita ?? null,
+      ...(anidadas ? { tarjetas: this.mapTarjetas(anidadas) } : {}),
+    };
+  }
+
+  private mapTarjetas(tarjetas: Record<string, any>[]): TarjetaSucursalResponse[] {
+    return tarjetas.map((t) => ({
+      sucursalId: t.sucursalId,
+      sucursalNombre: t.sucursal?.nombre,
+      sucursalSlug: t.sucursal?.slug,
+      esPrincipal: t.sucursal?.esPrincipal,
+      sellosActuales: t.sellosActuales,
+      puntosActuales: t.puntosActuales,
+      totalVisitas: t.totalVisitas,
+    }));
   }
 
   async crearManual(negocioId: string, dto: CrearClienteManualDto, ctx: AuthCtx) {

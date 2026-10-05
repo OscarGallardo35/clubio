@@ -39,6 +39,23 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  /**
+   * Borra TODAS las claves que matcheen un patron, con SCAN (nunca KEYS: bloquea
+   * el server entero y en Upstash ademas puede no estar permitido).
+   *
+   * Hace falta de verdad: `sucursal:resolve:{negocioId}:{hash}` termina en un hash
+   * que depende de los parametros de la request, asi que no se puede reconstruir
+   * la clave para borrarla.
+   */
+  async delByPattern(pattern: string): Promise<number> {
+    let borradas = 0;
+    const stream = this.client.scanStream({ match: pattern, count: 200 });
+    for await (const keys of stream) {
+      if (keys.length) borradas += await this.client.del(...keys);
+    }
+    return borradas;
+  }
+
   async exists(key: string): Promise<boolean> {
     return (await this.client.exists(key)) === 1;
   }

@@ -46,6 +46,7 @@ export class StaffGuard implements CanActivate {
           select: {
             id: true, nombre: true, rol: true, negocioId: true,
             sucursalId: true, activo: true, eliminadoEn: true,
+            accesoMultiSucursal: true,
           },
         });
         if (!emp || !emp.activo || emp.eliminadoEn) continue;
@@ -57,6 +58,9 @@ export class StaffGuard implements CanActivate {
           negocioId: emp.negocioId,
           negocioSlug: payload.negocioSlug,
           sucursalId: emp.sucursalId,
+          // Lo necesita /sucursales/mis-sucursales (#2.10): un ENCARGADO con
+          // accesoMultiSucursal ve todas las sucursales, el resto solo la suya.
+          accesoMultiSucursal: emp.accesoMultiSucursal,
           tipo: tipoEsperado,
         };
         return true;

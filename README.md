@@ -543,3 +543,35 @@ Privada - Todos los derechos reservados
 **Generado con Turborepo + Prisma + NestJS + Next.js**
 
 Última actualización: 2026-10-05
+
+---
+
+## Migracion de sucursales (one-shot)
+
+Crea la sucursal "Principal" en los negocios que no tengan ninguna, deja
+exactamente 1 principal por negocio y hace backfill de `TokenValidacion.sucursalId`.
+**Es idempotente**: correrlo las veces que haga falta no duplica ni corrige nada de
+mas. No es una migracion de Prisma: no toca el schema.
+
+```bash
+cd apps/backend
+
+# 1) Solo diagnostico (no escribe nada)
+node dist/sucursales/migracion-sucursal.command.js --dry-run
+
+# 2) Aplicar
+node dist/sucursales/migracion-sucursal.command.js
+```
+
+Corre sin HTTP (`createApplicationContext`) y lee el `.env` de la raiz del monorepo
+igual que el backend.
+
+### Cuando correrlo
+
+- **No hace falta hoy**: verificado, los 10 `TokenValidacion` ya tienen `sucursalId`
+  y el unico negocio con sucursales tiene 1 principal.
+- Correrlo en produccion si aparece un negocio sin sucursal, un negocio con 0 o 2
+  principales, o un `TokenValidacion` con `sucursalId` en NULL.
+- El cron diario (`0 2 * * *`) ya repara los casos de principales inconsistentes por
+  su cuenta; el comando sirve para el resto (crear la Principal y el backfill).
+

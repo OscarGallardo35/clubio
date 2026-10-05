@@ -102,12 +102,16 @@ export class SucursalResolverService {
   }
 
   /** Invalida el cache al cambiar sucursales (llamado por el CRUD de sucursales). */
+  /**
+   * Invalida el cache de resolucion de un negocio.
+   *
+   * OJO: antes esto era un NO-OP. Armaba `sucursal:resolve:{negocioId}:*` y despues
+   * salteaba toda clave que contuviera '*', asi que el unico key que armaba nunca se
+   * borraba y el resolver seguia devolviendo datos viejos hasta 5 min (nombre,
+   * activa, esPrincipal tras un cambio). Ahora se borra por patron con SCAN.
+   */
   async invalidar(negocioId: string, empleadoId?: string) {
-    const keys = [`sucursal:resolve:${negocioId}:*`];
-    if (empleadoId) keys.push(`sucursal:empleado:${empleadoId}`);
-    // RedisService no expone SCAN; se invalidan las claves conocidas.
-    for (const k of keys) {
-      if (!k.includes('*')) await this.redis.del(k).catch(() => undefined);
-    }
+    await this.redis.delByPattern(`sucursal:resolve:${negocioId}:*`).catch(() => 0);
+    if (empleadoId) await this.redis.del(`sucursal:empleado:${empleadoId}`).catch(() => undefined);
   }
 }

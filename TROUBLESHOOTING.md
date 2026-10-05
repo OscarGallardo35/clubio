@@ -406,3 +406,51 @@ ningun negocio (cambiar una PlanFeature) va a la segunda:
 - Siempre queda ademas el `Logger` del server, porque `AuditoriaService` se traga
   los errores a proposito y un evento perdido no deja rastro.
 
+---
+
+## Fase 2 — CRUD de Sucursales (#2.10)
+
+### `resolver.invalidar()` era un NO-OP (cache de resolucion viejo 5 min)
+
+```
+const keys = [`sucursal:resolve:${negocioId}:*`];
+for (const k of keys) { if (!k.includes('*')) await this.redis.del(k) }   // nunca borra
+```
+
+El unico key que armaba contenia `*`, asi que la condicion lo salteaba siempre: el
+cache `sucursal:resolve:{negocioId}:{hash}` **nunca se invalidaba**. Renombrar una
+sucursal, cambiar la principal o eliminarla dejaba al resolver devolviendo los datos
+viejos hasta 5 minutos.
+
+`RedisService` no exponia ninguna forma de borrar por patron (y `KEYS` esta
+prohibido: bloquea el server y en Upstash puede no estar permitido). Se agrego
+`RedisService.delByPattern()` con `scanStream`.
+
+### Query params BOOLEANOS: `@Type(() => Boolean)` esta mal
+
+Todo lo que llega por `@Query()` es `string`:
+
+- `?force=true` con `@IsBoolean()` -> **400 "force must be a boolean value"**.
+- `@Type(() => Boolean)` tampoco sirve: `Boolean("false") === true`, asi que
+  `?activa=false` filtraria por `activa=true` (silenciosamente al reves).
+
+Se usa el helper `QueryBool()` de `common/utils/query.util.ts`, que compara el texto
+(`true/1/si` y `false/0/no`) y deja pasar el valor raro para que `@IsBoolean()` lo
+rechace.
+
+### `Sucursal` NO tiene soft delete con fecha: es `activa`
+
+`Sucursal.activa` (femenino) — no existe `eliminadoEn` ni `activo`. Eliminar es
+`activa: false`, y es **idempotente** (eliminar dos veces da 200 las dos veces).
+Ademas `Pedido.sucursalId` es `onDelete: Restrict`: un DELETE real de la fila
+fallaria si tiene pedidos, otra razon para el soft delete.
+
+### El colchon de gracia en USOS ABSOLUTOS hace raros los limites chicos
+
+Con `colchonGraciaDefault = 50`, un plan FREE con `sucursales: 1` permite crear
+**51** sucursales antes de bloquear (1 + 50). Igual con `empleados: 1`. Es
+consecuencia directa de la decision "usos absolutos" (el "150%" del prompt era
+ilustrativo del caso limite 100). Si se quiere un colchon sensato para limites chicos,
+hay que caparlo o hacerlo proporcional (p. ej. `min(50, limiteBase)`), pero eso
+cambia la regla confirmada.
+

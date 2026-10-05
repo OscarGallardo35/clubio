@@ -5,7 +5,8 @@ import { SucursalResolverService } from '../sucursales/sucursal-resolver.service
 import type { ActualizarConfiguracionDto } from './dto/actualizar-configuracion.dto';
 
 /** Campos que una sucursal puede sobreescribir (null = hereda del global). */
-const CAMPOS_OVERRIDE = [
+/** Campos de ConfiguracionSucursal que pueden overridear al global. */
+export const CAMPOS_OVERRIDE = [
   'premioTexto', 'sellosParaPremio', 'sellosBienvenida',
   'limiteVisitasPorDia', 'horasMinimasEntreVisitas',
   'tiposPedidoHabilitados', 'modosPagoHabilitados', 'costoEnvio',

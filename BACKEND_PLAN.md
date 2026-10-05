@@ -519,3 +519,42 @@ ilustrativo del caso de limite 100.
 resolver), asi que el limite `SUCURSALES` todavia no tiene donde engancharse. El
 `LimitesService` ya lo soporta: el #2.10 solo agrega la llamada al crear sucursales.
 
+---
+
+## Fase 2 — #2.10 CRUD de Sucursales (cerrado)
+
+14 archivos nuevos + ediciones en `sucursales.module`, `staff.guard`,
+`configuracion.service` (export de `CAMPOS_OVERRIDE`) y `redis.service`
+(`delByPattern`). **Sin migraciones**.
+
+### Decisiones confirmadas
+
+- **Sin duplicar el merge**: `configuracion-sucursal.service` valida y escribe el
+  override, y delega la resolucion en el `configEfectiva` existente (fuente unica).
+- **Sin migracion de backfill**: no habia huerfanos (10/10 tokens con `sucursalId`).
+  El metodo y el comando one-shot quedan para produccion, documentados en el README.
+- Bulk de `ItemCartaSucursal` con `$transaction`: un item invalido no deja nada a
+  medias.
+- `GET /sucursales/mis-sucursales` con alcance por rol (lo consume la PWA Staff #4.7).
+- `EliminarSucursalDto.force` reasigna empleados a la principal y cancela los pedidos
+  en curso, todo en una transaccion.
+
+### Bugs reales encontrados
+
+1. **`resolver.invalidar()` era un NO-OP** (ver TROUBLESHOOTING). El cache de
+   resolucion quedaba viejo hasta 5 min tras cualquier cambio de sucursal. Fix:
+   `RedisService.delByPattern()` con SCAN.
+2. **Query params booleanos**: `?force=true` daba 400 y `@Type(() => Boolean)`
+   convertia `"false"` en `true`. Fix: helper `QueryBool()`.
+
+### Hallazgo de diseno (a decidir)
+
+Con el colchon en usos absolutos, `sucursales: 1` de FREE permite 51 sucursales y
+`empleados: 1` permite 51 empleados. Ver TROUBLESHOOTING.
+
+### Pendiente para el #2.11
+
+`SucursalService` recien ahora existe, asi que el #2.11 (auditoria multi-sucursal)
+puede verificar que `sucursales` tambien filtra por sucursal y que `UsoMensual`
+no quedo con contadores huerfanos (la reconciliacion semanal los corrige).
+

@@ -742,7 +742,8 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 2. **`@repo/utils`: su `build` sigue fallando por `rootDir`** (importa `@repo/types` como
    valor, para los miembros del enum). El `typecheck` ya es verde con `--rootDir ../..`.
    Se cierra con el mismo Project References del punto 1.
-3. **Alinear el resto de los schemas de `@repo/validators` con sus DTOs**: se revisaron los
+3. **Alinear el resto de los schemas de `@repo/validators` con sus DTOs** (DESPUES del
+   QR #1: no es bloqueante para el menu/carrito, que valida contra la API real): se revisaron los
    enums, pero las FORMAS de los campos tambien divergen. `registrarClienteSchema` no tiene
    `negocioSlug` (que la API exige) y tiene `email`/`fechaNacimiento` que
    `RegistrarClienteDto` no acepta. Hay que revisar los 21 esquemas contra

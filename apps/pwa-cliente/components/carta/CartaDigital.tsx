@@ -25,6 +25,8 @@ import { useCarritoStore } from '@/stores/carritoStore'
 import type { ItemCarta, ModificadorElegido } from '@/lib/carrito-maquina'
 import { ordenarCategorias } from '@/lib/ordenar-categorias'
 import { ModalModificadores } from './ModalModificadores'
+import { CarritoSheet } from './CarritoSheet'
+import { BadgeCarrito } from './BadgeCarrito'
 import type { ItemParaModal } from './ModalModificadores'
 import type { GrupoModificadorPublico } from '@/lib/modificadores-cache'
 
@@ -46,6 +48,7 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
   const activarCarrito = useCarritoStore((s) => s.activar)
   const [categoria, setCategoria] = React.useState<string | null>(null)
   const [modal, setModal] = React.useState<{ item: ItemDeCarta; grupos: GrupoModificadorPublico[] } | null>(null)
+  const [sheetAbierto, setSheetAbierto] = React.useState(false)
 
   React.useEffect(() => {
     void activarCarrito(negocioSlug, sucursalId, sucursalSlug)
@@ -189,6 +192,10 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
           onAgregar={confirmarAgregado}
         />
       ) : null}
+
+      {/* El badge y el sheet comparten el mismo estado local: viven aca, no en el layout. */}
+      <BadgeCarrito onClick={() => setSheetAbierto(true)} oculto={sheetAbierto} />
+      <CarritoSheet abierto={sheetAbierto} onCerrar={() => setSheetAbierto(false)} />
     </div>
   )
 }

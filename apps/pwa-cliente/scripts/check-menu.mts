@@ -19,6 +19,7 @@ import {
 } from '../lib/modificadores-cache.ts'
 import type { EstadoModificadores } from '../lib/modificadores-cache.ts'
 import { ordenarCategorias } from '../lib/ordenar-categorias.ts'
+import { TABS, tabActiva, tabsVisibles } from '../lib/nav-tabs.ts'
 import { modificadoresParaApi } from '../lib/modificadores-seleccion.ts'
 import { alternarSeleccion, armarItemProvisional, elegidosDesde, gruposObligatoriosFaltantes, recortarNotas } from '../lib/modificadores-seleccion.ts'
 import { precioUnitario, validarModificadores } from '../lib/carrito-maquina.ts'
@@ -262,5 +263,19 @@ igual('no muta la forma interna', JSON.stringify(interna), internaCopia)
 igual('las notas de 200+ se recortan al construir el item',
   armarItemProvisional({ id: ITEM, nombre: 'H', precio: 100 }, {}, 'y'.repeat(240), []).notas.length, 200)
 chk('y el texto recortado es el de los primeros 200', armarItemProvisional({ id: ITEM, nombre: 'H', precio: 100 }, {}, 'z'.repeat(240), []).notas === 'z'.repeat(200))
+
+// --- 9. Barra inferior: deteccion de la tab activa ---------------------------
+console.log('\n== bottom nav ==')
+igual('en /menu la activa es Carta', tabActiva('/bar-la-esquina/menu', 'bar-la-esquina'), 'carta')
+igual('en /club la activa es Club', tabActiva('/bar-la-esquina/club', 'bar-la-esquina'), 'club')
+igual('en /tarjeta la activa es Mi tarjeta', tabActiva('/tarjeta'), 'tarjeta')
+igual('funciona tambien en el tenant viejo (e2e)', tabActiva('/norte/club', 'norte'), 'club')
+igual('una subruta del club tambien la marca', tabActiva('/bar-la-esquina/club/historial', 'bar-la-esquina'), 'club')
+igual('con barra al final no se rompe', tabActiva('/bar-la-esquina/menu/', 'bar-la-esquina'), 'carta')
+igual('una ruta que no es de la barra no marca nada', tabActiva('/dev/carrito'), null)
+igual('el checkout tampoco marca', tabActiva('/bar-la-esquina/checkout', 'bar-la-esquina'), null)
+igual('con menu activo se ven las 3 tabs', tabsVisibles(true).map((t) => t.clave), ['carta', 'club', 'tarjeta'])
+igual('sin menu se ven 2 (Carta no)', tabsVisibles(false).map((t) => t.clave), ['club', 'tarjeta'])
+igual('las rutas se arman con el tenant', TABS.map((t) => t.href('x')), ['/x/menu', '/x/club', '/tarjeta'])
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) { console.log(fallas.map((f) => `  - ${f}`).join('\n')); process.exit(1) }

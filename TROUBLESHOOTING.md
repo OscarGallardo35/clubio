@@ -1476,3 +1476,18 @@ commit NO se hace (queda todo staged).
 Fix: escribir el mensaje a un archivo y commitear con `git commit -F mensaje.txt`. Aplica a
 cualquier commit con comillas, backticks, `$` o parentesis.
 
+### Nunca parchear por texto suelto una linea que se repite en varios `case`
+
+Cuando una linea se repite en varios `case` de un reducer, **anclar en el label del caso**
+(`case 'EXPIRAR':`). El replace por texto puede caer en otra ocurrencia y dejar el bug vivo
+creyendo que esta arreglado.
+
+Caso real: la anulacion de `mensajeWhatsApp`/`urlValidacion` en `EXPIRAR` se aplico con un
+`str.replace(..., count=1)` sobre el `return` compartido por varios casos, y cayo en el primero
+que matcheo. El `case 'EXPIRAR'` real siguio sin anular nada, asi que el mensaje y el link del
+token vencido sobrevivian al vencimiento. Lo encontro la asercion del roundtrip
+(`SOLICITADA` -> `EXPIRAR` -> null), no la lectura: el parche "parecia" aplicado.
+
+Corolario: una asercion no sirve para confirmar que algo anda; sirve para descubrir que no anda.
+Escribirla despues de "arreglar" es cuando mas vale.
+

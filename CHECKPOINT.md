@@ -206,3 +206,43 @@ matchearon por indentacion y no escribi nada, el archivo esta intacto):
   `urlValidacion` matchee `/validar\?ref=/`.
 
 **Falta tambien** la verificacion manual en incognito (navegador: no puedo manejarlo desde aca).
+
+## BUG del WhatsApp: CERRADO de punta a punta
+
+Cerrado en los cuatro caminos, con asercion que lo cubre:
+
+| Camino | Commit | Verificacion |
+|---|---|---|
+| Backend arma el mensaje completo (negocio + Ref + URL con STAFF_APP_URL) | `9361d3a` | `POST /visitas/solicitar` 201, verificado en vivo |
+| `SolicitudOk` ya no descarta los campos | `c837463` | typecheck |
+| El flujo los guarda (`SOLICITADA`) y los limpia (`EXPIRAR` / `RESET`) | `ada43db` + `a1219f0` | `check:maquina` 67 OK |
+| La PWA los muestra (`FlujoVisita` dejo de hardcodear) | `47737df` | typecheck |
+| Sobreviven al refresh (store: los 6 lugares) | `6ee8940` | typecheck |
+| Aserciones contra el backend real | `bc6de66` | `check:flujo` 29 OK |
+
+Ojo con `a1219f0`: el primer intento (`ada43db`) parcheo el caso EQUIVOCADO porque el `return`
+se repite en varios `case`; lo cazo la asercion del roundtrip. Quedo documentado en
+TROUBLESHOOTING como regla.
+
+## Estado al dia
+
+- Rama `main`, local == remoto, ultimo commit `bc6de66`. Arbol limpio (solo `.github/` sin
+  trackear, pendiente del scope `workflow`).
+- **Los 9 checks en verde**: check:packages 0, check:validators 14 OK, check:maquina 67 OK,
+  check:carrito 79 OK, check:carta 38 OK, check:upsell 42 OK, check:menu 51 OK, test:checklist 0,
+  check:flujo 29 OK. Build backend 0, build PWA 0 (aislado con NEXT_DIST_DIR), typecheck 0.
+  `/api/health` -> db up, redis up.
+- **Proximo paso: etapa 3 del QR #1 (UI del menu)**, con el plan ya aprobado. El punto 1 del plan
+  (`modificadoresApi` + cache + store + hook + `check:menu`) esta HECHO; sigue la UI:
+  1. `CategoriaTabs` + `ItemCartaCard` + `CartaDigital` (sin modal, agregar directo los items sin
+     grupos). Decisiones ya tomadas: categorias = FILTRO (sin tabs si hay 1 categoria o <5 items),
+     foto = `ImagenOptimizada` (ya existe en `@repo/ui`) con placeholder por marca,
+     `aspectRatio` 4/3, `priority` en las 3 primeras.
+  2. `ModalModificadores` con `BottomSheet` (precio en vivo, validacion con `validarModificadores`,
+     notas ≤200).
+  3. `CarritoSheet` + `BadgeCarrito` (safe-area, oculto con el sheet abierto) + `useUpsell`.
+  4. `GatingBanner` + `BottomNav` (3 tabs).
+  5. `/dev/carrito` con simuladores + verificacion SSR.
+- Pendiente de la verificacion manual: incognito -> registrar -> sumar visita -> "Abrir WhatsApp"
+  (el mensaje debe traer nombre + Ref + URL) y abrir el link para ver la pantalla de staff.
+

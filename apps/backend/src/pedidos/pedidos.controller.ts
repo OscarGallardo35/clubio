@@ -47,7 +47,9 @@ export class PedidosController {
   // correr suites e2e sin que el propio limite corte los tests.
   @Throttle({
     default: {
-      limit: Number(process.env.RATE_PEDIDOS_CREATE_LIMIT ?? 10),
+      // 50/hora por IP: con 10, un local detras de un solo NAT (el wifi del bar) se
+    // quedaba afuera despues de 5-10 mesas.
+    limit: Number(process.env.RATE_PEDIDOS_CREATE_LIMIT ?? 50),
       ttl: Number(process.env.RATE_PEDIDOS_CREATE_TTL_MS ?? 3_600_000),
     },
   })

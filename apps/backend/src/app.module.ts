@@ -9,6 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { JwtGlobalModule } from './common/auth/jwt-global.module';
 import { RedisModule } from './common/redis/redis.module';
 import { AuditoriaModule } from './common/auditoria/auditoria.module';
+import { mensajeDeThrottle } from './common/constants/throttle-messages';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { SucursalesModule } from './sucursales/sucursales.module';
@@ -60,7 +61,11 @@ function redisConnectionFromUrl(raw?: string) {
     // El cwd del backend es apps/backend, por eso '../../'.
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env'] }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ThrottlerModule.forRoot({
+      // Forma objeto (no array): es la unica que admite `errorMessage`.
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+      errorMessage: mensajeDeThrottle,
+    }),
     BullModule.forRoot({ connection: redisConnectionFromUrl(process.env.REDIS_URL) }),
     PrismaModule,
     JwtGlobalModule,

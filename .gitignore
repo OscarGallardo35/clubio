@@ -19,3 +19,6 @@ next-env.d.ts
 
 # dist de aislamiento del build (NEXT_DIST_DIR)
 .next-build/
+
+# Valores de secretos para el deploy (nunca al repo)
+DEPLOY_SECRETS.md

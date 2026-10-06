@@ -315,7 +315,12 @@ console.log(`  (socket: ${ws.detalle})`);
 const ITEM_SEED = 'cmuvjy5ku002kbq7jjh4uwzph'; // Coca-Cola 500ml del seed
 const sufijoPedido = String(Date.now()).slice(-5);
 
-async function pedidoNuevo(tipo: 'TAKEAWAY' | 'DELIVERY') {
+/**
+ * `cantidad` importa: DELIVERY tiene un MINIMO de pedido (el del seed es $3000 y el
+ * item de prueba $1500), asi que con 1 item el backend contesta 400
+ * "El pedido minimo para delivery es $3000". Se piden 3 para no depender del precio.
+ */
+async function pedidoNuevo(tipo: 'TAKEAWAY' | 'DELIVERY', cantidad = 1) {
   const r = await call('/pedidos', {
     method: 'POST',
     body: JSON.stringify({
@@ -324,7 +329,7 @@ async function pedidoNuevo(tipo: 'TAKEAWAY' | 'DELIVERY') {
       nombreCliente: `E2E Pedido ${sufijoPedido}`,
       telefono: `+5493587${sufijoPedido}${tipo === 'DELIVERY' ? '1' : '2'}`,
       ...(tipo === 'DELIVERY' ? { direccion: 'Av. Siempre Viva 742' } : {}),
-      items: [{ itemId: ITEM_SEED, cantidad: 1 }],
+      items: [{ itemId: ITEM_SEED, cantidad: tipo === 'DELIVERY' ? Math.max(cantidad, 3) : cantidad }],
     }),
   });
   return { status: r.status, body: r.body };
@@ -395,6 +400,56 @@ const wsP = await new Promise<{ ok: boolean; detalle: string }>((resolve) => {
 });
 chk('el socket de /pedidos conecta con la COOKIE (sin token en memoria)', wsP.ok, wsP.detalle);
 console.log(`  (socket pedidos: ${wsP.detalle})`);
+
+
+// ---------------------------------------------------------------------------
+// 17) Detalle del pedido: items, timestamps y el WhatsApp al cliente.
+// ---------------------------------------------------------------------------
+const { urlWhatsAppCliente, hitosDelPedido, ETIQUETA_PAGO } = await import('../lib/pedidos-maquina.ts');
+
+chk('urlWhatsAppCliente arma el link con mensaje', urlWhatsAppCliente('+5493585705745', 'Hola!') === 'https://wa.me/5493585705745?text=Hola!');
+chk('urlWhatsAppCliente sin mensaje NO inventa texto', urlWhatsAppCliente('+5493585705745') === 'https://wa.me/5493585705745');
+chk('urlWhatsAppCliente rechaza un telefono vacio', urlWhatsAppCliente('') === null);
+chk('ETIQUETA_PAGO cubre los 4 modos', Object.keys(ETIQUETA_PAGO).length === 4);
+
+const nd = await pedidoNuevo('DELIVERY');
+const detId: string | undefined = nd.body?.pedidoId;
+const detLink: string | undefined = nd.body?.linkToken;
+chk('el pedido DELIVERY se crea', nd.status === 201 && typeof detId === 'string', `status ${nd.status} ${JSON.stringify(nd.body).slice(0, 90)}`);
+if (detId) {
+  const det = await call(`/pedidos/${detId}`, { cookie: cookieEmpleado });
+  chk('GET /pedidos/:id -> 200', det.status === 200, `status ${det.status}`);
+  chk('el detalle trae los items con la forma real (nombre/cantidad/precioFinal/subtotal)', Array.isArray(det.body?.items) && typeof det.body.items[0]?.nombre === 'string' && typeof det.body.items[0]?.precioFinal === 'number' && typeof det.body.items[0]?.subtotal === 'number', JSON.stringify(det.body?.items?.[0] ?? {}).slice(0, 110));
+  chk('el detalle trae los MISMOS items que la lista', JSON.stringify(det.body?.items) === JSON.stringify((await call('/pedidos', { cookie: cookieEmpleado })).body?.data?.find((p: { id: string }) => p.id === detId)?.items));
+  chk('el detalle trae direccion (DELIVERY) y modo de pago', det.body?.direccion === 'Av. Siempre Viva 742' && det.body?.modoPago === 'EFECTIVO');
+  // Sin cliente.id (pedido de invitado) pero CON telefono: el WhatsApp igual se puede abrir.
+  chk('pedido sin cliente.id tiene telefono para el WhatsApp', det.body?.clienteId === null && typeof det.body?.telefono === 'string' && det.body.telefono.length > 6, `clienteId=${det.body?.clienteId}`);
+  chk('el detalle recien creado tiene UN solo hito (recien creado)', hitosDelPedido(det.body).length === 1, `hitos=${hitosDelPedido(det.body).length}`);
+
+  // ENTREGADO: el timestamp del estado actual existe.
+  for (const e of ['CONFIRMADO', 'EN_PREPARACION', 'LISTO', 'ENVIADO', 'ENTREGADO']) {
+    await call(`/pedidos/${detId}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: e }) });
+  }
+  const ent = await call(`/pedidos/${detId}`, { cookie: cookieEmpleado });
+  chk('un pedido ENTREGADO tiene entregadoEn', Boolean(ent.body?.entregadoEn), `entregadoEn=${ent.body?.entregadoEn}`);
+  chk('y tambien confirmadoEn y enviadoEn', Boolean(ent.body?.confirmadoEn) && Boolean(ent.body?.enviadoEn));
+  chk('el timeline de un ENTREGADO tiene 4 hitos', hitosDelPedido(ent.body).length === 4, `hitos=${hitosDelPedido(ent.body).length}`);
+  const pubEnt = detLink ? await call(`/pedidos/publico/${detLink}`) : { body: null };
+  chk('el cliente ve la direccion y el envio en su link', Boolean(pubEnt.body));
+}
+
+// CANCELADO vs RECHAZADO: quien guarda motivo y quien no.
+const nc = await pedidoNuevo('TAKEAWAY');
+const idCancel: string | undefined = nc.body?.pedidoId;
+if (idCancel) {
+  await call(`/pedidos/${idCancel}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'CONFIRMADO' }) });
+  const canc = await call(`/pedidos/${idCancel}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'CANCELADO' }) });
+  chk('el staff puede CANCELAR desde CONFIRMADO', canc.status < 300 && canc.body?.estado === 'CANCELADO', `status ${canc.status}`);
+  const detCanc = await call(`/pedidos/${idCancel}`, { cookie: cookieEmpleado });
+  // HALLAZGO: el modelo solo tiene `motivoRechazo`, y el cancel del staff no lo setea.
+  // Asi que un CANCELADO NO tiene motivo: la pantalla dice "Sin motivo registrado".
+  chk('un CANCELADO NO tiene motivo (solo RECHAZADO lo guarda)', detCanc.body?.motivoRechazo === null, `motivoRechazo=${JSON.stringify(detCanc.body?.motivoRechazo)}`);
+}
 
 console.log('  (nota: el caso "token vencido" no se cubre: requiere firmar con JWT_EMPLEADO_SECRET real)');
 

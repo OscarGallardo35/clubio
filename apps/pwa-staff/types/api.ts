@@ -157,15 +157,30 @@ export interface Paginado<T> {
   pageSize: number
 }
 
-/** Un item del pedido tal como se guarda (columna Json `items`). */
+/**
+ * Un item dentro de la columna Json `Pedido.items`.
+ * Forma REAL de `apps/backend/src/pedidos/interfaces/pedido-item.interface.ts`:
+ * `precioBase` es el de carta (con override de sucursal) y `precioFinal` es
+ * precioBase + la suma de los `precioExtra` elegidos. `subtotal` viene ya calculado.
+ * Un registro de modificador por OPCION elegida.
+ */
+export interface ModificadorElegido {
+  grupoId: string
+  grupoNombre: string
+  opcionId: string
+  opcionNombre: string
+  precioExtra: number
+}
+
 export interface ItemPedido {
-  itemId?: string
-  nombre?: string
-  cantidad?: number
-  precioUnitario?: number
-  subtotal?: number
+  itemId: string
+  nombre: string
+  precioBase: number
+  precioFinal: number
+  cantidad: number
   notas?: string
-  modificadores?: { grupoId?: string; grupo?: string; opciones?: { id?: string; nombre?: string; precio?: number }[] }[]
+  modificadores: ModificadorElegido[]
+  subtotal: number
 }
 
 export interface PedidoStaff {

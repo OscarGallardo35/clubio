@@ -751,6 +751,26 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 
 ## TODO antes de la demo con un cliente real
 
+### TODO pre-demo: `GET /pedidos/:id/historial` o dejarlo con timestamps
+
+Hoy el detalle del pedido muestra un timeline con los **timestamps del modelo**
+(`creadoEn -> confirmadoEn -> enviadoEn -> entregadoEn`). Lo que NO hay es la LISTA de
+transiciones (quien cambio a que y cuando): la auditoria se registra en `Auditoria`
+(`pedido.<estado>`), pero no se expone por endpoint.
+
+Decision pendiente: agregar `GET /pedidos/:id/historial` (leyendo `Auditoria` con
+`detalle.pedidoId`) o quedarse con los timestamps, que cubren el caso normal. Nota: el
+modelo **no tiene `enPreparacionEn`**, asi que el paso "en preparacion" no tiene hora
+propia; solo se ve por el estado actual.
+
+### REGLA: cancelar un pedido es de CLIENTE; el staff usa PATCH /:id/estado
+
+`PATCH /pedidos/:id/cancelar` esta detras de `JwtClienteGuard`: es el cliente quien cancela
+su propio pedido. El staff NO puede usar ese endpoint: cancela con
+`PATCH /pedidos/:id/estado { estado: 'CANCELADO' }`, y solo desde CONFIRMADO o
+EN_PREPARACION. Un pedido PENDIENTE se RECHAZA (con motivo >= 10 caracteres), no se cancela.
+
+
 ### TODO pre-PWA-Admin: auditar TODOS los stubs de `@repo/ui`
 
 "Auditar TODOS los stubs de @repo/ui antes de usar el componente en otra PWA. Lista actual: dialog,

@@ -1,4 +1,4 @@
-import type { EstadoPedido, TipoPedido } from '@/types/api';
+import type { EstadoPedido, ModoPagoPedido, PedidoStaff, TipoPedido } from '@/types/api';
 
 /**
  * ESPEJO de `apps/backend/src/pedidos/helpers/transiciones-estado.ts`.
@@ -93,4 +93,54 @@ export function horaCorta(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}
+
+export const ETIQUETA_PAGO: Record<ModoPagoPedido, string> = {
+  EFECTIVO: 'Efectivo',
+  TRANSFERENCIA: 'Transferencia',
+  MERCADO_PAGO: 'Mercado Pago',
+  TARJETA: 'Tarjeta',
+};
+
+export interface HitoPedido {
+  etiqueta: string;
+  fecha: string;
+}
+
+/**
+ * Hitos del pedido, SOLO los que existen.
+ *
+ * Ojo: el modelo NO tiene `enPreparacionEn` (la columna no existe; el spec del
+ * detalle lo mencionaba como "(si existe)"). Los timestamps reales son creadoEn,
+ * confirmadoEn, enviadoEn y entregadoEn.
+ */
+export function hitosDelPedido(p: PedidoStaff): HitoPedido[] {
+  const hitos: HitoPedido[] = [{ etiqueta: 'Recibido', fecha: p.creadoEn }];
+  if (p.confirmadoEn) hitos.push({ etiqueta: 'Confirmado', fecha: p.confirmadoEn });
+  if (p.enviadoEn) hitos.push({ etiqueta: 'Enviado', fecha: p.enviadoEn });
+  if (p.entregadoEn) hitos.push({ etiqueta: 'Entregado', fecha: p.entregadoEn });
+  return hitos;
+}
+
+export function fechaHoraCorta(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+/**
+ * Link de WhatsApp para avisarle AL CLIENTE.
+ *
+ * Si no hay mensaje pre-armado se devuelve el link SIN texto: inventar el texto
+ * seria peor (el cliente recibiria algo que el local no escribio). El backend NO
+ * manda `mensajeWhatsApp` en `GET /pedidos/:id` (lo arma solo al crear el pedido).
+ */
+export function urlWhatsAppCliente(telefono: string, mensaje?: string | null): string | null {
+  const digitos = (telefono ?? '').replace(/\D/g, '');
+  if (digitos.length < 8) return null;
+  return mensaje
+    ? `https://wa.me/${digitos}?text=${encodeURIComponent(mensaje)}`
+    : `https://wa.me/${digitos}`;
 }

@@ -1303,24 +1303,22 @@ distDir: process.env.NEXT_DIST_DIR || '.next'
 Con eso el aislamiento si funciona (verificado con el dev server vivo: el build escribe en
 `.next-build` y las rutas del dev siguen respondiendo 200).
 
-### Una clase de Tailwind puede NO compilar y no avisar nada
+### Al verificar una clase de Tailwind, mirar el CSS SERVIDO (no el HTML)
 
-Dos casos reales, los dos silenciosos (el HTML sigue con la clase, el CSS no la tiene):
-
-1. `[scroll-snap-type:x_mandatory]` (propiedad arbitraria): Tailwind no la emitio. Hay
-   utilidad nativa -> usar `snap-x snap-mandatory`.
-2. `[mask-image:linear-gradient(...)]`: tampoco, ni con `_` en los espacios ni con
-   `calc(100%_-_1rem)`. Ojo que `calc(100%-1rem)` sin espacios ademas es CSS invalido.
-
-**Regla: verificar la clase en el CSS SERVIDO, no en el HTML.** Un grep sobre el HTML da
-falso positivo, porque el nombre de la clase esta en el markup aunque el navegador no
-tenga la regla (me paso al verificar este fix). El CSS sale de los `<link>` del HTML.
-
-Para mascaras y cosas raras, mejor una clase CSS propia en el stylesheet que una utilidad
-arbitraria. Ojo: el CSS del package (`packages/ui/src/styles/globals.css`) NO se importa
-desde la PWA -- Next solo admite CSS global del arbol de la app -- asi que va la fuente en
-el package y una COPIA en `apps/pwa-cliente/app/globals.css` (es la convencion que ya
-tenian los tokens).
+1. **El HTML no prueba nada.** El nombre de la clase esta en el markup aunque Tailwind no
+   haya emitido la regla, asi que un grep sobre el HTML da falso positivo (paso al
+   verificar el fix del Tabs). El CSS sale de los `<link>` del HTML: grepear ahi.
+2. **Las clases arbitrarias no siempre compilan, y fallan en silencio.**
+   - Los espacios dentro de `calc()` van como `_` en la clase (`calc(100%_-_1rem)`):
+     `calc(100%-1rem)` sin espacios es CSS invalido y Tailwind no lo emite.
+   - Las mascaras complejas (`[mask-image:linear-gradient(...)]`) pueden no emitirse nunca,
+     ni con los `_` correctos.
+3. **Ante la duda: utilidad nativa o clase CSS real.**
+   - `[scroll-snap-type:x_mandatory]` no se emitia -> `snap-x snap-mandatory`.
+   - Los fades de borde -> clases `.tabs-fade-*` en el stylesheet.
+   Ojo: el CSS del package (`packages/ui/src/styles/globals.css`) NO se importa desde la
+   PWA (Next solo admite CSS global del arbol de la app): va la fuente en el package y una
+   COPIA en `apps/pwa-cliente/app/globals.css`, como ya hacian los tokens.
 
 ### En una llamada de background, no encadenar nada antes del comando del servidor
 

@@ -1177,3 +1177,35 @@ hace `scripts/check-flujo-ws.mts`), o compilar con `tsc` antes de correr.
 No se cambia `ApiError` a campos explicitos: el costo de no poder importar el package
 desde scripts es aceptable y la deuda no vale la pena.
 
+### CORS: con credenciales el origen tiene que ser EXACTO (y el celular no es localhost)
+
+La PWA Cliente usa `credentials: 'include'` (cookie HttpOnly), y eso cambia la regla de
+CORS: el navegador exige que el origen de la pagina este **literalmente** en la lista, sin
+comodines, y que la respuesta traiga `Access-Control-Allow-Credentials: true`.
+
+Sintoma: la pantalla funciona (el SSR es del mismo origen, asi que no pasa por CORS) pero
+al tocar un boton no pasa nada y en la consola del navegador aparece el bloqueo. Nada en el
+servidor se ve mal: la request del navegador **nunca sale**.
+
+Se cobra dos veces al probar desde el celular:
+
+1. `CORS_ORIGINS` del `.env` tiene que incluir el origen **con la IP de la LAN**
+   (`http://192.168.0.103:3001`), no solo `localhost:3001`.
+2. Las llamadas del CLIENTE tienen que apuntar a la IP de la LAN, no a `localhost`:
+   sin `NEXT_PUBLIC_API_URL=http://192.168.0.103:3000` en `apps/pwa-cliente/.env.local`,
+   el telefono intenta pegarle a **si mismo** (`localhost` = el telefono) y falla.
+   Ojo: `NEXT_PUBLIC_*` se inlinea en el bundle, asi que hay que reiniciar el server.
+
+Verificacion (sin navegador, con la respuesta real):
+
+```bash
+curl -s -i -X OPTIONS http://localhost:3000/api/auth/cliente/registrar \
+  -H "Origin: http://192.168.0.103:3001" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: content-type" \
+  | grep -iE "^HTTP|access-control-allow-(origin|credentials)"
+```
+
+Si `access-control-allow-origin` no es EXACTAMENTE el origen pedido, el flujo no va a
+funcionar en el celular por mas que todo el resto este bien.
+

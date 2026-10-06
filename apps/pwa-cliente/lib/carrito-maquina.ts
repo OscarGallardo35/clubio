@@ -93,7 +93,7 @@ export interface SugerenciaUpsell {
 }
 
 export interface ErrorCarrito {
-  /** 'RATE_LIMIT' | 'VALIDACION' | 'SUCURSAL_CERRADA' | 'RED' | 'DESCONOCIDO' */
+  /** 'RATE_LIMIT' | 'VALIDACION' | 'SUCURSAL_CERRADA' | 'RED' | 'DESCONOCIDO' | 'CARTA_VENCIDA' */
   codigo: string
   /** Copy para el usuario (sin jerga tecnica). */
   mensaje: string
@@ -250,6 +250,11 @@ export function clasificarError(status: number, mensajeBackend: string): ErrorCa
   }
   if (status === 400 || status === 422) {
     return { codigo: 'VALIDACION', mensaje: mensajeBackend || 'Revisá los datos del pedido' }
+  }
+  if (status === 410) {
+    // La carta cambio entre que se armo el carrito y el checkout: los precios o los items ya no
+    // valen, asi que no sirve reintentar igual. Se recarga para traer la version nueva.
+    return { codigo: 'CARTA_VENCIDA', mensaje: 'La carta cambió, recargá la página para ver la nueva versión.' }
   }
   if (status === 403) {
     return { codigo: 'SUCURSAL_CERRADA', mensaje: mensajeBackend || 'La sucursal no está tomando pedidos ahora' }

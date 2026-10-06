@@ -2055,3 +2055,40 @@ el flujo despacha `ABRIR_REGISTRO`, que ya era la transicion que muestra el regi
 **un 401 es un estado, no un fallo.** La diferencia entre /club y /checkout era solo esa: el hook del
 checkout lo trataba bien y `solicitarVisita` no.
 
+### REGLA: un stub exportado sin implementar es una trampa
+
+"Un stub exportado sin implementar es una trampa. El import compila, el fallo aparece en runtime. Si un
+componente va a estar en index.ts, que sea real o no esté."
+
+Caso real (`@repo/ui`). `index.ts` exportaba `RadioGroup`, `Checkbox`, `Textarea` y `Switch`, y ninguno
+estaba implementado: `RadioGroup` salía de `crearStub` (avisaba por consola solo en dev), `Checkbox` era
+`<input type="checkbox" />` pelado, `Textarea` un `<textarea />` pelado y `Switch` otro
+`<input type="checkbox" />`. Los cuatro compilaban desde afuera, así que el primer síntoma era un
+control sin estilo o un `<Switch>` que se ve como un checkbox, ya en el navegador.
+
+Regla: si el nombre está en el `index`, el componente está implementado. El helper `crearStub` sigue
+existiendo porque **otros 11 componentes** todavía lo usan (accordion, dialog, select, sheet,
+dropdown-menu, popover, tooltip, avatar, data-table, alert-dialog); no se borra el helper, se vacía de
+a uno.
+
+### PRIMER HARNESS SSR DEL REPO: por qué es integration test y no unit
+
+No se puede testear los componentes de `@repo/ui` con un script `node` suelto, por dos motivos
+verificados a mano:
+
+1. **Node no transpila JSX**: los componentes son `.tsx` y `node --experimental-strip-types` solo borra
+   tipos, no transforma JSX.
+2. **El `dist` de `@repo/ui` es ESM con imports sin extensión** (`dist/index.js` hace
+   `from './components/button'`), y el resolver de ESM de Node exige la extensión:
+   `ERR_MODULE_NOT_FOUND`. Probado: el probe muere ahí.
+
+O sea que un `check:ui.mts` necesitaría un bundler (`esbuild`/`tsx`) como dependencia nueva. Como el
+repo ya tenía el patrón de **integration test contra un server vivo** (`check:flujo-ws` pega al backend
+de `:3000`), el harness SSR hace lo mismo: pega a `/dev/ui` de la PWA Cliente (`:3001`), donde Next ya
+renderiza los componentes en el servidor, y asserta sobre el **HTML servido** (`role="radiogroup"`,
+`role="radio"`, `type="checkbox"`, `<textarea`, `role="switch"`, `data-state`). Cero dependencias
+nuevas y se verifica el SSR real, no una simulación.
+
+Consecuencia: `check:ui-ssr` necesita el dev server de la PWA Cliente vivo, igual que `check:flujo-ws`
+necesita el backend.
+

@@ -221,6 +221,7 @@ export const endpoints = {
     admin: '/api/carta/admin',
     create: '/api/carta',
     update: (id: string) => `/api/carta/${id}`,
+    disponibilidad: (id: string) => `/api/carta/${id}/disponibilidad`,
     delete: (id: string) => `/api/carta/${id}`,
     reordenar: '/api/carta/reordenar',
   },

@@ -1,6 +1,9 @@
 import { ApiClient, endpoints } from '@repo/api-client';
 import type {
+  ActualizarItemCartaBody,
+  CartaAdminRespuesta,
   EmpleadoMe,
+  ItemCarta,
   EstadoPedido,
   Paginado,
   PedidoStaff,
@@ -96,4 +99,34 @@ export const pedidosApi = {
   },
 
   estadisticas: () => api.get<Record<string, unknown>>(endpoints.pedidos.estadisticas),
+};
+
+/**
+ * Carta del lado staff.
+ *
+ * `admin` y las mutaciones estan detras de `@RequiereFeature('menu')` + PlanGuard y
+ * son de rol DUENO/ENCARGADO: un MESERO recibe 403. La pantalla lo checa ANTES de
+ * mostrar los controles.
+ */
+export const cartaApi = {
+  admin: (filtros: { categoria?: string; search?: string; disponible?: string } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filtros)) if (v !== undefined && v !== '') qs.set(k, String(v));
+    const q = qs.toString();
+    // Devuelve { total, categorias: [{categoria, items}] }: ya viene AGRUPADO por categoria.
+    return api.get<CartaAdminRespuesta>(`${endpoints.carta.admin}${q ? `?${q}` : ''}`);
+  },
+
+  /**
+   * Prende/apaga un item. Afecta al item del NEGOCIO (no hay override por sucursal
+   * en este endpoint): lo que se apaga aca desaparece de TODAS las sucursales.
+   */
+  disponibilidad: (id: string, disponible: boolean) =>
+    api.patch<Pick<ItemCarta, 'id' | 'nombre' | 'disponible'>>(
+      endpoints.carta.disponibilidad(id),
+      { disponible },
+    ),
+
+  actualizar: (id: string, body: ActualizarItemCartaBody) =>
+    api.patch<ItemCarta>(endpoints.carta.update(id), body),
 };

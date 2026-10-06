@@ -253,8 +253,8 @@ if (token3) {
 
 // Alcance por sucursal: Pedro (MESERO, PIN 3333) es de otra sucursal y NO tiene
 // accesoMultiSucursal, asi que no debe ver las solicitudes de esta.
-const loginPedro = await call('/auth/empleado/login', { method: 'POST', body: JSON.stringify({ negocioSlug: SLUG, pin: '3333' }) });
-const cookiePedro = loginPedro.setCookie ? loginPedro.setCookie.split(';')[0] : '';
+var loginPedro = await call('/auth/empleado/login', { method: 'POST', body: JSON.stringify({ negocioSlug: SLUG, pin: '3333' }) });
+var cookiePedro = loginPedro.setCookie ? loginPedro.setCookie.split(';')[0] : '';
 if (cookiePedro) {
   const mePedro = await call('/auth/empleado/me', { cookie: cookiePedro });
   const suyo = mePedro.body?.sucursal?.slug;
@@ -450,6 +450,62 @@ if (idCancel) {
   // Asi que un CANCELADO NO tiene motivo: la pantalla dice "Sin motivo registrado".
   chk('un CANCELADO NO tiene motivo (solo RECHAZADO lo guarda)', detCanc.body?.motivoRechazo === null, `motivoRechazo=${JSON.stringify(detCanc.body?.motivoRechazo)}`);
 }
+
+
+// ---------------------------------------------------------------------------
+// 18) Carta: listar, apagar/prender y cambiar precio.
+//     Los endpoints son DUENO/ENCARGADO (+ feature 'menu'), asi que tambien se
+//     verifica que un MESERO reciba 403: es el rol que mas va a tocar la app.
+// ---------------------------------------------------------------------------
+const carta = await call('/carta/admin', { cookie: cookieEmpleado });
+const cartaItems = (carta.body?.categorias ?? []).flatMap((g: { items: unknown[] }) => g.items ?? []);
+chk('GET /carta/admin -> 200 con items (agrupado por categoria)', carta.status === 200 && Array.isArray(cartaItems) && cartaItems.length > 0, `status ${carta.status} items ${cartaItems.length}`);
+chk('los items traen la forma real (categoria/nombre/precio number/disponible)', typeof cartaItems[0]?.categoria === 'string' && typeof cartaItems[0]?.nombre === 'string' && typeof cartaItems[0]?.precio === 'number' && typeof cartaItems[0]?.disponible === 'boolean');
+
+const it = cartaItems.find((x: { nombre: string }) => x.nombre.includes('Coca')) ?? cartaItems[0];
+if (it) {
+  const id: string = it.id;
+  const antes = it.disponible;
+  const original = it.precio;
+
+  // Disponibilidad: apagar -> el PUBLICO deja de verlo -> volver a dejarlo como estaba.
+  // El restore va en `finally`: si una asercion de mas abajo tira (como paso con la
+  // forma de la respuesta), el item quedaba APAGADO en la DB y el proximo pedido del
+  // cliente fallaba con "Items no disponibles".
+  try {
+    const off = await call(`/carta/${id}/disponibilidad`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ disponible: false }) });
+    chk('PATCH /carta/:id/disponibilidad apaga el item', off.status < 300 && off.body?.disponible === false, `status ${off.status}`);
+    const adminOff = await call('/carta/admin', { cookie: cookieEmpleado });
+    chk('el item apagado queda en false en el siguiente GET', ((adminOff.body?.categorias ?? []).flatMap((g: { items: { id: string; disponible: boolean }[] }) => g.items)).find((x: { id: string }) => x.id === id)?.disponible === false);
+    const pub = await call('/carta?sucursalSlug=centro');
+    chk('el item apagado NO aparece en la carta PUBLICA (lo que ve el cliente)', !((pub.body?.categorias ?? []).flatMap((g: { items: { id: string }[] }) => g.items)).some((x: { id: string }) => x.id === id), `status ${pub.status}`);
+  } finally {
+    const on = await call(`/carta/${id}/disponibilidad`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ disponible: antes }) });
+    chk('el item vuelve a estar como estaba (restore en finally)', on.status < 300 && on.body?.disponible === antes);
+  }
+
+
+  // Precio
+  const nuevoPrecio = original + 1;
+  const upd = await call(`/carta/${id}`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ precio: nuevoPrecio }) });
+  chk('PATCH /carta/:id cambia el precio', upd.status < 300, `status ${upd.status} ${JSON.stringify(upd.body).slice(0, 80)}`);
+  const adminPrecio = await call('/carta/admin', { cookie: cookieEmpleado });
+  chk('el precio nuevo se ve en el siguiente GET', ((adminPrecio.body?.categorias ?? []).flatMap((g: { items: { id: string }[] }) => g.items)).find((x: { id: string }) => x.id === id)?.precio === nuevoPrecio);
+  await call(`/carta/${id}`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ precio: original }) });
+  const adminRestaurado = await call('/carta/admin', { cookie: cookieEmpleado });
+  chk('el precio queda restaurado al original', ((adminRestaurado.body?.categorias ?? []).flatMap((g: { items: { id: string }[] }) => g.items)).find((x: { id: string }) => x.id === id)?.precio === original);
+}
+
+// Gate por ROL: un MESERO no puede tocar la carta (RolesGuard).
+if (cookiePedro) {
+  const cartaMesero = await call('/carta/admin', { cookie: cookiePedro });
+  chk('un MESERO recibe 403 en /carta/admin (la pantalla lo avisa antes)', cartaMesero.status === 403, `status ${cartaMesero.status}`);
+}
+
+// Gate por FEATURE: el negocio del seed tiene 'menu' habilitada.
+const meNeg = await call('/auth/empleado/me', { cookie: cookieEmpleado });
+chk('el plan del negocio tiene la feature "menu" (es la que habilita la carta, no "carta")', meNeg.body?.negocio?.features?.menu?.habilitada === true, JSON.stringify(Object.keys(meNeg.body?.negocio?.features ?? {})));
+console.log('  (nota: el caso "sin la feature menu" no se puede probar aca: hay que cambiar el plan del negocio)');
 
 console.log('  (nota: el caso "token vencido" no se cubre: requiere firmar con JWT_EMPLEADO_SECRET real)');
 

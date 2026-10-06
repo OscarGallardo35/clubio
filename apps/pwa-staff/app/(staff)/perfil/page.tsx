@@ -1,6 +1,7 @@
 'use client'
 
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Separator } from '@repo/ui';
+import Link from 'next/link';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Separator, buttonVariants } from '@repo/ui';
 import { useEmpleado } from '@/hooks/useEmpleado';
 
 /** Quien soy, donde trabajo, con que plan, y como salir. */
@@ -64,9 +65,11 @@ export default function PerfilPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Carta</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Disponibilidad de items y modificadores. Se implementa en la Fase 5 y vive adentro de Perfil
-          (no es una tab).
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>Prender/apagar items y cambiar precios. Vive aca y no es una tab.</p>
+          <Link href="/carta" className={buttonVariants({ variant: 'outline', className: 'min-h-12 w-full' })}>
+            Abrir la carta
+          </Link>
         </CardContent>
       </Card>
 

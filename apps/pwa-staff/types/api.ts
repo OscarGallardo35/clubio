@@ -212,3 +212,43 @@ export interface PedidoStaff {
   cliente?: { id: string; nombre: string } | null
   empleadoAsignado?: { id: string; nombre: string } | null
 }
+
+// ---------------------------------------------------------------------------
+// Carta (staff). OJO: estos endpoints son DUENO/ENCARGADO (RolesGuard), no de
+// cualquier empleado. Y la feature que los habilita se llama 'menu' (no 'carta').
+// ---------------------------------------------------------------------------
+export interface ItemCarta {
+  id: string
+  categoria: string
+  nombre: string
+  descripcion: string | null
+  /** Decimal(10,2) en la DB; la API lo manda como number. */
+  precio: number
+  fotoUrl: string | null
+  etiquetas: string[]
+  disponible: boolean
+  orden: number
+}
+
+/** Body de PATCH /carta/:id. Todo opcional; solo se manda lo que cambio. */
+export interface ActualizarItemCartaBody {
+  categoria?: string
+  nombre?: string
+  descripcion?: string
+  precio?: number
+  fotoUrl?: string
+  etiquetas?: string[]
+  disponible?: boolean
+  orden?: number
+}
+
+/** Envelope REAL de GET /carta/admin: agrupado por categoria (no es {data,...}). */
+export interface GrupoCarta {
+  categoria: string
+  items: ItemCarta[]
+}
+
+export interface CartaAdminRespuesta {
+  total: number
+  categorias: GrupoCarta[]
+}

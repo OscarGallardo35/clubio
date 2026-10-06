@@ -751,6 +751,13 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 
 ## TODO antes de la demo con un cliente real
 
+### TODO pre-demo: limpiar los datos de prueba
+
+Los harnesses de integracion (`check-auth-staff`, `check-flujo-ws`) **crean datos reales** en la DB de
+desarrollo: clientes con telefonos `+5493585...`, pedidos de todos los tipos y visitas aprobadas/
+rechazadas. Antes de una demo hay que limpiar clientes/pedidos/visitas de prueba (y el `seed.ts` resync).
+
+
 ### TODO pre-demo: `GET /pedidos/:id/historial` o dejarlo con timestamps
 
 Hoy el detalle del pedido muestra un timeline con los **timestamps del modelo**

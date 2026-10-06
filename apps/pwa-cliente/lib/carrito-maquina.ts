@@ -116,6 +116,8 @@ export interface EstadoCarrito {
   pedido: { linkToken: string; numero?: number | undefined } | null
   /** Aviso no bloqueante (ej: se reinicio el carrito al cambiar de sucursal). */
   aviso: string | null
+  /** Notas generales del pedido (una sola, no por item). Persiste. */
+  notasPedido?: string | undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +147,7 @@ export type EventoCarrito =
   | { tipo: 'PEDIDO_ERROR'; status: number; mensaje: string }
   | { tipo: 'REINTENTAR' }
   | { tipo: 'DESCARTAR_AVISO' }
+  | { tipo: 'SET_NOTAS_PEDIDO'; notas: string }
 
 // ---------------------------------------------------------------------------
 // Helpers puros
@@ -280,6 +283,7 @@ export function estadoInicial(negocioSlug: string, sucursalId: string | null, su
     error: null,
     pedido: null,
     aviso: null,
+    notasPedido: '',
   }
 }
 
@@ -441,6 +445,10 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
       if (estado.fase !== 'checkout') return estado
       return { ...estado, error: null }
 
+    case 'SET_NOTAS_PEDIDO':
+      // Maximo del backend para las notas del pedido (el de por item es 200).
+      return { ...estado, notasPedido: evento.notas.slice(0, 500) }
+
     case 'DESCARTAR_AVISO':
       return { ...estado, aviso: null }
 
@@ -470,6 +478,8 @@ export interface CarritoPersistido {
   cliente: DatosCliente
   /** Con el linkToken se puede seguir el pedido despues de reabrir. */
   pedido: { linkToken: string; numero?: number | undefined } | null
+  /** Notas generales del pedido (se persisten con el resto del formulario). */
+  notasPedido?: string | undefined
 }
 
 export function recortarParaPersistir(estado: EstadoCarrito): CarritoPersistido {
@@ -483,6 +493,7 @@ export function recortarParaPersistir(estado: EstadoCarrito): CarritoPersistido 
     modoPago: estado.modoPago,
     cliente: estado.cliente,
     pedido: estado.pedido,
+    notasPedido: estado.notasPedido,
   }
 }
 
@@ -516,6 +527,7 @@ export function deserializarCarrito(crudo: unknown, negocioSlug: string): Carrit
       ...(d.cliente?.mesa ? { mesa: d.cliente.mesa } : {}),
     },
     pedido: d.pedido && typeof d.pedido.linkToken === 'string' ? { linkToken: d.pedido.linkToken, ...(d.pedido.numero ? { numero: d.pedido.numero } : {}) } : null,
+    notasPedido: typeof d.notasPedido === 'string' ? d.notasPedido.slice(0, 500) : '',
   }
 }
 

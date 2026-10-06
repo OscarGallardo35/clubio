@@ -80,10 +80,11 @@ export function textoEntregado(tipo: 'MESA' | 'TAKEAWAY' | 'DELIVERY'): string {
  * modificadores en su forma interna. `modificadoresParaApi` es el que convierte a
  * `{ grupoId, opcionIds }`, que es lo que espera el DTO.
  *
- * `notasPedido` entra por parametro porque las notas generales del pedido todavia no viven en el
- * estado del carrito (es lo unico del formulario que falta persistir).
+ * Las notas generales del pedido salen del estado (`notasPedido`), que se persiste con el resto del
+ * formulario.
  */
-export function armarBody(estado: EstadoCarrito, notasPedido = ''): CrearPedidoBody {
+export function armarBody(estado: EstadoCarrito): CrearPedidoBody {
+  const notasPedido = estado.notasPedido ?? ''
   const body: CrearPedidoBody = {
     tipo: (estado.tipo ?? 'TAKEAWAY') as CrearPedidoBody['tipo'],
     modoPago: (estado.modoPago ?? 'EFECTIVO') as CrearPedidoBody['modoPago'],

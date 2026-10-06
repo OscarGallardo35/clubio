@@ -302,6 +302,33 @@ const reabierto = rehidratar(recortarParaPersistir(enviado), { sucursalId: SUC, 
 igual('al reabrir se puede seguir el pedido', reabierto.pedido?.linkToken, 'tok-9')
 igual('y no queda carrito colgado', reabierto.items.length, 0)
 
+
+// --- Notas generales del pedido (SET_NOTAS_PEDIDO) ---------------------------
+console.log('\n== notas del pedido ==')
+{
+  const base = estadoInicial('bar-la-esquina', 's1', 'centro')
+  const largas = reducerCarrito(base, { tipo: 'SET_NOTAS_PEDIDO', notas: 'x'.repeat(700) })
+  igual('se truncan a 500 (el maximo del backend)', largas.notasPedido?.length, 500)
+  igual('el texto es el de los primeros 500', largas.notasPedido, 'x'.repeat(500))
+  const cortas = reducerCarrito(base, { tipo: 'SET_NOTAS_PEDIDO', notas: 'sin sal' })
+  igual('las notas cortas quedan tal cual', cortas.notasPedido, 'sin sal')
+  // Persistencia: viaja en recortarParaPersistir y vuelve por deserializarCarrito.
+  // OJO: el carrito tiene que tener items. `deserializarCarrito` devuelve null si esta vacio (a
+  // proposito: un carrito sin items no se rehidrata), asi que un roundtrip sobre el estado
+  // inicial daria undefined y el test estaria mintiendo.
+  const conItem = { ...cortas, items: [{ clave: 'a', itemId: 'i', nombre: 'H', precioBase: 100, cantidad: 1, notas: '', modificadores: [] }], fase: 'checkout' as const }
+  chk('se persisten con el resto del formulario', recortarParaPersistir(conItem).notasPedido === 'sin sal')
+  const ida = deserializarCarrito(JSON.stringify(recortarParaPersistir(conItem)), 'bar-la-esquina')
+  igual('y sobreviven el roundtrip de localStorage', ida?.notasPedido, 'sin sal')
+  igual('junto con los items (el carrito no se pierde)', ida?.items.length, 1)
+  // Si el guardado viene corrupto o de una version vieja, no explota.
+  const sucio = deserializarCarrito(JSON.stringify({ items: [{ itemId: 'i', precioBase: 1, cantidad: 1, modificadores: [] }], notasPedido: 42 }), 'x')
+  chk('un notasPedido invalido se descarta en vez de romper', (sucio?.notasPedido ?? '') === '')
+  // No es obligatorio: el checkout valida solo, y esto no agrega ni saca fallas.
+  const vacioConItems = { ...base, items: [{ clave: 'a', itemId: 'i', nombre: 'H', precioBase: 100, cantidad: 1, notas: '', modificadores: [] }], tipo: 'TAKEAWAY', modoPago: 'EFECTIVO', cliente: { nombre: 'Ana', telefono: '1155512345' } }
+  igual('sin notas el checkout sigue valido', Object.keys(validarCheckout(vacioConItems)), [])
+  chk('y con notas tambien (no es obligatorio)', Object.keys(validarCheckout({ ...vacioConItems, notasPedido: '' })).length === 0)
+}
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) {
   console.log(fallas.map((f) => `  - ${f}`).join('\n'))

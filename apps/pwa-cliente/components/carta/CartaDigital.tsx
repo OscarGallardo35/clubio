@@ -13,6 +13,7 @@
  * memoria para no pedir dos veces lo mismo.
  */
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
 import { Skeleton, toast } from '@repo/ui'
 import { CategoriaTabs } from './CategoriaTabs'
 import { ItemCartaCard } from './ItemCartaCard'
@@ -46,6 +47,7 @@ interface CategoriaDeLaCarta {
 
 export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca }: CartaDigitalProps) {
   const { carta, cargando, actualizando, aviso, descartarAviso } = useCarta(negocioSlug, sucursalSlug)
+  const router = useRouter()
   // `menuDisponible` ya combina la feature del plan con el switch del negocio (useBranding):
   // no se re-deriva aca.
   const { menuDisponible, negocio } = useBranding()
@@ -204,7 +206,17 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
 
       {/* El badge y el sheet comparten el mismo estado local: viven aca, no en el layout. */}
       <BadgeCarrito onClick={() => setSheetAbierto(true)} oculto={sheetAbierto} />
-      <CarritoSheet abierto={sheetAbierto} onCerrar={() => setSheetAbierto(false)} />
+      <CarritoSheet
+        abierto={sheetAbierto}
+        onCerrar={() => setSheetAbierto(false)}
+        onContinuar={() => {
+          // El sheet deja el carrito en fase 'checkout' (lo despacha el propio sheet); aca se
+          // navega a la pagina y se cierra, que es lo que faltaba: sin `onContinuar` el boton
+          // despachaba y no pasaba nada mas (la URL se quedaba en /menu).
+          setSheetAbierto(false)
+          router.push(`/${negocioSlug}/checkout`)
+        }}
+      />
     </div>
   )
 }

@@ -1736,3 +1736,25 @@ else if (typeof m === 'string') mensaje = m
 Es el mismo criterio que la regla del punto unico de normalizacion: la frontera normaliza, los
 consumidores consumen.
 
+### REGLA: un mismo status HTTP puede significar cosas distintas segun el endpoint
+
+**No reciclar el clasificador de errores entre contextos distintos.** Un mismo codigo puede tener
+significados diferentes segun la ruta, y si se reusa el mismo mapa el usuario recibe un mensaje que
+no tiene nada que ver con lo que paso.
+
+Caso real de este proyecto, mismo 410:
+
+- `POST /api/pedidos` -> **410 = la carta cambio** (el carrito quedo viejo). El checkout ofrece
+  "Recargar carta".
+- `GET /api/pedidos/publico/:linkToken` -> **410 = el link del pedido vencio** (`linkVencido(...)` ->
+  `GoneException`). Aca lo correcto es "Este link ya vencio, pedile al local que te lo reenvie".
+
+Si el seguimiento usara `clasificarError` (escrito para el checkout), un pedido con el link vencido
+mostraria "La carta cambio, recarga la pagina para ver la nueva version": un mensaje que confunde y
+manda al cliente a hacer algo inutil.
+
+Regla practica: el clasificador de errores pertenece al **contexto** en el que se usa, no al status.
+Antes de reusar uno, verificar que los status que mapea signifiquen lo mismo en la ruta nueva. Si
+hay dudas, leer los `throw` del backend de esa ruta: ahi esta la semantica real (`NotFoundException`,
+`GoneException`, `BadRequestException`...), no en el numero.
+

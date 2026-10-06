@@ -8,6 +8,7 @@ async function waitServer(){ for(let i=0;i<45;i++){ try{ if((await fetch(BASE+'/
 const ok=(c)=>c?'OK':'FALLO';
 let server=spawn(process.execPath,['dist/main.js'],{cwd:__dirname,stdio:'ignore',env:{...process.env,RATE_PEDIDOS_CREATE_LIMIT:'1000'}});
 const peds=[];
+let configOriginal = null;
 let negId=null, centroId=null, norteId=null, clubTipos=null, itemPrecioGlobal=null;
 
 async function limpiar(){
@@ -15,6 +16,8 @@ async function limpiar(){
     await prisma.pedido.deleteMany({ where:{ id:{ in: peds.filter(Boolean) } } });
     if (norteId) await prisma.itemCartaSucursal.deleteMany({ where:{ sucursalId: norteId } });
     if (negId) await prisma.configuracionSucursal.deleteMany({ where:{ sucursalId: norteId } });
+    // Restaurar la config tal cual estaba: el test la pisa con menuActivo:true y tipos ['MESA'].
+    if (negId && configOriginal) await prisma.configuracionClub.update({ where:{ negocioId: negId }, data: configOriginal });
     if (negId && clubTipos) await prisma.configuracionClub.update({ where:{ negocioId: negId }, data:{ tiposPedidoHabilitados: clubTipos, permitirOverrideSucursal:true } });
   }catch(e){ console.log('  (limpieza parcial:', e.message, ')'); }
 }
@@ -66,7 +69,9 @@ async function limpiar(){
   const fila=(lista.body?.data??[]).find(x=>x.itemCartaId===item.id);
   console.log('  GET overrides ->',lista.body?.total,'|',JSON.stringify({item:fila?.itemNombre,global:fila?.precioGlobal,override:fila?.precioOverride,disp:fila?.disponibleOverride}));
 
-  await prisma.configuracionClub.update({where:{negocioId:neg.id},data:{menuActivo:true,tiposPedidoHabilitados:['MESA']}});
+    // Guardamos la config ANTES de pisarla: el teardown la restaura tal cual estaba.
+  configOriginal = await prisma.configuracionClub.findUnique({where:{negocioId:neg.id},select:{menuActivo:true,tiposPedidoHabilitados:true}});
+await prisma.configuracionClub.update({where:{negocioId:neg.id},data:{menuActivo:true,tiposPedidoHabilitados:['MESA']}});
   const pedN=await req('POST','/pedidos',{tipo:'MESA',modoPago:'EFECTIVO',nombreCliente:'Override Test',telefono:'11 5555-4444',mesa:'3',sucursalSlug:'norte',items:[{itemId:item.id,cantidad:1}]},{'X-Tenant-Slug':'bar-la-esquina'});
   if(pedN.body?.pedidoId) peds.push(pedN.body.pedidoId);
   const pedC=await req('POST','/pedidos',{tipo:'MESA',modoPago:'EFECTIVO',nombreCliente:'Override Test',telefono:'11 5555-4444',mesa:'4',sucursalSlug:'centro',items:[{itemId:item.id,cantidad:1}]},{'X-Tenant-Slug':'bar-la-esquina'});

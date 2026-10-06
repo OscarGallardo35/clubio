@@ -10,6 +10,7 @@ async function waitServer(){ for(let i=0;i<45;i++){ try{ if((await fetch(BASE+'/
 const ok=(c)=>c?'OK':'FALLO';
 let server=spawn(process.execPath,['dist/main.js'],{cwd:__dirname,stdio:'ignore',env:{...process.env,RATE_PEDIDOS_CREATE_LIMIT:'1000'}});
 const peds=[];
+let configOriginal = null;
 (async()=>{
  if(!(await waitServer())){ console.log('NO RESPONDE'); server.kill(); process.exit(1) }
  try{
@@ -35,7 +36,9 @@ const peds=[];
 
   console.log('\n===== T9bis: disponibilidad override -> pedido REAL (con nombre valido) =====');
   const item=await prisma.itemCarta.findFirst({where:{negocioId:neg.id,disponible:true,gruposModificadores:{none:{}}},select:{id:true,nombre:true,precio:true}});
-  await prisma.configuracionClub.update({where:{negocioId:neg.id},data:{menuActivo:true,tiposPedidoHabilitados:['MESA']}});
+    // Guardamos la config ANTES de pisarla: el teardown la restaura tal cual estaba.
+  configOriginal = await prisma.configuracionClub.findUnique({where:{negocioId:neg.id},select:{menuActivo:true,tiposPedidoHabilitados:true}});
+await prisma.configuracionClub.update({where:{negocioId:neg.id},data:{menuActivo:true,tiposPedidoHabilitados:['MESA']}});
   await req('POST',`/sucursales/${norte.id}/items-override`,{itemCartaId:item.id,precio:9999,disponible:true},Hd);
   const ped=async(slug)=>{ const r=await req('POST','/pedidos',{tipo:'MESA',modoPago:'EFECTIVO',nombreCliente:'Test Override',telefono:'11 5555-4444',mesa:'3',sucursalSlug:slug,items:[{itemId:item.id,cantidad:1}]},{'X-Tenant-Slug':'bar-la-esquina'}); if(r.body?.pedidoId) peds.push(r.body.pedidoId); return r; };
   const v1=await ped('norte');
@@ -91,7 +94,9 @@ const peds=[];
    await prisma.pedido.deleteMany({where:{id:{in:peds.filter(Boolean)}}});
    const norte=await prisma.sucursal.findFirst({where:{negocioId:neg.id,esPrincipal:false},select:{id:true}});
    if(norte) await prisma.itemCartaSucursal.deleteMany({where:{sucursalId:norte.id}});
-   await prisma.configuracionClub.update({where:{negocioId:neg.id},data:{menuActivo:false}});
+   // Restaurar como estaba. Hardcodear `menuActivo:false` dejaba el tenant demo con
+   // el menu apagado despues del e2e (y POST /pedidos respondia 400 "menu no activo").
+   if(configOriginal) await prisma.configuracionClub.update({where:{negocioId:neg.id},data:configOriginal});
  }catch{}
  await rds.quit(); server.kill(); await prisma.$disconnect(); setTimeout(()=>process.exit(0),900);
 })();

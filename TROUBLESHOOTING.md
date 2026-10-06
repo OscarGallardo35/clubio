@@ -1365,3 +1365,16 @@ El repo compila con `exactOptionalPropertyTypes`. Escribir `imagenUrl?: string` 
 un `string | undefined` es error TS2375/TS2322. Va `imagenUrl?: string | undefined`
 (es la convencion de `@repo/ui`; vale para todo el repo, no solo para las props de React).
 
+### Al reusar un reducer con guarda de idempotencia, no fijes el valor nuevo antes de despachar
+
+`rehidratar()` del carrito ponia la sucursal viva en el estado y RECIEN DESPUES despachaba
+`CAMBIAR_SUCURSAL` con esa misma sucursal. El reducer compara contra la sucursal del estado y,
+al ser iguales, su guarda de idempotencia lo tomaba como "misma sucursal": no vaciaba el
+carrito ni ponia el aviso, en silencio.
+
+Regla: el estado tiene que conservar el valor ANTERIOR cuando se despacha el evento, para que
+la guarda pueda distinguir "cambiar" de "ya esta". El valor nuevo se escribe solo cuando el
+evento no se hace cargo.
+
+Sintoma: la pantalla queda igual y no hay error ni log. Lo cazo `check:carrito`.
+

@@ -10,12 +10,16 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Checkbox,
   GoogleReviews,
   Input,
   Label,
   Progress,
+  RadioGroup,
+  RadioGroupItem,
   Separator,
   Skeleton,
+  Switch,
   Tabs,
   TabsContent,
   TabsList,
@@ -23,6 +27,7 @@ import {
   TarjetaSellos,
   type EstadoTarjeta,
   type TamanoTarjeta,
+  Textarea,
 } from '@repo/ui'
 
 const COLOR_PRIMARIO = '#d93d2d'
@@ -332,6 +337,27 @@ export function DevUi() {
             />
           </PanelMarca>
         </div>
+      <Seccion n={5} titulo="Formularios: RadioGroup, Checkbox, Textarea, Switch">
+        <div className="space-y-5">
+          <RadioGroup defaultValue="efectivo" className="gap-2">
+            {['efectivo', 'transferencia', 'mercado-pago'].map((v) => (
+              <div key={v} className="flex items-center gap-2">
+                <RadioGroupItem value={v} id={`pago-${v}`} />
+                <Label htmlFor={`pago-${v}`}>{v}</Label>
+              </div>
+            ))}
+          </RadioGroup>
+          <div className="flex items-center gap-2">
+            <Checkbox id="avisos" defaultChecked />
+            <Label htmlFor="avisos">Avisarme cuando este listo</Label>
+          </div>
+          <Textarea placeholder="Motivo del rechazo" defaultValue="Sin stock" />
+          <div className="flex items-center gap-2">
+            <Switch id="disponible" defaultChecked />
+            <Label htmlFor="disponible">Item disponible</Label>
+          </div>
+        </div>
+      </Seccion>
       </Seccion>
     </main>
   )

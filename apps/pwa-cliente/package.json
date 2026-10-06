@@ -2,7 +2,7 @@
   "name": "@mi-saas/pwa-cliente",
   "version": "1.0.0",
   "private": true,
-  "description": "PWA Cliente para SaaS de fidelizaci\u00f3n gastron\u00f3mica",
+  "description": "PWA Cliente para SaaS de fidelización gastronómica",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
@@ -16,7 +16,8 @@
     "check:carta": "node scripts/check-carta.mts",
     "check:upsell": "node scripts/check-upsell.mts",
     "check:menu": "node scripts/check-menu.mts",
-    "check:checkout": "node scripts/check-checkout.mts"
+    "check:checkout": "node scripts/check-checkout.mts",
+    "check:ui-ssr": "node scripts/check-ui-ssr.mts"
   },
   "dependencies": {
     "@repo/api-client": "workspace:*",

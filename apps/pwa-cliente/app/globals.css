@@ -109,3 +109,20 @@
 .animate-pulse-scale {
   animation: pulse-scale 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* --- fades del TabsList (categoria scrolleable) ---
+   Copiado de packages/ui/src/styles/globals.css por la misma razon que los tokens:
+   Next solo admite CSS global importado desde el arbol de la app. Si cambia alla,
+   cambia aca. */
+.tabs-fade-derecha {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 1rem), transparent 100%);
+}
+.tabs-fade-izquierda {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 1rem);
+  mask-image: linear-gradient(to right, transparent 0, black 1rem);
+}
+.tabs-fade-ambos {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 1rem, black calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 1rem, black calc(100% - 1rem), transparent 100%);
+}

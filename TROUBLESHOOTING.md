@@ -1303,3 +1303,45 @@ distDir: process.env.NEXT_DIST_DIR || '.next'
 Con eso el aislamiento si funciona (verificado con el dev server vivo: el build escribe en
 `.next-build` y las rutas del dev siguen respondiendo 200).
 
+### Una clase de Tailwind puede NO compilar y no avisar nada
+
+Dos casos reales, los dos silenciosos (el HTML sigue con la clase, el CSS no la tiene):
+
+1. `[scroll-snap-type:x_mandatory]` (propiedad arbitraria): Tailwind no la emitio. Hay
+   utilidad nativa -> usar `snap-x snap-mandatory`.
+2. `[mask-image:linear-gradient(...)]`: tampoco, ni con `_` en los espacios ni con
+   `calc(100%_-_1rem)`. Ojo que `calc(100%-1rem)` sin espacios ademas es CSS invalido.
+
+**Regla: verificar la clase en el CSS SERVIDO, no en el HTML.** Un grep sobre el HTML da
+falso positivo, porque el nombre de la clase esta en el markup aunque el navegador no
+tenga la regla (me paso al verificar este fix). El CSS sale de los `<link>` del HTML.
+
+Para mascaras y cosas raras, mejor una clase CSS propia en el stylesheet que una utilidad
+arbitraria. Ojo: el CSS del package (`packages/ui/src/styles/globals.css`) NO se importa
+desde la PWA -- Next solo admite CSS global del arbol de la app -- asi que va la fuente en
+el package y una COPIA en `apps/pwa-cliente/app/globals.css` (es la convencion que ya
+tenian los tokens).
+
+### En una llamada de background, no encadenar nada antes del comando del servidor
+
+```
+terminal(background=true, command: "cd repo ; for pid in ...; do taskkill ...; done ; node dist/main.js")
+-> termina al instante con "stdin is not a tty" y el servidor NUNCA arranca
+```
+
+Tambien pasa con `cd apps/backend && node dist/main.js` si antes hay un loop. Separar:
+matar el puerto en una llamada (foreground) y arrancar el server en otra. Alternativa que
+siempre funciona en foreground:
+
+```bash
+cd apps/backend ; (node dist/main.js > "$HOME/be.log" 2>&1 &) ; sleep 15 ; tail -20 "$HOME/be.log"
+```
+
+### Neon: si la base no responde, mirar el ROL antes que la red
+
+Sintoma: `/api/health` con `db: down` y Prisma con `P1001 Can't reach database server
+...:5432`, pero el TCP al host responde OK. En este proyecto la causa fue que **Neon tenia
+otro rol** (`admin_role` en vez de `neondb_owner`): credenciales viejas en el `.env`. Se
+arregla actualizando `DATABASE_URL` (host con `-pooler`) y `DIRECT_URL` (el mismo host sin
+`-pooler`) y reiniciando el backend.
+

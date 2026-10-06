@@ -103,3 +103,19 @@
 .animate-pulse-scale {
   animation: pulse-scale 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* --- fades de los bordes del TabsList (navegacion de categorias scrolleable) ---
+   Van como mask y no como overlay: un degradado encima taparia los tabs. Con mask,
+   el contenido se desvanece y el scroll se intuye. Los dos prefijos porque Safari. */
+.tabs-fade-derecha {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 1rem), transparent 100%);
+}
+.tabs-fade-izquierda {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 1rem);
+  mask-image: linear-gradient(to right, transparent 0, black 1rem);
+}
+.tabs-fade-ambos {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 1rem, black calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 1rem, black calc(100% - 1rem), transparent 100%);
+}

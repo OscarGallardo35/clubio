@@ -1,0 +1,233 @@
+/**
+ * Tipos de las respuestas REALES del backend.
+ * Se escriben a mano (no se infieren de @repo/types) porque el contrato que
+ * importa es el de los endpoints publicos/del cliente, y ese se verifico con
+ * requests reales. Si el backend cambia, aca se ve el desajuste.
+ */
+
+// --- catalogos chicos ---
+export type ModoClientes = 'GLOBAL' | 'POR_SUCURSAL'
+export type Plan = 'FREE' | 'BASIC' | 'PRO' | 'ENTERPRISE'
+export type TipoPedido = 'MESA' | 'TAKEAWAY' | 'DELIVERY'
+export type ModoPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA'
+export type EstadoTarjeta = 'vacia' | 'progreso' | 'casi' | 'completa' | 'canjeada'
+export type EstadoVisita = 'PENDIENTE' | 'APROBADA' | 'RECHAZADA' | 'EXPIRADA'
+
+export interface SucursalPublica {
+  id: string
+  nombre: string
+  slug: string
+  esPrincipal: boolean
+  direccion?: string | null
+  telefono?: string | null
+  numeroAtendiente?: string | null
+  colorPrimario?: string | null
+  colorSecundario?: string | null
+}
+
+/**
+ * Config EFECTIVA del club. El backend devuelve la fila completa (global +
+ * override de sucursal ya mergeado), asi que aca se tipan los campos que la
+ * PWA usa: los que no estan listados simplemente no se leen.
+ */
+export interface ConfiguracionPublica {
+  sellosParaPremio: number
+  premioTexto: string
+  menuActivo: boolean
+  mostrarResenaPostVisita: boolean
+  modoFidelizacion?: string
+  sellosBienvenida?: number
+  limiteVisitasPorDia?: number
+  horasMinimasEntreVisitas?: number
+  tiposPedidoHabilitados?: TipoPedido[]
+  modosPagoHabilitados?: ModoPago[]
+  tipoPedidoPorDefecto?: TipoPedido
+  modoPagoPorDefecto?: ModoPago
+  costoEnvio?: number | string | null
+  pedidoMinimoDelivery?: number | string | null
+  upsellActivo?: boolean
+  upsellMaxSugerencias?: number
+  numeroAtendiente?: string | null
+  overrideAplicado?: boolean
+  transferenciaAlias?: string | null
+  transferenciaCbu?: string | null
+  transferenciaTitular?: string | null
+}
+
+/** GET /api/negocios/publico/:slug */
+export interface NegocioPublico {
+  id: string
+  nombre: string
+  slug: string
+  direccion?: string | null
+  telefono?: string | null
+  email?: string | null
+  logoUrl?: string | null
+  colorPrimario?: string | null
+  colorSecundario?: string | null
+  placeId?: string | null
+  urlMenu?: string | null
+  urlClub?: string | null
+  plan: Plan
+  modoClientes: ModoClientes
+  activo: boolean
+  configuracion: ConfiguracionPublica
+  numeroAtendiente?: string | null
+  sucursalActiva?: SucursalPublica | null
+  sucursales: SucursalPublica[]
+  /** Features del plan ya filtradas a las habilitadas (gating visual). */
+  features: string[]
+}
+
+// --- cliente ---
+export interface ClienteBasico {
+  id: string
+  nombre: string
+  telefono: string
+  etiqueta?: string
+  totalVisitas?: number
+  ultimaVisita?: string | null
+  aceptaNotificaciones?: boolean
+}
+
+export interface TarjetaSucursal {
+  sucursalId: string
+  sellosActuales: number
+  puntosActuales: number
+  totalVisitas: number
+  premiosCanjeados: number
+  ultimaVisita?: string | null
+}
+
+/** GET /api/auth/cliente/me */
+export interface ClienteMe {
+  cliente: ClienteBasico
+  negocio: {
+    id: string
+    slug: string
+    nombre: string
+    plan: Plan
+    logoUrl?: string | null
+    colorPrimario?: string | null
+    colorSecundario?: string | null
+    placeId?: string | null
+  }
+  modoClientes: ModoClientes
+  configuracion: ConfiguracionPublica
+  sucursales: SucursalPublica[]
+  tarjetas: TarjetaSucursal[]
+  /** null con POR_SUCURSAL: ahi manda la tarjeta de la sucursal. */
+  sellosActuales: number | null
+  puntosActuales: number | null
+  sumoHoy: boolean
+  visitasHoy: number
+}
+
+// --- carta ---
+export interface CartaItem {
+  id: string
+  categoria: string
+  nombre: string
+  descripcion?: string | null
+  precio: number
+  precioBase: number
+  tieneOverride: boolean
+  fotoUrl?: string | null
+  etiquetas: string[]
+  disponible: boolean
+  orden: number
+}
+
+export interface CartaCategoria {
+  categoria: string
+  items: CartaItem[]
+}
+
+/** GET /api/carta?sucursalSlug= */
+export interface CartaPublica {
+  negocio: { id: string; nombre: string; slug: string }
+  sucursal: { id: string; nombre: string; slug: string }
+  total: number
+  categorias: CartaCategoria[]
+}
+
+// --- visitas ---
+export interface SolicitarVisitaRespuesta {
+  token: string
+  urlValidacion: string
+  mensajeWhatsApp: string
+  expiraEn: string
+  reutilizado: boolean
+  sucursal: { id: string; nombre: string; slug: string }
+}
+
+/** GET /api/visitas/estado/:token */
+export interface EstadoVisitaRespuesta {
+  estado: EstadoVisita
+  motivo?: string
+  expiraEn?: string
+  sucursalId: string
+  modoClientes: ModoClientes
+  sellosActuales: number
+  sellosParaPremio: number
+  premioTexto: string
+  premioDesbloqueado: boolean
+  faltantes: number
+  porcentaje: number
+  mostrarResena: boolean
+  sellosCliente: number
+  sellosTarjetaSucursal: number
+  puntosActuales: number
+  totalVisitas: number
+}
+
+/** GET /api/visitas/mi-tarjeta */
+export interface MiTarjetaRespuesta extends Omit<EstadoVisitaRespuesta, 'estado' | 'motivo' | 'expiraEn'> {
+  cliente: ClienteBasico
+  sucursal: SucursalPublica
+  tarjetas: TarjetaSucursal[]
+}
+
+export interface VisitaHistorial {
+  id: string
+  tipo: string
+  metodo: string
+  sellosOtorgados: number
+  puntosOtorgados: number
+  aprobadoEn: string
+  origen?: string | null
+  notas?: string | null
+  sucursal?: { id: string; nombre: string; slug: string }
+  empleado?: { id: string; nombre: string; rol: string }
+}
+
+export interface Paginado<T> {
+  data: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+// --- WebSocket (namespace /visitas) ---
+export interface EventoVisitaAprobada {
+  visitaId: string
+  sucursalId: string
+  sellosActuales: number
+  sellosCliente: number
+  sellosTarjetaSucursal: number
+  premioDesbloqueado: boolean
+  aprobadoEn: string
+}
+
+export interface EventoVisitaRechazada {
+  motivo: string
+  sucursalId: string | null
+  rechazadoEn: string
+}
+
+// --- solicitar visita (lo que acepta el backend) ---
+export interface SolicitarVisitaBody {
+  sucursalId?: string | undefined
+  sucursalSlug?: string | undefined
+  origen?: string | undefined
+}

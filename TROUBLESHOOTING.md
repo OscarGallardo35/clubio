@@ -904,3 +904,62 @@ y un e2e arrancara un server inexistente ("NO RESPONDE") pareciendo un problema 
 la aplicacion. Para builds, tests y cualquier cosa con pipes: usar el terminal
 (que si es bash), no `subprocess.run(..., shell=True)`.
 
+### CONVENCION de @repo/ui: toda prop opcional declara `| undefined`
+
+El monorepo usa `exactOptionalPropertyTypes`, y con eso `prop?: T` significa "puede
+faltar, pero si esta tiene que ser T": pasarle `undefined` explicito es un error de
+tipos. En React el caso normal es justamente pasar un valor que puede ser
+undefined:
+
+```tsx
+const [estado, setEstado] = React.useState<EstadoTarjeta | undefined>('progreso')
+<TarjetaSellos estado={estado} />   // sin `| undefined` en la prop: TS2322
+```
+
+Por eso, **en los componentes de `@repo/ui` las props opcionales se declaran
+`prop?: T | undefined`**. Es mas verboso, pero evita que cada consumidor tenga que
+hacer spread condicional (`{...(valor ? { prop: valor } : {})}`) en el call site.
+
+Aplica a los datos (`estado`, `resenas`, `error`) y tambien a los callbacks y al
+`className`. Al agregar un componente nuevo, seguir la misma convencion.
+
+### `NODE_ENV=development` exportado rompe el build de Next (y parece un bug del codigo)
+
+Si `NODE_ENV` queda exportado como `development` en la sesion del terminal,
+`next build` compila contra el **React de desarrollo** y el prerender de TODAS las
+rutas falla con errores que no tienen nada que ver entre si:
+
+```
+⚠ You are using a non-standard "NODE_ENV" value in your environment.
+Error: <Html> should not be imported outside of pages/_document.
+TypeError: Cannot read properties of null (reading 'useContext')
+```
+
+Pasan las dos cosas a la vez (`<Html>` y `useContext` sobre null) justamente porque
+React corre en el modo equivocado. El stack apunta a
+`react-dom-server.browser.development.js` durante un build de produccion: **esa es
+la pista**.
+
+De donde sale: `set -a; . ./.env; set +a` (comodo para exportar la config en un
+e2e) exporta TODO el `.env` a la sesion, incluido `NODE_ENV=development`, y las
+variables persisten entre llamadas del terminal.
+
+Regla: despues de un `set -a; . ./.env`, hacer `unset NODE_ENV` (o no usar `set -a`
+y exportar solo lo que hace falta). Antes de dar por roto un build de Next, chequear
+`echo $NODE_ENV`.
+
+### En la PWA, `declaration` va en false
+
+El tsconfig compartido trae `declaration: true` (tiene sentido para un package que
+se publica). En una app Next, con pnpm, eso hace que tsc tenga que **nombrar** el
+tipo de retorno de funciones que devuelven tipos de librerias y falle con:
+
+```
+error TS2742: The inferred type of 'crearSocketVisitas' cannot be named without a
+reference to '.pnpm/@socket.io+component-emitter@3.1.2/...'
+```
+
+La app no emite `.d.ts`, asi que va `declaration: false` (y `declarationMap:
+false`). Ademas, conviene anotar el tipo de retorno explicito en los helpers que
+devuelven tipos de librerias.
+

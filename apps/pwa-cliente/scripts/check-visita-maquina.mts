@@ -198,6 +198,25 @@ igual('EXPIRAR los anula (spread: no pasa por ESTADO_INICIAL)',
 igual('RESET los anula via ESTADO_INICIAL',
   [visitaReducir(conSolicitud, { tipo: 'RESET' }).mensajeWhatsApp, visitaReducir(conSolicitud, { tipo: 'RESET' }).urlValidacion], [null, null])
 
+
+// --- Falta sesion (401) en el flujo ----------------------------------------
+console.log('\n== 401 (falta sesion) ==')
+// El api-client tira `ApiError(401, undefined, 'No autorizado')`. El clasificador de rechazos no
+// conoce ese mensaje, asi que cae en 'otro'... y 'otro' manda a la pantalla de error: ahi estaba el
+// bug (un cliente sin sesion veia "Algo salio mal / No autorizado" y un "Reintentar" que volvia a
+// pegarle sin sesion, en vez del formulario de registro).
+igual('el mensaje del 401 no matchea ningun rechazo del negocio',
+  clasificarRechazoDeSolicitud('No autorizado'), { motivo: 'otro', faltanHoras: null })
+igual('un rechazo "otro" termina en la pantalla de error',
+  visitaReducir(en('solicitando'), { tipo: 'SOLICITUD_RECHAZADA', motivo: 'otro', mensaje: 'No autorizado' }).paso,
+  'error')
+// La salida del 401: volver al registro (ABRIR_REGISTRO ya es la transicion que muestra el registro;
+// el POST falla con la fase en 'solicitando', asi que esa es la transicion que importa).
+igual('ABRIR_REGISTRO sale de "solicitando" (el estado real cuando falla el POST)',
+  visitaReducir(en('solicitando'), { tipo: 'ABRIR_REGISTRO' }).paso, 'registrando')
+igual('ABRIR_REGISTRO tambien sale de la pantalla de error',
+  visitaReducir(en('error', { mensaje: 'No autorizado' }), { tipo: 'ABRIR_REGISTRO' }).paso, 'registrando')
+
 console.log(`\n  TOTAL: ${ok} OK, ${fallas.length} FALLA`)
 if (fallas.length) {
   console.log('  FALLARON: ' + fallas.join(' | '))

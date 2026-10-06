@@ -2031,3 +2031,27 @@ Por que `/club` parecia prellenar y `/checkout` no: `/club` (paso de registro) u
 saludar con el nombre, pero los inputs arrancan vacios — lo que se veia lleno ahi es el autofill del
 navegador. El prellenado REAL desde la sesion no existia en ningun lado del checkout.
 
+### REGLA: el 401 de `/auth/cliente/me` NO es un error, es el estado "no logueado"
+
+"El 401 de /auth/cliente/me NO es un error — es el estado 'no logueado'. Los hooks que lo consumen
+deben tratarlo como estado válido, no propagarlo al error boundary. Comparar con /checkout que ya lo
+maneja bien."
+
+Caso real (`/club`, QR #2). El flujo mostraba "Algo salió mal / No autorizado / Reintentar" a un
+cliente nuevo, en incognito, que todavia no se habia registrado. La cadena:
+- `packages/api-client` trata TODO 401 igual: `this.onUnauthorized?.(); throw new ApiError(401,
+  undefined, 'No autorizado')`. Ojo: `data` queda en `undefined`, asi que el mensaje util es el
+  generico "No autorizado".
+- `solicitarVisita` clasificaba cualquier `ApiError` como rechazo del negocio:
+  `clasificarRechazoDeSolicitud('No autorizado')` -> `motivo: 'otro'` -> el reducer manda a
+  `paso: 'error'` -> **PasoError** con ese texto.
+- Peor: ese paso ofrece "Reintentar", que vuelve a pegarle al backend sin sesion. Bucle sin salida, y
+  el formulario de registro inalcanzable (PasoRegistro solo se muestra en inicio/registrando/solicitando).
+
+El arreglo no fue "mostrar mejor el error" sino **tratar el 401 como lo que es**: `solicitarVisita`
+devuelve `requiereSesion: true` cuando `e.status === 401` (sin pasar por el clasificador de rechazos) y
+el flujo despacha `ABRIR_REGISTRO`, que ya era la transicion que muestra el registro. Mismo criterio que
+`useCliente`, que ya hacia lo correcto (`if (e instanceof ApiError && e.status === 401) limpiar()`):
+**un 401 es un estado, no un fallo.** La diferencia entre /club y /checkout era solo esa: el hook del
+checkout lo trataba bien y `solicitarVisita` no.
+

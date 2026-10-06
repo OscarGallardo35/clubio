@@ -224,6 +224,12 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
       })
       return
     }
+    if (r.requiereSesion) {
+      // Un 401 no es un rechazo: se vuelve al formulario de registro (ABRIR_REGISTRO ya es la
+      // transicion que muestra el registro, no se inventa otra).
+      despachar({ tipo: 'ABRIR_REGISTRO' })
+      return
+    }
     despachar({
       tipo: 'SOLICITUD_RECHAZADA',
       motivo: r.rechazo.motivo,

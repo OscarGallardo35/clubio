@@ -24,6 +24,8 @@ export interface SolicitudOk {
 }
 
 export interface SolicitudFallida {
+  /** true si el backend contesto 401: falta sesion, y se resuelve volviendo al registro. */
+  requiereSesion: boolean
   ok: false
   rechazo: ClasificacionRechazo
   mensaje: string
@@ -57,10 +59,23 @@ export async function solicitarVisita(
   } catch (e) {
     if (e instanceof ApiError) {
       const mensaje = typeof e.data?.message === 'string' ? e.data.message : e.message
-      return { ok: false, rechazo: clasificarRechazoDeSolicitud(mensaje), mensaje, status: e.status, mensajeWhatsApp: null, urlValidacion: null }
+      // 401 = FALTA SESION, no un rechazo del negocio. El api-client lo tira como
+      // `ApiError(401, undefined, 'No autorizado')`, asi que sin este caso aparte el flow lo
+      // clasificaba como rechazo 'otro' y terminaba en la pantalla de error con un texto que el
+      // cliente no puede resolver (y un "Reintentar" que volvia a pegarle sin sesion).
+      const requiereSesion = e.status === 401
+      return {
+        ok: false,
+        requiereSesion,
+        rechazo: requiereSesion
+          ? { motivo: 'otro' as const, faltanHoras: null }
+          : clasificarRechazoDeSolicitud(mensaje),
+        mensaje, status: e.status, mensajeWhatsApp: null, urlValidacion: null,
+      }
     }
     return {
       ok: false,
+      requiereSesion: false,
       rechazo: { motivo: 'otro', faltanHoras: null },
       mensaje: e instanceof Error ? e.message : 'No pudimos conectar con el local',
       status: 0,

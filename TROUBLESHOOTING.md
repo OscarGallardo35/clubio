@@ -1426,3 +1426,21 @@ Vale para tests, para verificaciones manuales y para scripts de diagnostico. Dos
 - Si no se puede partir de otro valor (por ejemplo, un campo que no es editable por API),
   decirlo: la verificacion es mas debil de lo que parece.
 
+### Cuando hay banderas/estados que deciden comportamiento, el orden de los chequeos importa
+
+Un `if` mal ordenado puede hacer que un caso NUNCA se ejecute, y en silencio: el flujo
+"funciona" y el caso que falta solo aparece en produccion o cuando alguien mira el resultado
+con atencion.
+
+Caso real (`planDeFetch`, cache de la carta): `refetchPendiente` se evaluaba ANTES que la
+lectura, asi que el caso "sin cache" devolvia `background` en vez de `bloqueante`. Consecuencia
+concreta: la pantalla se quedaba vacia y no se pedia nada. Ninguna asercion lo cubria hasta que
+se escribio la del caso "sin cache".
+
+Patron recomendado: la **POLITICA** vive en un solo lugar (el reducer o una funcion pura) y el
+**PLAN** (que hacer) es una traduccion de esa politica. No mezclar. Si el plan vuelve a decidir
+por su cuenta, se desincroniza con la politica y reaparece exactamente este bug.
+
+Corolario: si dos banderas pueden ser verdaderas al mismo tiempo, escribir la asercion del caso
+en el que AMBAS lo son. Es el que se olvida.
+

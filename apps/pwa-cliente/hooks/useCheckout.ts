@@ -77,6 +77,10 @@ export function useCheckout(): UsoCheckout {
       // atrapado en 'enviando' sin que nadie se entere).
       console.error('[checkout] el envio del pedido fallo:', e)
       const { status, mensaje } = normalizarError(e)
+      // LOG TEMPORAL - diagnostico del crash post-400. OJO: `e.mensaje` no existe (el crudo no tiene
+      // ese campo); los valores normalizados son los que se despachan, y `crudo` va entero por si el
+      // status no es el que parece.
+      console.log('[checkout] pre-despacho:', { status, mensaje, crudo: e })
       despachar({ tipo: 'PEDIDO_ERROR', status, mensaje })
     }
   }, [despachar])

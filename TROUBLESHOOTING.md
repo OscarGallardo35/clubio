@@ -1993,20 +1993,23 @@ Sobre la alternativa "usar un dist dir distinto": en el backend **no hay** uno c
 build` escribe siempre en `dist` y el prebuild lo borra; `NEXT_DIST_DIR` es del lado de la PWA (Next,
 via `distDir` en el config), no de Nest. Para evitar el kill/build/start habria que configurarle un
 `outDir` propio al backend; hoy la regla es la de los 4 pasos.
-#### Corolario: `check:flujo-ws` corre contra el backend VIVO y puede dejarlo caido
+#### Corolario: `check:flujo-ws` corre contra el backend VIVO
 
 `scripts/check-flujo-ws.mts` es un harness de INTEGRACION: no simula nada, le pega al backend real de
 `:3000` (por eso falla con `ECONNREFUSED` si el server no esta levantado, que es como se descubrio
-todo esto). La contracara: su teardown deja el backend caido.
+todo esto).
 
-Evidencia (una sola corrida, sin tocar nada mas): el `~/be.log` de la corrida termina en el flujo de
-visitas del harness (`POST /api/visitas/solicitar`, `aprobar`, `rechazar`, `GET /api/visitas/estado`,
-2:00:30 p.m.) y despues **no hay una sola linea mas**: `/api/health` respondia
-`WinError 10061 (connection refused)` y hubo que levantarlo de nuevo. No se probo la causa exacta
-(matar por puerto en el teardown es la sospecha), asi que la regla practica es la del sintoma:
+Efecto colateral, **no determinista**: una vez su teardown dejo el backend caido y otra vez no.
+- Corrida 1 (la que lo destapo): el `~/be.log` termina en el flujo de visitas del harness
+  (`POST /api/visitas/solicitar`, `aprobar`, `rechazar`, 2:00:30 p.m.) y no hay una linea mas despues;
+  `/api/health` respondia `WinError 10061 (connection refused)`.
+- Corrida 2 (poco despues, misma version de todo): el harness dio `TOTAL: 29 OK` y el backend siguio
+  vivo (`/api/health` OK).
 
-**Despues de correr `check:flujo-ws`, verificar `/api/health`** (y si hace falta, levantar el backend)
-antes de decir que la suite quedo verde. Un `TOTAL: 29 OK` no dice nada del server que quedo atras.
+No se probo la causa (matar al dueno del puerto en el teardown es la sospecha), y por eso **no se
+afirma**: se documentan las dos corridas. Regla practica, que vale igual: **despues de correr
+`check:flujo-ws`, verificar `/api/health`** (y levantar el backend si hace falta) antes de decir que
+la suite quedo verde. Un `TOTAL: 29 OK` no dice nada del server que quedo atras.
 
 ### REGLA: los datos del cliente se prellenan, nunca se pisan
 

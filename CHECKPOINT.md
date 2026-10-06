@@ -1,11 +1,11 @@
 # CHECKPOINT — etapa 3 del QR #1 (UI del menu)
 
-Sesion cortada a proposito por presupuesto de contexto, antes de arrancar `ImagenOptimizada`.
-Nada quedo a medio escribir: el arbol esta limpio y todo lo que sigue esta verificado.
+Sesion cortada a proposito por presupuesto de contexto. `ImagenOptimizada` ya esta hecha; lo que
+falta es el punto 2 del orden. Nada quedo a medio escribir: el arbol esta limpio.
 
 ## Estado
 
-- Rama `main`, local == remoto. Ultimo commit de codigo: `de98869`
+- Rama `main`, local == remoto. Ultimos commits: `1d1f9c9` (ImagenOptimizada) y `de98869`
   (grupo obligatorio de Salsas + script idempotente `apps/backend/scripts/agregar-grupo-salsas.cjs`).
 - `/api/health` -> `{"status":"ok","db":"up","redis":"up"}`. Backend levantado desde Python con
   `DETACHED_PROCESS` (ver TROUBLESHOOTING: el terminal devolvia `stdin is not a tty` de forma
@@ -17,17 +17,22 @@ Nada quedo a medio escribir: el arbol esta limpio y todo lo que sigue esta verif
 
 ## Los 3 puntos del orden que quedan
 
-### 1. `ImagenOptimizada` en `@repo/ui` (opcion a, aprobada)
+### 1. `ImagenOptimizada` en `@repo/ui` — HECHO (commit `1d1f9c9`)
 
-- `packages/ui/src/components/imagen-optimizada.tsx` + export en `index.ts`.
-- Props: `src, alt, tipo ('item'|'avatar'|'logo'|'categoria'), aspectRatio, priority,
-  className, fallbackIcon, placeholderColor`.
-- `src` vacio -> placeholder con color de marca + icono. `src` externo -> `<img loading="lazy">`
-  con `onError`. Cloudinary -> `c_fill, w_, q_auto:good, f_auto`.
-- Stub guard para dev (mismo patron que `components/_stub.tsx`).
-- Version SIMPLE: sin srcset ni AVIF (son del Prompt #5.9).
+`packages/ui/src/components/imagen-optimizada.tsx`, exportada desde `index.ts` junto con
+`urlOptimizada`, `ANCHO_POR_TIPO` y `RATIO_POR_TIPO` (las tres exportadas aparte porque son
+puras y testeables). `typecheck` 0, `build` 0, `check:packages` 0.
 
-### 2. Punto 1 completo del plan de la etapa 3
+Lo que hace: `src` vacio -> placeholder con el color de marca y un icono; `src` externo -> `<img>`
+con `loading` lazy (eager si `priority`) y `onError` que cae al placeholder; Cloudinary ->
+`c_fill,w_<ancho>,q_auto:good,f_auto` con el ancho por tipo (item 600, categoria 320, logo 240,
+avatar 128) y solo si la URL no trae ya una transformacion. En dev avisa por consola si falta
+`alt`. Version simple, sin srcset ni AVIF (Prompt #5.9).
+
+Ojo al usarla: `@repo/ui` ya tenia `lucide-react` como dependencia (mi primer grep dijo que no
+porque el package.json usa comillas dobles, no simples).
+
+### 2. Punto 1 completo del plan de la etapa 3 (SIGUIENTE)
 
 - `modificadoresApi` en `apps/pwa-cliente/lib/api.ts` (patron de `upsellApi`: la ruta vive en
   la app, no en `@repo/api-client`, para no tocar el package).

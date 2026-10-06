@@ -1,13 +1,31 @@
-import { Placeholder } from '@/components/Placeholder'
+'use client'
 
-export const metadata = { title: 'Carta' }
+/**
+ * Carta digital de la sucursal activa (QR #1, etapa 3).
+ *
+ * El negocio y la sucursal salen de los contextos que ya resolvio el layout del tenant: aca no
+ * se vuelve a pedir nada. El gating de la feature (banner si entran por URL sin menu) es del
+ * paso 4.
+ */
+import { CartaDigital } from '@/components/carta/CartaDigital'
+import { useBranding } from '@/hooks/useBranding'
+import { useSucursalActiva } from '@/hooks/useSucursalActiva'
 
-/** QR #1. Acá va la carta digital con modificadores, upsell y checkout. */
 export default function MenuPage() {
+  const { negocio } = useBranding()
+  const { sucursal } = useSucursalActiva()
+
+  if (!negocio) return null
+
   return (
-    <Placeholder
-      titulo="Carta"
-      detalle="QR #1: acá va la carta (GET /carta?sucursalSlug=), con modificadores, upsell, carrito y checkout."
-    />
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 pb-24">
+      <h1 className="text-xl font-semibold">Carta</h1>
+      <CartaDigital
+        negocioSlug={negocio.slug}
+        sucursalSlug={sucursal?.slug ?? null}
+        sucursalId={sucursal?.id ?? null}
+        colorMarca={negocio.colorPrimario ?? undefined}
+      />
+    </main>
   )
 }

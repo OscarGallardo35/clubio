@@ -19,7 +19,7 @@ import { formatearPrecio } from '@repo/utils'
 import { seleccionarTotal, useCarritoStore } from '@/stores/carritoStore'
 import { useBranding } from '@/hooks/useBranding'
 import { armarBody, textoEntregado } from '@/lib/checkout-maquina'
-import { validarCheckout } from '@/lib/carrito-maquina'
+import { precioUnitario, validarCheckout } from '@/lib/carrito-maquina'
 import type { DatosCliente, ModoPago, TipoPedido } from '@/lib/carrito-maquina'
 import type { CrearPedidoBody } from '@/types/api'
 
@@ -77,7 +77,6 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false }: Pa
 
   const fallas: Fallas = validarCheckout(carrito)
   const mostrar = (campo: keyof Fallas) => (intentoEnviar ? fallas[campo] : undefined)
-  const hayFallas = Object.keys(fallas).length > 0
 
   const enviar = () => {
     setIntentoEnviar(true)
@@ -138,7 +137,8 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false }: Pa
                     ) : null}
                     {i.notas ? <span className="block text-muted-foreground">"{i.notas}"</span> : null}
                   </span>
-                  <span className="shrink-0 tabular-nums">{formatearPrecio(i.precioBase * i.cantidad)}</span>
+                  {/* El subtotal incluye los modificadores: sumando las lineas tiene que dar el total. */}
+                  <span className="shrink-0 tabular-nums">{formatearPrecio(precioUnitario(i) * i.cantidad)}</span>
                 </li>
               ))}
             </ul>
@@ -284,7 +284,9 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false }: Pa
       ) : null}
 
       <div className="flex flex-col gap-2">
-        <Button type="button" onClick={enviar} disabled={enviando || hayFallas} className="min-h-12 w-full">
+        {/* Habilitado a proposito: si estuviera disabled hasta validar, el primer toque nunca
+            ocurriria y el usuario no veria NUNCA los errores (refinamiento 1). */}
+        <Button type="button" onClick={enviar} disabled={enviando} className="min-h-12 w-full">
           {enviando ? 'Enviando...' : `Enviar pedido (${formatearPrecio(total)})`}
         </Button>
         <Button

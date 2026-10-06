@@ -10,6 +10,7 @@ import {
   DEBOUNCE_UPSELL_MS,
   MAX_ENTRADAS_CACHE,
   MOTIVO_DESACTIVADO,
+  MOTIVO_ERROR,
   canonicoCarrito,
   decidirConsulta,
   estadoUpsellInicial,
@@ -171,5 +172,24 @@ for (const ev of EVENTOS) {
 }
 chk(`los ${EVENTOS.length} eventos devuelven un estado valido y no mutan la entrada`, totalidad)
 
+
+// --- Guard anti-reintento tras un error --------------------------------------
+console.log('\n== error: no se reintenta solo ==')
+{
+  const H = 'hash-1'
+  const base = { ...estadoUpsellInicial(), hashPendiente: H, hashDesde: 0 }
+  const conError = reducerUpsell(base, { tipo: 'ERROR' })
+  igual('un error marca el hash como consultado', conError.hashConsultado, H)
+  igual('y no queda cargando', conError.cargando, false)
+  chk('con eso, decidirConsulta NO vuelve a pedir lo mismo', decidirConsulta(conError, 10_000).accion !== 'pedir')
+  igual('la accion pasa a ya-consultado', decidirConsulta(conError, 10_000), { accion: 'nada', motivo: 'ya-consultado' })
+  igual('y se puede mostrar un motivo', conError.motivo, MOTIVO_ERROR)
+  // Cambio de carrito despues del error: es una consulta nueva, tiene que pedir.
+  const otroHash = reducerUpsell(conError, { tipo: 'CARRITO_CAMBIO', items: [], ahora: 20_000 })
+  igual('un hash nuevo si se consulta (no queda pegado al error)',
+    decidirConsulta({ ...otroHash, hashDesde: 0 }, 30_000).accion, 'pedir')
+  // El mismo hash con el carrito sin cambios no vuelve a pedir aunque pasen horas.
+  igual('y el mismo hash sigue sin pedir', decidirConsulta(conError, 99_999_999).accion, 'nada')
+}
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) { console.log(fallas.map((f) => `  - ${f}`).join('\n')); process.exit(1) }

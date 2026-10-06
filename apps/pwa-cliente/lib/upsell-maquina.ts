@@ -16,6 +16,8 @@ export const DEBOUNCE_UPSELL_MS = 500
 export const MAX_ENTRADAS_CACHE = 10
 /** Motivo con el que el backend avisa que el negocio no tiene upsell activo. */
 export const MOTIVO_DESACTIVADO = 'upsell desactivado'
+/** Copy para cuando la consulta fallo: no hay sugerencias y no se reintenta con el mismo carrito. */
+export const MOTIVO_ERROR = 'upsell no disponible'
 
 // ---------------------------------------------------------------------------
 // Hash del carrito
@@ -183,8 +185,17 @@ export function reducerUpsell(estado: EstadoUpsell, evento: EventoUpsell): Estad
     }
 
     case 'ERROR':
-      // Sin respuesta no se cachea nada y se deja de esperar; el proximo cambio vuelve a probar.
-      return { ...estado, cargando: false }
+      // Sin respuesta no se cachea nada, pero SI se marca el hash como consultado: si no,
+      // decidirConsulta vuelve a decir 'pedir' para el mismo hash y el efecto reintenta en cada
+      // render. Ese loop saturaba el event loop del navegador y los clicks no llegaban a correr
+      // (caso real: un 404 por una ruta sin /api). Con esto, el reintento solo vuelve a pasar si
+      // cambia el carrito, que es una consulta nueva y legitima.
+      return {
+        ...estado,
+        cargando: false,
+        hashConsultado: estado.hashPendiente ?? estado.hashConsultado,
+        motivo: MOTIVO_ERROR,
+      }
 
     case 'ACEPTAR': {
       if (estado.aceptadas.includes(evento.reglaId)) return estado

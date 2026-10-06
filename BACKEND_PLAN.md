@@ -765,3 +765,16 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   (salsas obligatorias). Hacer cuando se corra `pnpm db:reset` en staging antes del
   deploy. Verificar con base limpia.
 
+## Hallazgos de la revision visual (etapa 3)
+
+- [ ] **BUG (bloqueante para el QR #2)**: el mensaje de WhatsApp de la visita sale generico
+  ("Hola, quiero sumar mi visita en Bar La Esquina") y **no incluye el token**. Esperado:
+  `"Hola, soy [nombre]. Quiero sumar mi visita en [negocio]. Ref: [token]. Validar aqui: [urlValidacion]"`.
+  A verificar: (a) si `POST /visitas/solicitar` devuelve un `mensajeWhatsApp` que ya trae el
+  token, (b) si la PWA lo ignora y arma el suyo. Archivos a mirar: `components/flujo/PasoEspera.tsx`
+  y `lib/visita-service.ts` (no existe un `EsperandoValidacion.tsx` en este repo: los pasos del
+  QR #2 se llaman `PasoRegistro/PasoEspera/PasoConfirmado/PasoNoSumada`).
+- [ ] **No bloqueante**: `brandingStore` persiste campos mutables (`numeroAtendiente`) en
+  localStorage. Deberia persistir solo `slug` + `id` y refetchear el resto con TTL de 5 min
+  (mismo patron que `carta-cache`).
+

@@ -83,18 +83,40 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
     return useCarritoStore.persist.onFinishHydration(() => setLocale(true))
   }, [])
 
-  // Se puede decidir si el carrito esta vacio recien cuando: (1) zustand termino de leer
-  // localStorage, y (2) la sucursal viva ya esta resuelta. Sin la segunda condicion, la ventana
-  // entre la hidratacion y la resolucion de sucursal (items en 0 todavia) disparaba el redirect.
-  const puedeDecidir = locale && (sucursalId ?? null) !== null
+  // LOG TEMPORAL - sacar despues del diagnostico
+  console.log('[checkout] render con sucursalId:', sucursalId, '| items:', carrito.items.length, '| locale:', locale)
+
+  /**
+   * "Asentado" = paso un instante desde que se hidrato. Es una RED DE SEGURIDAD: la guarda por
+   * sucursal sola puede quedarse esperando para siempre (si `activa` no resuelve, la pagina no
+   * decide nunca y queda en "Cargando..."). Con el plazo, la decision se toma igual: el carrito ya
+   * tuvo tiempo de hidratar, asi que si esta vacio es porque esta vacio de verdad.
+   */
+  const [asentado, setAsentado] = React.useState(false)
+  React.useEffect(() => {
+    const t = setTimeout(() => setAsentado(true), 1500)
+    return () => clearTimeout(t)
+  }, [])
+
+  const puedeDecidir = locale && asentado
 
   React.useEffect(() => {
+    // LOG TEMPORAL - sacar despues del diagnostico
+    console.log('[checkout] eval:', {
+      locale,
+      asentado,
+      sucursalId,
+      itemsLength: carrito.items.length,
+      puedeDecidir,
+    })
     if (!puedeDecidir) return
     if (carrito.items.length === 0) {
+      // LOG TEMPORAL - sacar despues del diagnostico
+      console.log('[checkout] REDIRECT: carrito vacio despues de hidratar y esperar')
       toast('Tu carrito esta vacio')
       router.replace(`/${slugNegocio}/menu`)
     }
-  }, [puedeDecidir, carrito.items.length, router, slugNegocio])
+  }, [puedeDecidir, locale, asentado, sucursalId, carrito.items.length, router, slugNegocio])
 
   const fallas: Fallas = validarCheckout(carrito)
   const mostrar = (campo: keyof Fallas) => (intentoEnviar ? fallas[campo] : undefined)

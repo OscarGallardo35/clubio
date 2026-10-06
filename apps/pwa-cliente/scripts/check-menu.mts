@@ -18,6 +18,8 @@ import {
   reducerModificadores,
 } from '../lib/modificadores-cache.ts'
 import type { EstadoModificadores } from '../lib/modificadores-cache.ts'
+// Modulo PURO del package (por eso se puede importar desde node sin arrastrar React).
+import { ANCHO_POR_TIPO, RATIO_POR_TIPO, urlOptimizada } from '../../../packages/ui/src/lib/url-optimizada.ts'
 
 let ok = 0
 const fallas: string[] = []
@@ -157,6 +159,21 @@ for (const ev of EVENTOS) {
 }
 chk(`los ${EVENTOS.length} eventos devuelven un estado valido y no mutan la entrada`, totalidad)
 chk('normalizar no muta la respuesta cruda', CRUDO.grupos[1].opciones[1].precioExtra === '200')
+
+
+// --- 5. urlOptimizada (modulo puro de @repo/ui) -----------------------------
+console.log('\n== urlOptimizada ==')
+const CLOUD = 'https://res.cloudinary.com/demo/image/upload/v1700000000/platos/milanesa.jpg'
+igual('Cloudinary: mete c_fill, w_ del tipo, q_auto y f_auto',
+  urlOptimizada(CLOUD, 'item'),
+  'https://res.cloudinary.com/demo/image/upload/c_fill,w_600,q_auto:good,f_auto/v1700000000/platos/milanesa.jpg')
+chk('Cloudinary: el ancho depende del tipo', urlOptimizada(CLOUD, 'avatar').includes('w_128') && urlOptimizada(CLOUD, 'categoria').includes('w_320'))
+chk('Cloudinary ya transformada: no se pisa', urlOptimizada('https://res.cloudinary.com/demo/image/upload/c_fill,w_1200/x.jpg', 'item') === 'https://res.cloudinary.com/demo/image/upload/c_fill,w_1200/x.jpg')
+igual('una URL externa se devuelve igual', urlOptimizada('https://ejemplo.com/foto.png', 'item'), 'https://ejemplo.com/foto.jpg'.replace('jpg','png'))
+igual('sin Cloudinary no se toca ni una URL rara', urlOptimizada('no-es-una-url', 'item'), 'no-es-una-url')
+igual('src vacio devuelve vacio (el placeholder lo decide el componente)', urlOptimizada('', 'item'), '')
+igual('los espacios se recortan', urlOptimizada('  https://ejemplo.com/a.png  ', 'item'), 'https://ejemplo.com/a.png')
+igual('hay ratio por tipo', [RATIO_POR_TIPO.item, ANCHO_POR_TIPO.item], [4 / 3, 600])
 
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) { console.log(fallas.map((f) => `  - ${f}`).join('\n')); process.exit(1) }

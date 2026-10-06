@@ -41,5 +41,8 @@ export { cn } from './lib/utils'
 // inyectar CSS global a sus consumidores: Next solo admite CSS global en el root
 // layout y ademas forzaria a las PWAs de Staff/Admin a cargar este archivo.
 // Cada app define su globals.css (y puede copiar los tokens de este package).
-export { ImagenOptimizada, urlOptimizada, ANCHO_POR_TIPO, RATIO_POR_TIPO } from './components/imagen-optimizada'
-export type { ImagenOptimizadaProps, TipoImagenOptimizada } from './components/imagen-optimizada'
+export { ImagenOptimizada } from './components/imagen-optimizada'
+export type { ImagenOptimizadaProps } from './components/imagen-optimizada'
+// Helpers puros de imagen: van aparte para poder testearlos desde node sin React.
+export { urlOptimizada, ANCHO_POR_TIPO, RATIO_POR_TIPO } from './lib/url-optimizada'
+export type { TipoImagenOptimizada } from './lib/url-optimizada'

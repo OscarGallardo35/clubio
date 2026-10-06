@@ -1491,3 +1491,14 @@ token vencido sobrevivian al vencimiento. Lo encontro la asercion del roundtrip
 Corolario: una asercion no sirve para confirmar que algo anda; sirve para descubrir que no anda.
 Escribirla despues de "arreglar" es cuando mas vale.
 
+### Las URLs que abre el cliente van con IP de LAN, nunca `localhost`
+
+`STAFF_APP_URL` debe usar la IP de LAN (`http://192.168.0.103:3002`), no `localhost`. Desde el
+celular, `localhost` es **el celular mismo**, no la PC: el link de validacion del QR #2 abria una
+pantalla vacia sin ningun error. Regla general: **cualquier URL que el cliente abra debe usar la
+IP de LAN.** Aplica a `STAFF_APP_URL`, `CORS_ORIGINS` y a los `NEXT_PUBLIC_*` de las PWAs. En
+staging/produccion el equivalente es el dominio publico, que ya no tiene este problema.
+
+Nota: la PWA Staff todavia no existe (llega con el Prompt #4), asi que ese puerto va a responder
+recien ahi. Mientras tanto la aprobacion de visitas se hace por API para testing.
+

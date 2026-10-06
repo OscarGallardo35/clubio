@@ -119,7 +119,7 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
       {total === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">No hay items disponibles en esta sucursal.</p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {mostrando.flatMap((c) => c.items).map((item, i) => (
             <ItemCartaCard key={item.id} item={item} prioridad={i < 3} colorMarca={colorMarca} onElegir={(it) => void elegir(it)} />
           ))}

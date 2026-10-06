@@ -1,7 +1,10 @@
 'use client'
 
 /**
- * Card de un item de la carta: foto, nombre, precio y etiquetas.
+ * Card de un item de la carta: foto cuadrada, nombre, precio y etiquetas.
+ *
+ * Va en un grid de 2 columnas (ver CartaDigital): con la foto cuadrada entran dos por fila sin
+ * que el texto quede apretado.
  *
  * El precio se muestra con `precio` (el efectivo de la sucursal). Cuando hay override por
  * sucursal se marca, para que nadie reporte "el precio esta mal" cuando en realidad es el de
@@ -50,7 +53,7 @@ export function ItemCartaCard({ item, prioridad = false, colorMarca, onElegir }:
           src={item.fotoUrl}
           alt={item.nombre}
           tipo="item"
-          aspectRatio={4 / 3}
+          aspectRatio={1}
           priority={prioridad}
           placeholderColor={colorMarca}
         />

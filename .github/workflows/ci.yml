@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check-packages:
+    name: Packages (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4        # lee packageManager del package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24               # 22.18+/24: los scripts .mts corren sin flag
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Un package que nadie importa es codigo muerto: el build no lo valida.
+      # Esto corre tsc --noEmit en cada package de packages/*.
+      - name: Typecheck de los packages
+        run: pnpm check:packages
+
+      # El guardian de los enums: cruza los z.enum contra schema.prisma.
+      - name: Enums alineados al schema
+        run: pnpm --filter @repo/validators check:validators
+
+      # La maquina de estados del flujo: logica pura, sin dependencias.
+      - name: Maquina del flujo QR #2
+        run: pnpm --filter pwa-cliente check:maquina

@@ -1,5 +1,5 @@
 // Funciones utilitarias compartidas
-import type { EtiquetaCliente } from '@repo/types'
+import { EtiquetaCliente } from '@repo/types'
 
 /**
  * Formatea un número de teléfono con prefijo internacional
@@ -141,7 +141,7 @@ export function urlBase64ToUint8Array(base64: string): Uint8Array {
 export function getSubdominio(hostname: string): string | null {
   const parts = hostname.split('.')
   if (parts.length >= 3) {
-    return parts[0] // primer subdominio
+    return parts[0] ?? null // primer subdominio
   }
   return null
 }
@@ -179,10 +179,10 @@ export function determinarEtiquetaCliente(
     ? Math.floor((ahora.getTime() - ultimaVisita.getTime()) / (1000 * 60 * 60 * 24))
     : Infinity
   
-  if (diasSinVisita > 90) return 'INACTIVO'
-  if (visitasTotales >= 10 || sellosActuales >= 50) return 'VIP'
-  if (visitasTotales >= 3) return 'RECURRENTE'
-  return 'NUEVO'
+  if (diasSinVisita > 90) return EtiquetaCliente.INACTIVO
+  if (visitasTotales >= 10 || sellosActuales >= 50) return EtiquetaCliente.VIP
+  if (visitasTotales >= 3) return EtiquetaCliente.REGULAR
+  return EtiquetaCliente.NUEVO
 }
 
 /**
@@ -205,3 +205,62 @@ export function generarCodigoVerificacion(longitud: number = 6): string {
   const max = Math.pow(10, longitud) - 1
   return Math.floor(Math.random() * (max - min + 1) + min).toString()
 }
+
+// --- fechas para la PWA (sin date-fns: Intl alcanza para lo que se muestra) ---
+
+function aFecha(fecha: Date | string | number): Date | null {
+  const d = fecha instanceof Date ? fecha : new Date(fecha)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** Mismo dia del calendario (en la zona del dispositivo). */
+export function esMismoDia(a: Date | string, b: Date | string = new Date()): boolean {
+  const d1 = aFecha(a)
+  const d2 = aFecha(b)
+  if (!d1 || !d2) return false
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+  )
+}
+
+/** "12 oct" — para listas donde el año se sobreentiende. */
+export function formatearFechaCorta(fecha: Date | string): string {
+  const d = aFecha(fecha)
+  if (!d) return ''
+  return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }).replace('.', '')
+}
+
+/** "19:30". */
+export function formatearHora(fecha: Date | string): string {
+  const d = aFecha(fecha)
+  if (!d) return ''
+  return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+/**
+ * "Hoy 19:30" / "Ayer 19:30" / "12 oct 19:30".
+ * El caso "hoy" es el que mas se ve (la visita recien aprobada), asi que va
+ * explicito en vez de "hace 3 horas".
+ */
+export function formatearDiaYHora(fecha: Date | string): string {
+  const d = aFecha(fecha)
+  if (!d) return ''
+  const hora = formatearHora(d)
+  if (esMismoDia(d)) return `Hoy ${hora}`
+
+  const ayer = new Date()
+  ayer.setDate(ayer.getDate() - 1)
+  if (esMismoDia(d, ayer)) return `Ayer ${hora}`
+
+  return `${formatearFechaCorta(d)} ${hora}`
+}
+
+/** true si la fecha cae dentro de las ultimas 24 horas. */
+export function esUltimas24h(fecha: Date | string): boolean {
+  const d = aFecha(fecha)
+  if (!d) return false
+  return Date.now() - d.getTime() < 24 * 60 * 60 * 1000
+}
+

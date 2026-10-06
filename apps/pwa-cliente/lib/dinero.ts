@@ -1,13 +1,14 @@
-/** Formateo de plata para es-AR (sin decimales si son .00). */
+import { formatearPrecio as formatearPrecioCompartido } from '@repo/utils'
+
+/**
+ * Reexporta el formateador de @repo/utils en vez de tener una segunda
+ * implementacion: si el dia de manana se agrega una moneda o cambia el redondeo,
+ * se cambia en un solo lugar. Aca solo queda lo propio del carrito.
+ */
 export function formatearPrecio(valor: number | string | null | undefined): string {
   const n = Number(valor)
   if (!Number.isFinite(n)) return ''
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(n)
+  return formatearPrecioCompartido(n)
 }
 
 /** Precio con modificadores: base + suma de extras. */

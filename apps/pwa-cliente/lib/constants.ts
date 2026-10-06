@@ -31,3 +31,7 @@ export const PARAM_SUCURSAL = 'sucursal'
 
 export const TIEMPO_ESPERA_WS_MS = 5000
 export const INTERVALO_POLLING_MS = 5000
+
+/** Colores de marca por defecto (los pisa el negocio). */
+export const COLOR_PRIMARIO_DEFECTO = '#E63946'
+export const COLOR_SECUNDARIO_DEFECTO = '#F77F00'

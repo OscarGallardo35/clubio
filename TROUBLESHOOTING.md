@@ -963,3 +963,90 @@ La app no emite `.d.ts`, asi que va `declaration: false` (y `declarationMap:
 false`). Ademas, conviene anotar el tipo de retorno explicito en los helpers que
 devuelven tipos de librerias.
 
+### La PWA Cliente NO puede tener un manifest dinamico (limitacion del browser)
+
+El manifest se pide ANTES de que la app resuelva el tenant, y el browser no vuelve
+a leerlo cuando cambia. Consecuencias, ya asumidas en el diseno:
+
+- Icono y `name` son de Clubio (genericos), NO del negocio.
+- `theme_color` del manifest tambien es generico. El color real del local se aplica
+  por `<meta name="theme-color">` desde BrandingProvider (eso si es dinamico y es lo
+  que pinta la barra del navegador en Android).
+- `start_url` es `/` y el redirect al club lo hace la app: el inicio rehidrata el
+  branding persistido y va a `/[tenant]/club`. Si no hay nada persistido, queda el
+  mensaje de "escanea el QR".
+- `display: standalone` significa que si un negocio queda inactivo, el icono viejo
+  sigue en la pantalla de inicio del cliente: por eso el layout de `[tenant]`
+  responde con "este enlace no es valido" en vez de un 404 pelado.
+
+### Rutas sin tenant: el servidor no puede decidirlo solo
+
+`/tarjeta`, `/historial` y `/seleccionar-sucursal` no tienen el slug en la URL. El
+negocio sale de la sesion (cookie HttpOnly, el servidor no la puede leer) y del
+branding persistido (localStorage, no existe en el servidor). Entonces:
+
+1. SERVIDOR: se reenvia la cookie a `GET /api/auth/cliente/me`; si hay sesion, el
+   negocio sale de ahi y el primer render ya trae los colores (sin flash).
+2. CLIENTE (`GuardiaDeSesion`): si no hubo sesion, se rehidrata el branding
+   persistido. Si tampoco hay, redirige a `/?motivo=sin-local`.
+
+El paso 2 NO se puede mover al servidor. La prueba "con storage limpio /tarjeta
+redirige a /" es un redirect del cliente: en el HTML del servidor se ve el skeleton,
+no un 307. Se verifica en browser (Playwright, paso 8), no con curl.
+
+El fetch del paso 1 va con `cache: 'no-store'` obligatorio: depende de una cookie y
+cachearlo filtraria la sesion de un cliente a otro.
+
+### La respuesta de registrar/recuperar cliente NO es el objeto del cliente
+
+`POST /api/auth/cliente/registrar` devuelve un payload chico:
+
+```
+{ accessToken, expiresIn, negocio: { id, slug }, cliente: { id, nombre, telefono,
+  sellosActuales, totalVisitas }, sucursal: { id, nombre, slug }, recienCreado }
+```
+
+`recuperar` devuelve lo mismo sin `sucursal` ni `recienCreado`. Es tentador tiparlo
+como `ClienteMe & { accessToken }` (que es lo que uno espera por simetria con `/me`)
+y compila, pero **el `negocio` de ahi solo tiene id y slug**: `respuesta.negocio.
+colorPrimario` es `undefined` en runtime. Los datos del local salen de
+`GET /negocios/publico/:slug` o de `GET /auth/cliente/me`.
+
+Regla: los tipos de las respuestas se escriben mirando la respuesta REAL (o el
+`return` del servicio), no por simetria con otro endpoint.
+
+### `@repo/utils` y `@repo/validators` NO compilaban (nadie los importaba todavia)
+
+Los dos packages tienen errores reales que no se veian porque hasta ahora ninguna app
+los importaba (el `build` de turbo tampoco los miraba: se consumen por
+`transpilePackages`, o sea por fuente).
+
+En **packages/utils/src/index.ts**:
+
+1. `determinarEtiquetaCliente` devolvia literales (`'VIP'`, `'NUEVO'`, ...) con tipo de
+   retorno `EtiquetaCliente`. Un enum de strings NO acepta literales sueltos: son 4
+   errores TS2322. Se devuelven los miembros `EtiquetaCliente.X`.
+2. El mismo enum estaba `import type`, asi que no habia valor que devolver: pasa a
+   import normal (y @repo/utils queda con dependencia de runtime de @repo/types, que
+   funciona con transpilePackages).
+3. `getSubdominio` declaraba `string | null` y devolvia `parts[0]`, que con
+   `noUncheckedIndexedAccess` es `string | undefined` (TS2322).
+4. `packages/utils` usaba `crypto.randomUUID()` (linea 102) sin libs: el tsc del
+   package falla con TS2304. En las apps no se ve porque Next incluye la lib DOM.
+
+**Y un desalineamiento de enums (falta decidir):**
+
+- `schema.prisma` (fuente de verdad) y `@repo/types` dicen `REGULAR`.
+- `packages/utils` devolvia `'RECURRENTE'` (ya corregido a `REGULAR`).
+- `packages/validators/src/index.ts:104,142` usa `z.enum(['NUEVO','RECURRENTE','VIP',
+  'INACTIVO'])`: en runtime **rechazaria el `REGULAR` que manda el backend**.
+
+**Bug latente (sin tocar):** `determinarEtiquetaCliente(0)` sin `ultimaVisita` devuelve
+`INACTIVO`, porque `diasSinVisita` queda en `Infinity` y la regla de >90 dias gana
+sobre todo. Un cliente nuevo (sin visitas todavia) deberia ser `NUEVO`. Hoy no afecta
+nada porque nadie llama a la funcion.
+
+**El tsc de los packages tampoco corre**: `packages/utils` y `packages/validators`
+tienen `rootDir: src` pero resuelven `@repo/types` por `paths` a su `src` -> TS6059.
+Falta decidir si se consumen por `dist` (referencias de proyecto) o se saca `rootDir`.
+

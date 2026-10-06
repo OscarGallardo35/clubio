@@ -1,5 +1,5 @@
 import { ApiClient, endpoints } from '@repo/api-client'
-import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, SolicitarVisitaBody, SolicitarVisitaRespuesta } from '@/types/api'
+import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta } from '@/types/api'
 
 /**
  * Cliente HTTP unico de la PWA.
@@ -21,9 +21,9 @@ export const clienteApi = {
   me: () => api.get<ClienteMe>(endpoints.auth.meCliente),
   logout: () => api.post<void>(endpoints.auth.logoutCliente),
   registrar: (body: { nombre: string; telefono: string; negocioSlug: string; sucursalSlug?: string | undefined }) =>
-    api.post<ClienteMe & { accessToken: string }>(endpoints.auth.registrarCliente, body),
+    api.post<RegistroClienteRespuesta>(endpoints.auth.registrarCliente, body),
   recuperar: (body: { telefono: string; negocioSlug: string }) =>
-    api.post<{ accessToken: string }>(endpoints.auth.recuperarCliente, body),
+    api.post<RecuperarClienteRespuesta>(endpoints.auth.recuperarCliente, body),
 }
 
 export const negocioApi = {

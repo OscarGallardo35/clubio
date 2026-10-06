@@ -123,6 +123,38 @@ export interface ClienteMe {
   visitasHoy: number
 }
 
+/**
+ * Respuestas de POST /auth/cliente/registrar y /recuperar.
+ *
+ * OJO: NO son `ClienteMe`. El backend devuelve un payload chico y el `negocio`
+ * viene solo con {id, slug} (sin nombre, plan ni colores). Usar
+ * `respuesta.negocio.colorPrimario` daria undefined en runtime; los datos del
+ * local salen de GET /negocios/publico/:slug.
+ */
+export interface ClienteEnToken {
+  id: string
+  nombre: string
+  telefono: string
+  sellosActuales: number
+  totalVisitas: number
+}
+
+export interface TokenClienteRespuesta {
+  accessToken: string
+  expiresIn: number
+  negocio: { id: string; slug: string }
+}
+
+export interface RecuperarClienteRespuesta extends TokenClienteRespuesta {
+  cliente: ClienteEnToken
+}
+
+export interface RegistroClienteRespuesta extends TokenClienteRespuesta {
+  cliente: ClienteEnToken
+  sucursal: { id: string; nombre: string; slug: string }
+  recienCreado: boolean
+}
+
 // --- carta ---
 export interface CartaItem {
   id: string

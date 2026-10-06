@@ -18,6 +18,7 @@ import {
   reducerModificadores,
 } from '../lib/modificadores-cache.ts'
 import type { EstadoModificadores } from '../lib/modificadores-cache.ts'
+import { ordenarCategorias } from '../lib/ordenar-categorias.ts'
 import { alternarSeleccion, armarItemProvisional, elegidosDesde, gruposObligatoriosFaltantes, recortarNotas } from '../lib/modificadores-seleccion.ts'
 import { precioUnitario, validarModificadores } from '../lib/carrito-maquina.ts'
 // Modulo PURO del package (por eso se puede importar desde node sin arrastrar React).
@@ -223,5 +224,25 @@ igual('las notas se recortan a 200', armarItemProvisional({ id: ITEM, nombre: 'H
 igual('recortarNotas deja intacto lo corto', recortarNotas('sin cebolla'), 'sin cebolla')
 igual('un grupo sin elegir no aparece en la forma final', elegidosDesde(G, { g2: ['o5'] }).length, 1)
 
+
+// --- 7. Orden de las categorias ----------------------------------------------
+console.log('\n== orden de categorias ==')
+const cat = (nombre: string, cuantos: number) => ({ categoria: nombre, items: Array.from({ length: cuantos }, (_, i) => ({ id: nombre + i })) })
+// El orden REAL que manda el backend hoy (alfabetico, con Principales ultima).
+igual('el caso real: Principales pasa primera',
+  ordenarCategorias([cat('Bebidas', 4), cat('Entradas', 2), cat('Postres', 2), cat('Principales', 5)]).map((c) => c.categoria),
+  ['Principales', 'Bebidas', 'Entradas', 'Postres'])
+igual('sin Principales: alfabetico',
+  ordenarCategorias([cat('Postres', 1), cat('Bebidas', 1), cat('Entradas', 1)]).map((c) => c.categoria),
+  ['Bebidas', 'Entradas', 'Postres'])
+igual('Principales SIN items no va primera',
+  ordenarCategorias([cat('Postres', 1), cat('Principales', 0), cat('Bebidas', 1)]).map((c) => c.categoria),
+  ['Bebidas', 'Postres', 'Principales'])
+igual('array vacio devuelve vacio', ordenarCategorias([]), [])
+igual('no muta el array original', (() => { const a = [cat('Postres', 1), cat('Principales', 2)]; ordenarCategorias(a); return a.map((c) => c.categoria).join() })(), 'Postres,Principales')
+igual('si TODAS traen orden numerico, manda el backend',
+  ordenarCategorias([{ categoria: 'Z', orden: 1, items: [1] }, { categoria: 'A', orden: 0, items: [1] }]).map((c) => c.categoria), ['A', 'Z'])
+igual('con orden parcial NO lo usa: cae al criterio por nombre',
+  ordenarCategorias([{ categoria: 'Z', orden: 1, items: [1] }, cat('A', 1)]).map((c) => c.categoria), ['A', 'Z'])
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) { console.log(fallas.map((f) => `  - ${f}`).join('\n')); process.exit(1) }

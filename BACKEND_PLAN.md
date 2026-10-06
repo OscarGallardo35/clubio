@@ -751,6 +751,24 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 
 ## TODO antes de la demo con un cliente real
 
+### TODO pre-PWA-Admin: auditar TODOS los stubs de `@repo/ui`
+
+"Auditar TODOS los stubs de @repo/ui antes de usar el componente en otra PWA. Lista actual: dialog,
+alert-dialog, accordion, select, sheet, dropdown-menu."
+
+Verificacion: `grep -l crearStub packages/ui/src/components/*.tsx`. Los stubs compilan, importan sin
+error y fallan en runtime **sin warning de Next**: el sintoma es un modal que no abre o un control sin
+estilo, no un crash.
+
+### REGLA DE NEGOCIO: una visita aprobada bloquea otra solicitud el mismo dia
+
+"Despues de visita APROBADA -> el cliente no puede solicitar otra ese dia. Despues de RECHAZADA -> si
+puede. Es intencional (anti-fraude). No es bug."
+
+Verificado de punta a punta (Fase 2 de la PWA Staff): con el token aprobado, `POST /visitas/solicitar`
+del mismo cliente no devuelve token; con el token rechazado, si lo devuelve. No "arreglarlo".
+
+
 ### TODO pre-deploy: `configuracion.turnosActivos` (default `false`)
 
 - La tab **Turnos** de la PWA Staff solo aparece si `tieneFeature('turnos')` **y** `configuracion.turnosActivos`.

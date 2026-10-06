@@ -1577,3 +1577,40 @@ Regla practica: antes de escribir un literal, hacer un `grep` del valor aproxima
 string **desde el codigo**, no desde el mensaje. Si hay que elegir entre "lo que dice el pedido" y
 "lo que dice el codigo", gana el codigo, y se avisa que el pedido decia otra cosa.
 
+### REGLA: toda ruta HTTP sale de `endpoints.X`; nunca se escribe a mano
+
+La ruta de una llamada al cliente **sale de `endpoints`** (que ya incluye el prefijo `/api`), nunca
+se escribe como literal. Aplica a las **tres** formas de string:
+
+```ts
+api.get('/carta')                    // MAL (comillas simples)
+api.get("/carta")                    // MAL (comillas dobles)
+api.get(`/modificadores/${id}`)      // MAL (backtick) <- el que se escapa en los barridos
+api.get(endpoints.carta.list)        // BIEN
+api.get(endpoints.modificadores.gruposDeItem(id))  // BIEN
+```
+
+**Corolario para barridos:** al buscar hardcodeos hay que cubrir las TRES formas de string literal.
+Un grep de `'/` y `"/` sin backticks deja pasar los template literals, que son justo los mas
+comunes en los paths con parametros. (Pasó de verdad: un barrido que solo miraba comillas reporto
+"no hay mas" y quedaba uno con backtick.)
+
+### Leccion: la misma clase de bug costo dos rondas
+
+Dos bugs distintos, una sola causa: una ruta escrita a mano sin el prefijo `/api`.
+
+- **upsell**: `POST /upsell/calcular` (sin `/api`) -> 404 -> el estado del upsell quedaba en error
+  -> el efecto reintentaba en cada render -> **event loop del navegador saturado** -> los handlers
+  de click no llegaban a correr. Se veia como "el modal no abre" y "el badge no responde", que eran
+  consecuencia, no causa.
+- **modificadores**: `GET /modificadores/items/:id/grupos` (sin `/api`) -> 404 -> `CartaDigital`
+  caia por el camino de "sin grupos" -> agregaba directo y **el modal no abria**.
+
+Moraleja practica: un 404 en el cliente no siempre se ve como un error; puede disfrazarse de una
+funcionalidad que "no anda" o de una pantalla que no responde. Antes de buscar el bug en la UI,
+mirar la consola y el Network.
+
+TODO de deuda tecnica (ver `BACKEND_PLAN.md`): que `ApiClient.request()` **tire error en
+development** si el path no empieza con `/api/`. Asi esta clase se caza en la primera llamada y no
+en el celular.
+

@@ -790,3 +790,11 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   cuando se audite `@repo/ui` (junto con los stubs de RadioGroup/Checkbox/Textarea). No rompe nada:
   es un valor de opacidad que sale `NaN` en vez de un numero.
 
+## TODO deuda tecnica: guard de rutas en el ApiClient
+
+- **TODO `@repo/api-client`: que `ApiClient.request()` tire error en development si el path no
+  empieza con `/api/`.** Hoy dos bugs de la misma clase (ruta handcodeada sin el prefijo) se
+  cazaron recien en el celular, y uno de ellos se disfrazo de "el modal no abre" por el loop de
+  reintentos. Con el guard, la primera llamada rompe en desarrollo y el bug no llega al celular.
+  Requiere tocar `packages/api-client` (avisar antes).
+

@@ -1968,3 +1968,29 @@ staff, no una base de WhatsApp. El fix es que la base salga del numero del atend
 staff adentro). Y el copy del mensaje pide verificar el pedido con ese link, porque el texto de
 WhatsApp lo puede editar el cliente antes de mandarlo.
 
+### REGLA: rebuildear el backend mata el server que lo esta sirviendo
+
+"Rebuildeear el backend con `pnpm build` mata el proceso que lo está sirviendo. El `prebuild` hace
+`rimraf dist` mientras node tiene archivos abiertos. Resultado: el server crashea silenciosamente con
+ECONNREFUSED en el próximo request."
+
+Antes de cualquier build del backend:
+1. Matar el proceso (Ctrl+C).
+2. Rebuildear.
+3. Levantar de nuevo.
+4. Verificar `/api/health`.
+
+Caso real: despues de tocar `generarMensajeWhatsApp` se corrio `pnpm --filter backend build` con el
+server vivo. El build salio **exit 0**, pero despues `check:flujo-ws` empezo a fallar con
+`ECONNREFUSED ::1:3000` y `/api/health` no respondia. No era el check ni el codigo: era el server
+muerto. Se levanto otra vez desde el `dist` nuevo y el check volvio a 29 OK. Lo peligroso es que el
+build MIENTE: exit 0 no dice nada del proceso que quedaba sirviendo.
+
+Ojo con los scripts: `prebuild`, `prestart` y `prestart:dev` hacen los **tres** el mismo
+`rimraf dist tsconfig.tsbuildinfo`, asi que `pnpm start` y `pnpm start:dev` tambien borran `dist`.
+
+Sobre la alternativa "usar un dist dir distinto": en el backend **no hay** uno configurado. `nest
+build` escribe siempre en `dist` y el prebuild lo borra; `NEXT_DIST_DIR` es del lado de la PWA (Next,
+via `distDir` en el config), no de Nest. Para evitar el kill/build/start habria que configurarle un
+`outDir` propio al backend; hoy la regla es la de los 4 pasos.
+

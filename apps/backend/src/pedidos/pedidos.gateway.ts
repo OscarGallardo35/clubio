@@ -5,6 +5,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
+import { COOKIE_CLIENTE, COOKIE_EMPLEADO, leerCookie } from '../common/utils/cookie.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -44,7 +45,14 @@ export class PedidosGateway implements OnGatewayConnection, OnGatewayDisconnect 
     const q = socket.handshake.query?.token;
     if (typeof q === 'string') return q;
     const h = socket.handshake.headers?.authorization ?? '';
-    return h.startsWith('Bearer ') ? h.slice(7) : '';
+    if (h.startsWith('Bearer ')) return h.slice(7);
+    // Cookies HttpOnly (mismo criterio que el gateway de visitas). Sin esto, el
+    // socket del staff dependia del token en memoria y un F5 en /pedidos lo dejaba
+    // sin recibir `pedido:nuevo`. La de EMPLEADO va primero: un token de cliente
+    // nunca pasa por el canal de staff (WsJwtGuard valida el claim `tipo`).
+    const deEmpleado = leerCookie(socket.handshake.headers?.cookie, COOKIE_EMPLEADO);
+    if (deEmpleado) return deEmpleado;
+    return leerCookie(socket.handshake.headers?.cookie, COOKIE_CLIENTE);
   }
 
   async handleConnection(socket: Socket) {

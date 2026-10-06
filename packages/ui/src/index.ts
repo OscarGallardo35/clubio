@@ -30,6 +30,7 @@ export { DataTable } from './components/data-table'
 export { TarjetaSellos } from './components/tarjeta-sellos'
 export { GoogleReviews } from './components/google-reviews'
 export { BottomSheet } from './components/bottom-sheet'
+export type { BottomSheetProps, AlturaSheet } from './components/bottom-sheet'
 
 // Utilidades
 export { cn } from './lib/utils'

@@ -1,14 +1,18 @@
-export const DropdownMenu = () => null
-export const DropdownMenuCheckboxItem = () => null
-export const DropdownMenuContent = () => null
-export const DropdownMenuGroup = () => null
-export const DropdownMenuItem = () => null
-export const DropdownMenuLabel = () => null
-export const DropdownMenuRadioGroup = () => null
-export const DropdownMenuRadioItem = () => null
-export const DropdownMenuSeparator = () => null
-export const DropdownMenuShortcut = () => null
-export const DropdownMenuSub = () => null
-export const DropdownMenuSubContent = () => null
-export const DropdownMenuSubTrigger = () => null
-export const DropdownMenuTrigger = () => null
+import { crearStub } from './_stub'
+
+const DropdownMenu = crearStub('DropdownMenu')
+const DropdownMenuCheckboxItem = crearStub('DropdownMenuCheckboxItem')
+const DropdownMenuContent = crearStub('DropdownMenuContent')
+const DropdownMenuGroup = crearStub('DropdownMenuGroup')
+const DropdownMenuItem = crearStub('DropdownMenuItem')
+const DropdownMenuLabel = crearStub('DropdownMenuLabel')
+const DropdownMenuRadioGroup = crearStub('DropdownMenuRadioGroup')
+const DropdownMenuRadioItem = crearStub('DropdownMenuRadioItem')
+const DropdownMenuSeparator = crearStub('DropdownMenuSeparator')
+const DropdownMenuShortcut = crearStub('DropdownMenuShortcut')
+const DropdownMenuSub = crearStub('DropdownMenuSub')
+const DropdownMenuSubContent = crearStub('DropdownMenuSubContent')
+const DropdownMenuSubTrigger = crearStub('DropdownMenuSubTrigger')
+const DropdownMenuTrigger = crearStub('DropdownMenuTrigger')
+
+export { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger }

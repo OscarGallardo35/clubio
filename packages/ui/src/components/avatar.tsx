@@ -1,3 +1,7 @@
-export const Avatar = () => null
-export const AvatarFallback = () => null
-export const AvatarImage = () => null
+import { crearStub } from './_stub'
+
+const Avatar = crearStub('Avatar')
+const AvatarFallback = crearStub('AvatarFallback')
+const AvatarImage = crearStub('AvatarImage')
+
+export { Avatar, AvatarFallback, AvatarImage }

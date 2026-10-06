@@ -672,3 +672,62 @@ cwd esperado es `apps/backend`. Corriendo desde la raiz, `../../.env` cae fuera 
 repo y Prisma muere con `P1012` (parece un error de schema y no lo es). Usar
 `pnpm --filter backend start` o `cd apps/backend && node dist/main.js`.
 
+## #3 — PWA Cliente: reglas de UI mobile
+
+### Inputs de 56px (`h-14`) + `text-base` (16px), nunca menos
+
+En iOS, un input con `font-size` menor a 16px provoca **zoom automatico** al
+enfocarlo: la pagina se agranda, el layout se corre y el usuario queda
+desorientado justo en el paso mas delicado (poner su WhatsApp). Por eso los
+inputs del sistema usan `h-14` (56px) y `text-base`:
+
+```tsx
+// packages/ui/src/components/input.tsx
+'flex h-14 w-full rounded-xl border border-input bg-background px-4 py-2 text-base'
+```
+
+Los botones van a 48px minimo (`h-12`), pero el input arranca en 56 porque es el
+primer contacto del QR #2. Y siempre `type="button"` por defecto en el Button:
+dentro de un `<form>`, un boton sin `type` hace submit y rompe el flujo.
+
+### framer-motion: no se puede animar una propiedad por keyframes Y manejarla con un MotionValue
+
+El backdrop del BottomSheet tenia que hacer dos cosas a la vez: fade in/out al
+abrir y cerrar, y **seguir al dedo** durante el drag. Si se pone la MotionValue en
+`style` y ademas `animate={{opacity}}` sobre la MISMA propiedad, framer ignora el
+animate (la MotionValue manda) y el fade de entrada desaparece.
+
+Solucion: **dos capas**, cada una duena de su propia animacion. La externa hace el
+fade por keyframes; la interna usa la MotionValue del drag. El alfa visible es el
+producto de las dos.
+
+```tsx
+<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>   // fade
+  <motion.div style={{ opacity: opacidadBackdrop }} />                          // drag
+</motion.div>
+```
+
+Y ojo: una MotionValue en `style` **solo funciona en componentes `motion.*`**. En
+un `<div>` plano no compila (TS2322).
+
+### Radix Dialog NO setea `aria-modal`
+
+`@radix-ui/react-dialog` aporta `role="dialog"`, el focus trap, Escape y el
+bloqueo de scroll, pero **no** agrega `aria-modal`. Hay que declararlo:
+
+```tsx
+<motion.div role="dialog" aria-modal={true} ...>
+```
+
+Evidencia de que el focus trap esta realmente enganchado: Radix agrega
+`tabindex="-1"` al contenedor (es su FocusScope el que lo hace focusable por
+programa), y con `asChild` esos props caen en TU elemento. Sin `tabindex="-1"` en
+el HTML, el FocusScope no esta conectado.
+
+### El BottomSheet no usa `Dialog.Portal`
+
+El Portal de Radix necesita `document` (en SSR el contenedor es null y no
+renderiza nada), asi que con Portal el sheet no existe en el HTML del servidor y
+no se puede verificar con un render estatico. Como es un sheet fijo a pantalla
+completa, no hay ganancia de apilado: se renderiza en el lugar.
+

@@ -15,6 +15,9 @@ interface VisitaState {
   token: string | null
   expiraEn: string | null
   sucursalId: string | null
+  // Espejo persistible de lo que devuelve el backend (igual que token).
+  mensajeWhatsApp: string | null
+  urlValidacion: string | null
   despachar: (evento: EventoFlujo) => void
   fijarWs: (ws: EstadoWs) => void
   reiniciar: () => void
@@ -37,12 +40,21 @@ export const useVisitaStore = create<VisitaState>()(
       token: null,
       expiraEn: null,
       sucursalId: null,
-
+      // Espejo de lo que guarda el flujo, para poder persistirlo.
+      mensajeWhatsApp: null,
+      urlValidacion: null,
       despachar: (evento) =>
         set((s) => {
           const flujo = visitaReducir(s.flujo, evento)
           if (evento.tipo === 'SOLICITADA') {
-            return { flujo, token: evento.token, expiraEn: evento.expiraEn, sucursalId: evento.sucursalId }
+            return {
+                  flujo,
+                  token: evento.token,
+                  expiraEn: evento.expiraEn,
+                  sucursalId: evento.sucursalId,
+                  mensajeWhatsApp: evento.mensajeWhatsApp ?? null,
+                  urlValidacion: evento.urlValidacion ?? null,
+                }
           }
           if (evento.tipo === 'RESET') {
             return { flujo, token: null, expiraEn: null, sucursalId: null, ws: 'desconectado' }
@@ -60,7 +72,7 @@ export const useVisitaStore = create<VisitaState>()(
        * quien sabe si sigue pendiente, si se aprobo o si vencio).
        */
       hidratar: () => {
-        const { token, expiraEn, sucursalId, flujo } = get()
+        const { token, expiraEn, sucursalId, mensajeWhatsApp, urlValidacion, flujo } = get()
         if (!token || flujo.paso !== 'inicio') return
         set({
           flujo: visitaReducir(flujo, {
@@ -68,6 +80,8 @@ export const useVisitaStore = create<VisitaState>()(
             token,
             expiraEn: expiraEn ?? new Date().toISOString(),
             sucursalId,
+              mensajeWhatsApp,
+              urlValidacion,
           }),
         })
       },
@@ -78,7 +92,13 @@ export const useVisitaStore = create<VisitaState>()(
       // Critico: en el servidor no hay localStorage y sin esto el primer render
       // del cliente no coincide con el HTML (warning de hydration mismatch).
       skipHydration: true,
-      partialize: (s) => ({ token: s.token, expiraEn: s.expiraEn, sucursalId: s.sucursalId }),
+      partialize: (s) => ({
+          token: s.token,
+          expiraEn: s.expiraEn,
+          sucursalId: s.sucursalId,
+          mensajeWhatsApp: s.mensajeWhatsApp,
+          urlValidacion: s.urlValidacion,
+        }),
     },
   ),
 )

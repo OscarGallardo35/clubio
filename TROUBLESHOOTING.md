@@ -1842,3 +1842,20 @@ si no hubiera nada (no se muestra el dato, y no se ofrece la accion).
 Nota: los campos que NO son identificables por si mismos (un link de WhatsApp, un mensaje armado)
 son los mas peligrosos, porque mostrarlos mal no falla: muestra otra cosa, y se ve plausible.
 
+### REGLA: los modulos que se importan desde scripts de node llevan extension explicita (.ts)
+
+Cuando un modulo va a ser importado **desde scripts de node (`.mts`) ademas de Next**, el import debe
+llevar **extension explicita** (`.ts`). Next resuelve sin extension; node no.
+
+Sintoma: el archivo **compila en Next** (y el typecheck pasa) pero un check lo ve como
+`ERR_MODULE_NOT_FOUND`. Es un fallo que solo aparece cuando alguien intenta importarlo desde un
+script, asi que puede estar latente mucho tiempo.
+
+Nota: si el import es **solo de tipos** (`import type`), node lo borra al hacer el strip y **no
+rompe**. Solo los imports de **valor** necesitan la extension. Por eso en un mismo archivo puede
+haber imports sin extension que nunca fallan (los de tipo) y uno solo que si.
+
+Caso real: `lib/checkout-maquina.ts` importaba `./modificadores-seleccion` (valor) sin extension.
+Nadie lo habia importado desde un script hasta que `check:checkout` lo necesito, y ahi salto. Los
+imports de `carrito-maquina` en ese mismo archivo eran `import type`, asi que no fallaban.
+

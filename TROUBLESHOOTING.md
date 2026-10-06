@@ -4,6 +4,39 @@ Errores conocidos del monorepo y sus soluciones.
 
 ---
 
+## REGLA #0 (antes de reportar un error)
+
+### Un error puede venir de un proceso VIEJO: verificar que quien lo emite es el actual
+
+Ya paso dos veces en este proyecto: un server arrancado ANTES de la edicion escuchando en
+:3000 hizo que los tests de sellos corrieran contra codigo viejo, y un `next dev` viejo en
+:3001 habria hecho lo mismo con la PWA.
+
+Protocolo, en orden:
+
+1. Verificar que el proceso que emite el error es el ACTUAL.
+2. Matar los procesos en background (`taskkill /F /PID <pid>`; en este bash `taskkill //F`
+   NO funciona, y para un arbol entero hace falta `/T`).
+3. Verificar que el puerto este libre (`netstat -ano | grep -E ":3000|:3001"`).
+4. Correr build + typecheck en arbol limpio.
+5. Si el error persiste, es real. Si no, era obsoleto.
+
+Corolario util: las notificaciones de procesos en background pueden llegar TARDE y
+describir una corrida ya superada. Antes de reportar, mirar si el estado actual coincide
+con lo que dice la notificacion.
+
+### `prisma generate` falla con EPERM si el backend esta levantado (Windows)
+
+```
+EPERM: operation not permitted, rename '...\query_engine-windows.dll.node.tmp17104'
+  -> '...\query_engine-windows.dll.node'
+```
+
+El server tiene abierta la DLL del query engine y Windows no deja reemplazarla. No es un
+problema de Prisma ni de dotenv: **hay que bajar el server antes de `prisma generate`**
+(verificado: con el server abajo, `db:generate` sale exit 0).
+
+
 ## REGLA #1
 
 ### El build NO valida el grafo de dependencias: hay que ARRANCAR el server
@@ -1049,4 +1082,39 @@ nada porque nadie llama a la funcion.
 **El tsc de los packages tampoco corre**: `packages/utils` y `packages/validators`
 tienen `rootDir: src` pero resuelven `@repo/types` por `paths` a su `src` -> TS6059.
 Falta decidir si se consumen por `dist` (referencias de proyecto) o se saca `rootDir`.
+
+### `set -a; . ./.env` contamina la sesion: usar dotenv-cli, con cuidado con CUAL dotenv
+
+`set -a; . ./.env; set +a` exporta TODO el `.env` al shell y **afecta a todos los comandos
+siguientes** de la sesion. `NODE_ENV=development` rompe el prerender de `next build`
+(React de desarrollo en un build de produccion: `<Html>` y `useContext` de null, ver mas
+arriba). Lo correcto es cargar el `.env` solo para ese comando. Pero ojo con CUAL `dotenv`
+resuelve, porque hay DOS en esta maquina:
+
+- El **local** (`dotenv-cli` del monorepo): acepta `-e, --env PATH` y `--`. Es el que
+  sirve. Solo esta instalado en `apps/backend` (es el unico package que lo declara, para
+  los scripts `db:*`).
+- El **de PATH**: `C:\Users\<user>\AppData\Local\hermes\installs\...\venv\Scripts\dotenv`,
+  que es el CLI **de Python** (python-dotenv, Click). Su `-e` es `--export BOOLEAN`, asi
+  que `-e ./.env` falla con:
+  `Error: Invalid value for '-e' / '--export': './.env' is not a valid boolean`.
+  Sus subcomandos son `get/list/run/set/unset` (`dotenv -f .env run <cmd>`).
+
+`node_modules/.bin/dotenv` NO existe en la raiz ni en `apps/pwa-cliente`, asi que ahi el
+nombre suelto cae al de Python. Verificado:
+
+```bash
+# FUNCIONA desde apps/backend (tiene el dep)
+pnpm dotenv -e ../../.env -- node -e "..."
+
+# FUNCIONA desde la raiz (bin local explicito) y NO contamina el shell
+./apps/backend/node_modules/.bin/dotenv -e ./.env -- pnpm --filter pwa-cliente build
+
+# NO funciona desde la raiz ni desde apps/pwa-cliente (cae al dotenv de Python)
+pnpm dotenv -e ../../.env -- next build
+```
+
+Si se quiere usar en la PWA, hay que agregar `dotenv-cli` a sus devDependencies o invocar
+el binario por ruta. En los dos casos el proceso hijo ve `NODE_ENV=development` (lo toma
+del `.env`) y el shell queda limpio.
 

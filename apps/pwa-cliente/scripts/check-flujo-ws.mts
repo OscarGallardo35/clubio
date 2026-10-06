@@ -111,6 +111,10 @@ async function main() {
   const vidaMs = Date.parse(expiraEn) - Date.now()
   chk('el token vive ~5 min', vidaMs > 4 * 60_000 && vidaMs <= 5 * 60_000 + 5000, `vida=${Math.round(vidaMs / 1000)}s`)
   chk('informa la sucursal de la solicitud', sol.data?.sucursal?.slug === 'norte', `sucursal=${JSON.stringify(sol.data?.sucursal)}`)
+chk('el mensaje de WhatsApp trae el token (Ref: ...)', /Ref:\s*\S+/.test(sol.data?.mensajeWhatsApp ?? ''), `mensaje=${sol.data?.mensajeWhatsApp}`)
+chk('el mensaje incluye el link de validacion', /validar\?ref=/.test(sol.data?.mensajeWhatsApp ?? ''), `mensaje=${sol.data?.mensajeWhatsApp}`)
+chk('urlValidacion viene completa', /validar\?ref=\S+/.test(sol.data?.urlValidacion ?? ''), `url=${sol.data?.urlValidacion}`)
+chk('la url de validacion usa el MISMO token', (sol.data?.urlValidacion ?? '').includes(tokenVisita), `url=${sol.data?.urlValidacion}`)
 
   // idempotencia: pedir de nuevo devuelve el MISMO token
   const sol2 = await http('/api/visitas/solicitar', { metodo: 'POST', cuerpo: { sucursalSlug: 'norte' }, token: accessToken })

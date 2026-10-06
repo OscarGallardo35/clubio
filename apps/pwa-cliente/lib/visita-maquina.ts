@@ -101,8 +101,8 @@ export function textoDelMotivo(estado: EstadoFlujo): string | null {
     case 'esperaHoras': {
       const h = estado.faltanHoras
       return h && h > 0
-        ? `Todavía no podés sumar otra visita: esperá ${h} hora${h === 1 ? '' : 's'} más.`
-        : 'Todavía no podés sumar otra visita.'
+        ? `Ya sumaste hoy. Volvé en ${h} hora${h === 1 ? '' : 's'} para tu próxima visita.`
+        : 'Ya sumaste hoy. Volvé más tarde para tu próxima visita.'
     }
     default:
       return null

@@ -1,10 +1,10 @@
 'use client'
 
 import * as React from 'react'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useBrandingCtx } from '@/components/BrandingProvider'
 import { useClienteStore } from '@/stores/clienteStore'
 import { configurarNegocioDeVisita, useVisitaStore } from '@/stores/visitaStore'
-import { consultarEstado, crearSocketVisita, solicitarVisita } from '@/lib/visita-service'
+import { consultarEstado, crearSocketVisita, registrarCliente, sesionActual, solicitarVisita } from '@/lib/visita-service'
 import { esFinal, puedeReintentar, textoDelMotivo } from '@/lib/visita-maquina'
 import type { EstadoFlujo } from '@/lib/visita-maquina'
 import type { EstadoWs } from '@/stores/visitaStore'
@@ -19,6 +19,8 @@ const MAX_POLLING = 60
 export interface UseVisitaQr {
   flujo: EstadoFlujo
   ws: EstadoWs
+  /** Registra al cliente y arranca la solicitud en un solo paso. */
+  registrar: (datos: { nombre: string; telefono: string }) => Promise<void>
   /** Texto del motivo cuando el paso es 'noSumada'. */
   textoMotivo: string | null
   puedeReintentar: boolean
@@ -36,9 +38,12 @@ export interface UseVisitaQr {
  * corresponde. Toda la logica testeable esta en visita-maquina.ts.
  */
 export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
-  const negocioSlug = useBrandingStore((s) => s.negocio?.slug ?? null)
+  // Del contexto y no del store: el contexto ya tiene el negocio que resolvio
+  // el servidor (el store se llena en un efecto, despues).
+  const negocioSlug = useBrandingCtx().negocio?.slug ?? null
   const tokenAcceso = useClienteStore((s) => s.token)
   const actualizarSellos = useClienteStore((s) => s.actualizarSellos)
+  const fijarSesion = useClienteStore((s) => s.fijarSesion)
 
   const flujo = useVisitaStore((s) => s.flujo)
   const ws = useVisitaStore((s) => s.ws)
@@ -221,9 +226,37 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
     await solicitar()
   }, [despachar, solicitar])
 
+  /**
+   * Registro + sesion + primera solicitud. El token que devuelve el backend se
+   * guarda en el store del cliente porque el WebSocket lo necesita (la cookie
+   * es HttpOnly y JS no la ve).
+   */
+  const registrar = React.useCallback(
+    async (datos: { nombre: string; telefono: string }) => {
+      if (!negocioSlug) return
+      const r = await registrarCliente({
+        nombre: datos.nombre,
+        telefono: datos.telefono,
+        negocioSlug,
+        sucursalSlug,
+      })
+      if (!r.ok) {
+        despachar({ tipo: 'ERROR_RED', mensaje: r.mensaje })
+        return
+      }
+      const me = await sesionActual()
+      if (me) {
+        fijarSesion({ cliente: me.cliente, tarjetas: me.tarjetas, sumoHoy: me.sumoHoy, token: r.accessToken })
+      }
+      await solicitar()
+    },
+    [negocioSlug, sucursalSlug, despachar, fijarSesion, solicitar],
+  )
+
   return {
     flujo,
     ws,
+    registrar,
     textoMotivo: textoDelMotivo(flujo),
     puedeReintentar: puedeReintentar(flujo),
     esFinal: esFinal(flujo),

@@ -1164,3 +1164,16 @@ hay cookies, asi que la identidad va en `auth: { token }` con `Authorization: Be
 para el HTTP. Ademas conviene `reconnection: false` en un harness para que el resultado
 sea deterministico.
 
+### Node strip-only: ni parameter properties ni decoradores
+
+Node corre `.ts`/`.mts` borrando tipos, pero no los transforma. No soporta **parameter
+properties** (`constructor(public status: number)`) ni **decoradores**, asi que un script
+de node no puede importar packages que los usen (en este repo: `ApiError` de
+`@repo/api-client` -> `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`).
+
+Alternativas, en orden de conveniencia: usar `fetch`/`io` directos en el script (lo que
+hace `scripts/check-flujo-ws.mts`), o compilar con `tsc` antes de correr.
+
+No se cambia `ApiError` a campos explicitos: el costo de no poder importar el package
+desde scripts es aceptable y la deuda no vale la pena.
+

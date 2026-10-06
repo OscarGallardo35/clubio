@@ -4,9 +4,13 @@ import * as React from 'react'
 import { ApiError } from '@repo/api-client'
 import { clienteApi } from '@/lib/api'
 import { useClienteStore } from '@/stores/clienteStore'
+import type { ClienteBasico, TarjetaSucursal } from '@/types/api'
 import { api } from '@/lib/api'
 
 interface UseCliente {
+  /** Datos del cliente para mostrar (nombre en el saludo, tarjetas por sucursal). */
+  cliente: ClienteBasico | null
+  tarjetas: TarjetaSucursal[]
   autenticado: boolean
   cargando: boolean
   /** true una vez que se sabe si hay sesion o no (evita parpadear el registro). */
@@ -16,7 +20,7 @@ interface UseCliente {
 }
 
 export function useCliente(): UseCliente {
-  const { autenticado, cargando } = useClienteStore()
+  const { autenticado, cargando, cliente, tarjetas } = useClienteStore()
   const fijarSesion = useClienteStore((s) => s.fijarSesion)
   const limpiar = useClienteStore((s) => s.limpiar)
   const [resuelto, setResuelto] = React.useState(false)
@@ -54,5 +58,5 @@ export function useCliente(): UseCliente {
     }
   }, [limpiar])
 
-  return { autenticado, cargando: cargando || cargandoLocal, resuelto, refetch, logout }
+  return { cliente, tarjetas, autenticado, cargando: cargando || cargandoLocal, resuelto, refetch, logout }
 }

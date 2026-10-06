@@ -41,6 +41,8 @@ export interface TarjetaSellosProps {
   colorPrimario: string
   colorSecundario: string
   tamaño: TamanoTarjeta
+  /** 'glass' para fondos con color (club, tarjeta); 'solida' para el fondo neutro. */
+  variante?: 'glass' | 'solida' | undefined
   estado?: EstadoTarjeta | undefined
   mostrarUltimaVisita?: boolean | undefined
   ultimaVisita?: Date | undefined
@@ -255,6 +257,7 @@ export function TarjetaSellos({
   colorPrimario,
   colorSecundario,
   tamaño,
+  variante = 'glass',
   estado,
   mostrarUltimaVisita = false,
   ultimaVisita,
@@ -263,6 +266,9 @@ export function TarjetaSellos({
   className,
 }: TarjetaSellosProps) {
   const config = CONFIG[tamaño]
+  // Con fondo neutro (modo funcional) el glassmorphism no se ve: la tarjeta
+  // necesita fondo y borde propios para no quedar flotando en el vacio.
+  const glass = variante === 'glass'
   const total = Math.max(1, meta)
   const llenos = Math.max(0, Math.min(actuales, total))
   const estadoReal = estado ?? derivarEstado(llenos, total)
@@ -340,8 +346,8 @@ export function TarjetaSellos({
         aria-label={etiquetaContenedor}
         onClick={onClick}
         className={cn(
-          'relative flex size-[60px] items-center justify-center rounded-full border border-white/20',
-          'bg-white/10 backdrop-blur-xl',
+          'relative flex size-[60px] items-center justify-center rounded-full',
+          glass ? 'border border-white/20 bg-white/10 backdrop-blur-xl' : 'border border-border bg-card',
           onClick && 'cursor-pointer',
           className,
         )}
@@ -399,7 +405,7 @@ export function TarjetaSellos({
       <div
         className={cn(
           'relative flex h-full w-full flex-col justify-between overflow-hidden rounded-3xl',
-          'border border-white/20 bg-white/10 backdrop-blur-xl',
+          glass ? 'border border-white/20 bg-white/10 backdrop-blur-xl' : 'border border-border bg-card',
           config.padding,
         )}
         style={{ minHeight: 'inherit' }}

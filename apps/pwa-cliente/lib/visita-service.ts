@@ -1,7 +1,7 @@
 import { ApiError, createSocket, endpoints } from '@repo/api-client'
 import type { Socket } from 'socket.io-client'
-import type { EstadoVisitaRespuesta, SolicitarVisitaRespuesta } from '@/types/api'
-import { api, WS_URL } from './api'
+import type { ClienteMe, EstadoVisitaRespuesta, SolicitarVisitaRespuesta } from '@/types/api'
+import { api, clienteApi, WS_URL } from './api'
 import type { ClasificacionRechazo, EstadoVisitaToken } from './visita-maquina'
 import { clasificarRechazoDeSolicitud } from './visita-maquina'
 
@@ -56,6 +56,46 @@ export async function solicitarVisita(
       mensaje: e instanceof Error ? e.message : 'No pudimos conectar con el local',
       status: 0,
     }
+  }
+}
+
+export interface RegistroOk {
+  ok: true
+  accessToken: string
+  nombre: string
+  telefono: string
+}
+
+export interface RegistroFallido {
+  ok: false
+  mensaje: string
+}
+
+/**
+ * POST /auth/cliente/registrar. Devuelve el accessToken del body: la cookie que
+ * setea es HttpOnly y el WebSocket NO la puede leer, asi que el token hace falta
+ * para el handshake.
+ */
+export async function registrarCliente(datos: {
+  nombre: string
+  telefono: string
+  negocioSlug: string
+  sucursalSlug?: string | null
+}): Promise<RegistroOk | RegistroFallido> {
+  try {
+    const r = await clienteApi.registrar({
+      nombre: datos.nombre,
+      telefono: datos.telefono,
+      negocioSlug: datos.negocioSlug,
+      ...(datos.sucursalSlug ? { sucursalSlug: datos.sucursalSlug } : {}),
+    })
+    return { ok: true, accessToken: r.accessToken, nombre: r.cliente.nombre, telefono: r.cliente.telefono }
+  } catch (e) {
+    if (e instanceof ApiError) {
+      const mensaje = typeof e.data?.message === 'string' ? e.data.message : e.message
+      return { ok: false, mensaje }
+    }
+    return { ok: false, mensaje: e instanceof Error ? e.message : 'No pudimos registrarte' }
   }
 }
 
@@ -117,4 +157,13 @@ export function crearSocketVisita(manejadores: ManejadoresWs, token?: string | n
   socket.io.on('reconnect_attempt', () => manejadores.onReconectando?.())
 
   return socket
+}
+
+/** GET /auth/cliente/me. Devuelve null si no hay sesion (401) o si fallo la red. */
+export async function sesionActual(): Promise<ClienteMe | null> {
+  try {
+    return await clienteApi.me()
+  } catch {
+    return null
+  }
 }

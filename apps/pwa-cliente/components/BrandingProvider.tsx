@@ -75,7 +75,11 @@ export interface BrandingProviderProps {
 
 export function BrandingProvider({ children, negocioInicial, modo, tenant }: BrandingProviderProps) {
   const pathname = usePathname()
-  const negocio = useBrandingStore((s) => s.negocio)
+  const negocioStore = useBrandingStore((s) => s.negocio)
+  // El negocio que resolvio el SERVIDOR manda en el primer render: el store
+  // recien se llena en un efecto, asi que sin esto el HTML inicial sale sin
+  // colores ni nombre (y las pantallas que dependen del contexto, vacias).
+  const negocio = negocioInicial ?? negocioStore
   const cargando = useBrandingStore((s) => s.cargando)
   const error = useBrandingStore((s) => s.error)
   const cargar = useBrandingStore((s) => s.cargar)
@@ -96,7 +100,7 @@ export function BrandingProvider({ children, negocioInicial, modo, tenant }: Bra
     }
     const slug = tenant ?? tenantDelPath(pathname)
     if (slug && negocio?.slug !== slug) void cargar(slug)
-  }, [negocioInicial, tenant, pathname, negocio?.slug, fijarInicial, cargar])
+  }, [negocioInicial, tenant, pathname, negocio, fijarInicial, cargar])
 
   // El cliente se resuelve por cookie: el tenant lo tiene que mandar el header.
   React.useEffect(() => {

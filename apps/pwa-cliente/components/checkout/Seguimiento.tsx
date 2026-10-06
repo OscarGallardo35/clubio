@@ -21,9 +21,10 @@ import Link from 'next/link'
 import type { Socket } from 'socket.io-client'
 import { buttonVariants } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
-import { pedidosApi } from '@/lib/api'
-import { ETIQUETAS_MODO_PAGO, normalizarError, timeline } from '@/lib/checkout-maquina'
+import { api, pedidosApi } from '@/lib/api'
+import { ETIQUETAS_MODO_PAGO, clasificarFalloPedido, normalizarError, timeline } from '@/lib/checkout-maquina'
 import type { EstadoPedido } from '@/lib/checkout-maquina'
+import type { FalloSeguimiento } from '@/lib/checkout-maquina'
 import { crearSocketPedidos } from '@/lib/socket'
 import { useClienteStore } from '@/stores/clienteStore'
 import { useCarritoStore } from '@/stores/carritoStore'
@@ -34,18 +35,9 @@ const INTERVALO_POLLING_MS = 5000
 const ESPERA_WS_MS = 3000
 const MAX_INTENTOS_WS = 3
 
-type Fallo = 'no-encontrado' | 'vencido' | 'otro'
-
 export interface SeguimientoProps {
   linkToken: string
   slugNegocio: string
-}
-
-/** El 410 aca es "link vencido", no "carta vencida". */
-function clasificarFallo(status: number): Fallo {
-  if (status === 404) return 'no-encontrado'
-  if (status === 410) return 'vencido'
-  return 'otro'
 }
 
 export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
@@ -55,7 +47,7 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   const { negocio, resenasDisponibles } = useBranding()
 
   const [pedido, setPedido] = React.useState<PedidoPublico | null>(null)
-  const [fallo, setFallo] = React.useState<Fallo | null>(null)
+  const [fallo, setFallo] = React.useState<FalloSeguimiento | null>(null)
   const [cargando, setCargando] = React.useState(true)
   const [soloPolling, setSoloPolling] = React.useState(false)
 
@@ -64,24 +56,30 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
 
   const refetch = React.useCallback(async () => {
     try {
+      // El tenant se fija ACA, con el slug que ya viene en la URL, y no se espera al
+      // `api.setTenant` del BrandingProvider: los efectos corren de hijo a padre, asi que en una
+      // carga en frio esta request sale ANTES y el backend contesta 404 "falta el tenant". Es
+      // idempotente (setTenant solo guarda el slug en el cliente).
+      api.setTenant(slugNegocio)
       const r = await pedidosApi.publico(linkToken)
       setPedido(r)
       setFallo(null)
     } catch (e) {
-      const { status } = normalizarError(e)
+      const { status, mensaje } = normalizarError(e)
       // Un error de red no borra lo que ya tenemos: se reintenta en el proximo tick.
       if (status !== 0) {
-        setFallo(clasificarFallo(status))
-        // 404: este linkToken no existe. Si es el que tenemos guardado, el banner "Ver estado de tu
-        // pedido" estaria mandando al cliente a una pantalla muerta, asi que se suelta el pedido.
-        if (status === 404 && pedidoGuardado?.linkToken === linkToken) {
+        const f = clasificarFalloPedido(status, mensaje)
+        setFallo(f)
+        // Solo el 404 REAL (pedido no encontrado) suelta el pedido. El de "falta el tenant" es
+        // transitorio: el link existe, el header llego tarde.
+        if (f === 'no-encontrado' && pedidoGuardado?.linkToken === linkToken) {
           despachar({ tipo: 'OLVIDAR_PEDIDO' })
         }
       }
     } finally {
       setCargando(false)
     }
-  }, [linkToken])
+  }, [linkToken, slugNegocio, pedidoGuardado?.linkToken, despachar])
 
   // 1) Polling. Se corta cuando el pedido llego a un estado final (no cambia mas).
   React.useEffect(() => {
@@ -134,15 +132,17 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
     }
   }, [token, refetch])
 
-  if (cargando && !pedido) {
+  // 'tenant' es transitorio: se sigue mostrando el mismo cartel de espera y el polling NO se corta
+  // (el efecto de polling solo frena con 'no-encontrado'/'vencido'/estado final).
+  if ((cargando || fallo === 'tenant') && !pedido) {
     return <p className="p-6 text-center text-sm text-muted-foreground">Buscando tu pedido...</p>
   }
 
   if (fallo === 'no-encontrado') {
     return (
       <Aviso
-        titulo="No encontramos tu pedido"
-        detalle="Pedile al local que te reenvie el link."
+        titulo="Este pedido ya no esta disponible"
+        detalle="Es posible que ya se haya completado o que el link haya sido eliminado."
         slugNegocio={slugNegocio}
       />
     )

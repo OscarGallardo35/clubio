@@ -1931,3 +1931,25 @@ a `/[tenant]/checkout`, sin condicional. Verificar esto ANTES de tocar codigo ah
 hace falta: la clase de bug puede estar ya resuelta y el sintoma venir de otro lado (por ejemplo, una
 pestana sin recargar, que sigue corriendo el bundle viejo aunque el dev server haya cambiado).
 
+### REGLA: el mismo status en el mismo endpoint puede tener significados opuestos
+
+"El mismo status HTTP (404) puede tener significados distintos en el mismo endpoint ('falta el
+tenant' vs 'pedido no encontrado'), y son OPUESTOS en comportamiento: uno es reintentable, el otro es
+terminal. Clasificar por el body, no solo por el status."
+
+Caso real: `GET /api/pedidos/publico/:linkToken` devuelve 404 en dos situaciones que no tienen nada que
+ver:
+- `{"message":"Falta el tenant (X-Tenant-Slug) para esta operacion"}`: la request salio sin el header.
+  Es TRANSITORIO. Paso porque `api.setTenant(slug)` vive en un `useEffect` del BrandingProvider y los
+  efectos de React corren DE HIJO A PADRE: en una carga en frio el fetch del seguimiento salia antes
+  y el backend contestaba esto. Con el proximo intento anda.
+- `{"message":"Pedido no encontrado"}`: ese linkToken no existe. TERMINAL, no hay nada que
+  reintentar.
+
+Confundirlos era peor que un cartel equivocado: el clasificador viejo tomaba cualquier 404 como "no
+encontrado", asi que un pedido VALIDO mostraba "No encontramos tu pedido" y ademas **cortaba el
+polling** (el efecto frena con los fallos terminales). El fix tiene dos partes: (1) fijar el tenant en
+el propio fetch, con el slug que ya viene en la URL (`api.setTenant(slugNegocio)`, idempotente), para
+que el header no dependa del orden de los efectos; y (2) clasificar el 404 por el body, dejando el
+caso transitorio como reintentable.
+

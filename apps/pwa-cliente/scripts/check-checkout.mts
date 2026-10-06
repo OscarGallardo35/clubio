@@ -21,7 +21,7 @@ import {
   validarCheckout,
 } from '../lib/carrito-maquina.ts'
 import type { EstadoCarrito, ItemCarta, ModificadorElegido } from '../lib/carrito-maquina.ts'
-import { ETIQUETAS_MODO_PAGO, armarBody, normalizarError } from '../lib/checkout-maquina.ts'
+import { ETIQUETAS_MODO_PAGO, armarBody, clasificarFalloPedido, normalizarError } from '../lib/checkout-maquina.ts'
 import { validarTelefonoE164 } from '../lib/carrito-maquina.ts'
 import { modificadoresParaApi } from '../lib/modificadores-seleccion.ts'
 
@@ -264,6 +264,19 @@ igual('OLVIDAR_PEDIDO limpia el pedido', olvidado.pedido, null)
 igual('OLVIDAR_PEDIDO conserva los items', olvidado.items.length, 1)
 igual('OLVIDAR_PEDIDO conserva la fase', olvidado.fase, 'conItems')
 igual('OLVIDAR_PEDIDO es idempotente', reducerCarrito(olvidado, { tipo: 'OLVIDAR_PEDIDO' }).pedido, null)
+
+
+// --- 13. Fallos del seguimiento: el mismo 404, dos significados -------------
+console.log('\n== fallos del seguimiento ==')
+// 404 del TenantGuard: el header llego tarde (los efectos corren de hijo a padre). Reintentable.
+igual('404 falta el tenant es reintentable',
+  clasificarFalloPedido(404, 'Falta el tenant (X-Tenant-Slug) para esta operacion'), 'tenant')
+// 404 real: ese link no existe. Terminal.
+igual('404 pedido no encontrado es terminal', clasificarFalloPedido(404, 'Pedido no encontrado'), 'no-encontrado')
+igual('el mensaje del tenant no depende de mayusculas', clasificarFalloPedido(404, 'FALTA EL TENANT'), 'tenant')
+igual('410 es link vencido', clasificarFalloPedido(410, 'cualquiera'), 'vencido')
+igual('500 es otro (no terminal)', clasificarFalloPedido(500, ''), 'otro')
+igual('un 404 con mensaje desconocido cae al lado terminal', clasificarFalloPedido(404, ''), 'no-encontrado')
 
 console.log(fallas.length === 0
   ? `\nTODO OK: ${ok} aserciones OK, 0 fallas\n`

@@ -49,6 +49,27 @@ export const ETIQUETAS: Record<EstadoPedido, string> = {
  * daba "efectivo" en minuscula: los enums del backend vienen en MAYUSCULAS y no son copy para el
  * usuario.
  */
+export type FalloSeguimiento = 'no-encontrado' | 'vencido' | 'otro' | 'tenant'
+
+/**
+ * Clasifica el fallo del GET publico del pedido (`/api/pedidos/publico/:linkToken`).
+ *
+ * OJO: en ESTE endpoint el 404 significa dos cosas OPUESTAS y se distinguen por el body, no por el
+ * status:
+ * - "Falta el tenant (X-Tenant-Slug) para esta operacion" -> REINTENTABLE. El header lo fija el
+ *   `api.setTenant` del BrandingProvider en un useEffect, y los efectos de React corren de hijo a
+ *   padre: en una carga en frio el fetch del seguimiento sale ANTES y el backend contesta esto. Con
+ *   el proximo intento ya anda.
+ * - "Pedido no encontrado" -> TERMINAL. Ese link no existe: no hay nada que reintentar.
+ * Confundirlos deja un pedido valido mostrando "no encontrado" y, peor, corta el polling.
+ */
+export function clasificarFalloPedido(status: number, mensaje: string): FalloSeguimiento {
+  const m = (mensaje ?? '').toLowerCase()
+  if (status === 404) return m.includes('falta el tenant') ? 'tenant' : 'no-encontrado'
+  if (status === 410) return 'vencido'
+  return 'otro'
+}
+
 export const ETIQUETAS_MODO_PAGO: Record<'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA', string> = {
   EFECTIVO: 'Efectivo',
   TRANSFERENCIA: 'Transferencia',

@@ -1758,3 +1758,19 @@ Antes de reusar uno, verificar que los status que mapea signifiquen lo mismo en 
 hay dudas, leer los `throw` del backend de esa ruta: ahi esta la semantica real (`NotFoundException`,
 `GoneException`, `BadRequestException`...), no en el numero.
 
+### REGLA: los endpoints publicos exponen lista blanca, no lista negra
+
+Un endpoint publico (al que se entra solo con un token, como `linkToken`) **debe exponer solo los
+campos publicos**, y hay que listarlos explicitamente. No alcanza con "incluir lo que la UI necesita
+y excluir el resto": con `return { ...row }` cualquier columna que se agregue manana sale por la red
+sin que nadie lo note.
+
+Caso real: `POST /pedidos` excluia a proposito los IDs de asignacion ("este endpoint es PUBLICO...
+exponer IDs de empleados seria una fuga"), pero `GET /pedidos/publico/:linkToken` — el mismo dato,
+otra puerta publica — devolvia el row completo por el spread: `empleadoAsignadoId`, `encargadoId`,
+`negocioId`, `sucursalId`, `clienteId`. Dos endpoints publicos, dos estandares distintos.
+
+Regla practica: en las rutas publicas, `select` explicito (lista blanca) y nunca `return { ...row }`.
+Si la respuesta se arma con spread, cualquier columna futura se filtra sola, y el bug no lo caza
+ningun test: la respuesta sigue siendo valida, solo que con mas campos.
+

@@ -334,11 +334,39 @@ export class PedidosService {
 
   /** GET /pedidos/publico/:linkToken — el token ES la autenticacion. */
   async obtenerPedidoPorLink(negocioId: string, linkToken: string) {
+    // SELECT de lista blanca (no `include` + spread): este endpoint es PUBLICO y se entra solo con
+    // el linkToken, asi que no puede devolver IDs internos (empleadoAsignadoId, encargadoId,
+    // negocioId, sucursalId, clienteId). POST /pedidos ya excluia la asignacion a proposito; este
+    // endpoint devolvia el row completo por el spread y se contradecia con ese estandar.
+    // Se usa lista BLANCA y no lista negra: si manana se agrega una columna interna, no se filtra
+    // sola ni hace falta acordarse de excluirla.
     const pedido = await this.prisma.pedido.findFirst({
       where: { negocioId, linkToken },
-      include: {
-        sucursal: { select: { id: true, nombre: true, slug: true } },
-        cliente: { select: { id: true, nombre: true } },
+      select: {
+        id: true,
+        linkToken: true,
+        linkExpiraEn: true,
+        nombreCliente: true,
+        telefono: true,
+        direccion: true,
+        mesa: true,
+        origen: true,
+        tipo: true,
+        modoPago: true,
+        estado: true,
+        notas: true,
+        motivoRechazo: true,
+        subtotal: true,
+        costoEnvio: true,
+        total: true,
+        numeroAtendiente: true,
+        items: true,
+        creadoEn: true,
+        confirmadoEn: true,
+        enviadoEn: true,
+        entregadoEn: true,
+        sucursal: { select: { nombre: true, slug: true } },
+        cliente: { select: { nombre: true } },
       },
     });
     if (!pedido) throw new NotFoundException('Pedido no encontrado');

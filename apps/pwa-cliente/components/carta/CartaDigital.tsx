@@ -26,6 +26,8 @@ import type { ItemCarta, ModificadorElegido } from '@/lib/carrito-maquina'
 import { ordenarCategorias } from '@/lib/ordenar-categorias'
 import { ModalModificadores } from './ModalModificadores'
 import { CarritoSheet } from './CarritoSheet'
+import { GatingBanner } from './GatingBanner'
+import { useBranding } from '@/hooks/useBranding'
 import { BadgeCarrito } from './BadgeCarrito'
 import type { ItemParaModal } from './ModalModificadores'
 import type { GrupoModificadorPublico } from '@/lib/modificadores-cache'
@@ -44,6 +46,9 @@ interface CategoriaDeLaCarta {
 
 export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca }: CartaDigitalProps) {
   const { carta, cargando, actualizando, aviso, descartarAviso } = useCarta(negocioSlug, sucursalSlug)
+  // `menuDisponible` ya combina la feature del plan con el switch del negocio (useBranding):
+  // no se re-deriva aca.
+  const { menuDisponible, negocio } = useBranding()
   const despachar = useCarritoStore((s) => s.despachar)
   const activarCarrito = useCarritoStore((s) => s.activar)
   const [categoria, setCategoria] = React.useState<string | null>(null)
@@ -139,6 +144,10 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
     },
     [agregarDirecto, abrirModal],
   )
+
+  if (!menuDisponible) {
+    return <GatingBanner featureBloqueada="La carta digital" negocioNombre={negocio?.nombre ?? 'este negocio'} />
+  }
 
   if (cargando && !carta) {
     return (

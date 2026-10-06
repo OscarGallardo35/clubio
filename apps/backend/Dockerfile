@@ -42,6 +42,13 @@ COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/node_modules ./apps/backend/node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/prisma ./prisma
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/package.json ./
+# TEMPORAL: sonda de diagnostico del deploy (se saca despues)
+RUN echo '=== SONDA /app ===' && ls -la /app | head -15 && \
+    echo '=== SONDA /app/node_modules (primeros) ===' && ls /app/node_modules 2>&1 | head -15 && \
+    echo '=== SONDA /app/node_modules/@nestjs ===' && ls -la /app/node_modules/@nestjs 2>&1 | head -12 && \
+    echo '=== SONDA @nestjs/core ===' && ls -la /app/node_modules/@nestjs/core 2>&1 | head -6 && \
+    echo '=== SONDA apps/backend ===' && ls -la /app/apps/backend 2>&1 | head -10 && \
+    echo '=== SONDA fin ==='
 USER nestjs
 EXPOSE 3000
 ENV PORT=3000

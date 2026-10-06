@@ -134,3 +134,37 @@ dev: al usar uno, confirmar que sea real.
 - `e2e_s4.cjs` borra TODOS los overrides de la sucursal norte, no solo los suyos.
 - Validators: migrar de listas `as const` a `z.nativeEnum` cuando se hagan Project References.
 - `check:validators` todavia no cruza formas de campos, solo enums.
+
+## BUG del WhatsApp de la visita (en curso — commit `9361d3a` y el de visita-service)
+
+Sintoma: el mensaje que abre WhatsApp salia generico.
+
+Causas (las dos, confirmadas leyendo el codigo):
+
+1. **Backend** — HECHO (`9361d3a`): el mensaje era "Hola, soy X. Quiero sumar mi visita. Ref: TOKEN"
+   (sin negocio y sin link). Ahora es "Hola, soy X. Quiero sumar mi visita en NEGOCIO. Ref: TOKEN.
+   Validar aqui: URL", con `STAFF_APP_URL` del `.env` y el nombre del negocio en una consulta
+   puntual. **Verificado contra el backend real** (`POST /visitas/solicitar` 201): el mensaje trae
+   nombre + negocio + Ref + URL, y la URL sale de `STAFF_APP_URL`.
+2. **Frontend** — HECHO a medias:
+   - `lib/visita-service.ts`: **HECHO**. `SolicitudOk` (y `SolicitudFallida`) declaran
+     `mensajeWhatsApp` y `urlValidacion`, y el return los copia de la respuesta. Antes se
+     descartaban: el tipo `SolicitarVisitaRespuesta` de `types/api.ts` YA los declaraba, el
+     descarte estaba en el service.
+   - **FALTA (3 ediciones chicas, es lo primero del proximo turno):**
+     a. `stores/visitaStore.ts`: agregar `mensajeWhatsApp` y `urlValidacion` al estado y al
+        `partialize` (hoy persiste solo `{token, expiraEn, sucursalId}`).
+     b. `hooks/useVisitaQr.ts`: al `solicitar` exitoso, guardar esos dos campos en el store; su
+        `return` hoy expone `{flujo, ws, registrar, textoMotivo, puedeReintentar, esFinal,
+        solicitar, reintentar, reiniciar}` y **no** el resultado de la solicitud.
+     c. `components/flujo/FlujoVisita.tsx:88`: reemplazar el hardcodeo
+        `mensajeWhatsApp={`Hola, quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}`}`
+        por el del backend con ese fallback. `PasoEspera.tsx` ya esta bien: recibe la prop y arma
+        el `wa.me`, no hay que tocarlo.
+3. **Falta tambien**: la asercion en `check:flujo` de que el mensaje incluye el token (para que
+   no vuelva a quedar hardcodeado) y la verificacion manual en incognito (navegador; no puedo
+   manejarlo desde aca).
+
+Bug del backend original (contexto): `POST /visitas/solicitar` -> 201 con
+`urlValidacion: "<STAFF_APP_URL>/validar?ref=<token>"`.
+

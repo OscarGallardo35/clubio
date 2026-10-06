@@ -18,6 +18,9 @@ export interface SolicitudOk {
   expiraEn: string
   sucursalId: string | null
   reutilizado: boolean
+  /** Vienen del backend: traen el token y el link de validacion. Antes se descartaban. */
+  mensajeWhatsApp: string | null
+  urlValidacion: string | null
 }
 
 export interface SolicitudFallida {
@@ -25,6 +28,9 @@ export interface SolicitudFallida {
   rechazo: ClasificacionRechazo
   mensaje: string
   status: number
+  /** En una solicitud fallida no hay mensaje para WhatsApp. */
+  mensajeWhatsApp: null
+  urlValidacion: null
 }
 
 /** POST /visitas/solicitar. Nunca lanza por un 400 del negocio: lo clasifica. */
@@ -44,17 +50,22 @@ export async function solicitarVisita(
       expiraEn: r.expiraEn,
       sucursalId: r.sucursal?.id ?? null,
       reutilizado: r.reutilizado === true,
+        // El mensaje ya trae nombre, negocio, Ref: token y el link de validacion.
+        mensajeWhatsApp: r.mensajeWhatsApp ?? null,
+        urlValidacion: r.urlValidacion ?? null,
     }
   } catch (e) {
     if (e instanceof ApiError) {
       const mensaje = typeof e.data?.message === 'string' ? e.data.message : e.message
-      return { ok: false, rechazo: clasificarRechazoDeSolicitud(mensaje), mensaje, status: e.status }
+      return { ok: false, rechazo: clasificarRechazoDeSolicitud(mensaje), mensaje, status: e.status, mensajeWhatsApp: null, urlValidacion: null }
     }
     return {
       ok: false,
       rechazo: { motivo: 'otro', faltanHoras: null },
       mensaje: e instanceof Error ? e.message : 'No pudimos conectar con el local',
       status: 0,
+        mensajeWhatsApp: null,
+        urlValidacion: null,
     }
   }
 }

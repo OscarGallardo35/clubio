@@ -65,6 +65,48 @@ export class AsignacionService {
     return { data: items, total: items.length };
   }
 
+  /**
+   * G (#3.0): grupos de un item para la PWA Cliente (publico, sin auth).
+   *
+   * Solo lectura y solo datos de catalogo: nada de ids internos de negocio ni
+   * de metricas. El negocio sale del TENANT (X-Tenant-Slug), nunca de un id que
+   * mande el cliente.
+   */
+  async gruposDeItemPublico(negocioSlug: string, itemId: string) {
+    const negocio = await this.prisma.negocio.findFirst({
+      where: { slug: negocioSlug, activo: true },
+      select: { id: true },
+    });
+    if (!negocio) throw new NotFoundException('Negocio no encontrado');
+
+    const item = await this.prisma.itemCarta.findFirst({
+      where: { id: itemId, negocioId: negocio.id, disponible: true },
+      select: {
+        id: true, nombre: true, precio: true,
+        gruposModificadores: {
+          orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
+          select: {
+            id: true, nombre: true, descripcion: true, tipo: true, obligatorio: true,
+            minSelecciones: true, maxSelecciones: true,
+            opciones: {
+              where: { disponible: true },
+              orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
+              select: { id: true, nombre: true, precioExtra: true, disponible: true },
+            },
+          },
+        },
+      },
+    });
+    if (!item) throw new NotFoundException('Item de carta no encontrado o no disponible');
+
+    return {
+      itemId: item.id,
+      itemNombre: item.nombre,
+      precioBase: item.precio,
+      grupos: item.gruposModificadores,
+    };
+  }
+
   /** Asigna grupos a UN item. reemplazar=true borra las asignaciones previas. */
   async asignarAItem(negocioId: string, itemId: string, dto: AsignarGruposItemDto, ctx: CtxMod) {
     await this.exigirItems(negocioId, [itemId]);

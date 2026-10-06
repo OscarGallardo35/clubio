@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { SucursalResolverService } from './sucursal-resolver.service';
 import { SucursalesService } from './sucursales.service';
 import { SucursalesController } from './sucursales.controller';
+import { SucursalesPublicoController } from './sucursales-publico.controller';
 import { ConfiguracionSucursalService } from './configuracion-sucursal.service';
 import { ConfiguracionSucursalController } from './configuracion-sucursal.controller';
 import { ItemCartaSucursalService } from './item-carta-sucursal.service';
@@ -18,6 +19,7 @@ import { ConfiguracionModule } from '../configuracion/configuracion.module';
 @Module({
   imports: [ConfiguracionModule],
   controllers: [
+    SucursalesPublicoController,
     SucursalesController,
     ConfiguracionSucursalController,
     ItemCartaSucursalController,

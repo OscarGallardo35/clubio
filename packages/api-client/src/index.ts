@@ -1,7 +1,17 @@
 import { io, Socket } from 'socket.io-client'
-import type * as Types from '@repo/types'
 
-// Clase personalizada para errores de API
+/**
+ * Cliente HTTP tipado + factory de sockets, compartido por las 3 PWAs.
+ *
+ * Notas de integracion con el backend real:
+ * - `credentials: 'include'` es obligatorio: la PWA Cliente se autentica con una
+ *   cookie HttpOnly (`cliente_token`), no con localStorage.
+ * - El header `X-Tenant-Slug` viaja en TODAS las requests (el TenantGuard lo
+ *   valida contra el negocio del token: si no coinciden, responde 403).
+ * - El WebSocket espera el token en `auth.token` (o `?token=`), NO en
+ *   `auth.Authorization`: el gateway lee `handshake.auth.token`.
+ */
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -13,7 +23,6 @@ export class ApiError extends Error {
   }
 }
 
-// Configuración del cliente
 export interface ApiClientConfig {
   baseUrl: string
   getToken?: () => string | null
@@ -21,60 +30,87 @@ export interface ApiClientConfig {
   onUnauthorized?: () => void
 }
 
-// Cliente HTTP tipado
 export class ApiClient {
   private baseUrl: string
-  private getToken?: () => string | null
-  private getTenant?: () => string | null
-  private onUnauthorized?: () => void
+  private token: string | null = null
+  private tenant: string | null = null
+  // Union explicita (no `?`): el tsconfig compartido usa
+  // exactOptionalPropertyTypes, y con eso `campo?: F` NO acepta `undefined`.
+  private getTokenFn: (() => string | null) | undefined
+  private getTenantFn: (() => string | null) | undefined
+  private onUnauthorized: (() => void) | undefined
 
   constructor(config: ApiClientConfig) {
-    this.baseUrl = config.baseUrl
-    this.getToken = config.getToken
-    this.getTenant = config.getTenant
+    // Se quita la barra final para no generar rutas con doble slash.
+    this.baseUrl = config.baseUrl.replace(/\/$/, '')
+    this.getTokenFn = config.getToken
+    this.getTenantFn = config.getTenant
     this.onUnauthorized = config.onUnauthorized
+    this.token = config.getToken?.() ?? null
+    this.tenant = config.getTenant?.() ?? null
+  }
+
+  /** Guarda el token en memoria (la PWA Cliente no lo necesita: usa la cookie). */
+  setToken(token: string | null): void {
+    this.token = token
+  }
+
+  /** Fija el tenant activo (slug del negocio que se esta visitando). */
+  setTenant(tenant: string | null): void {
+    this.tenant = tenant
+  }
+
+  getTenant(): string | null {
+    return this.getTenantFn?.() ?? this.tenant
   }
 
   private async request<T>(
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     path: string,
     body?: any
   ): Promise<T> {
-    const url = \`\${this.baseUrl}\${path}\`
+    const url = `${this.baseUrl}${path}`
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
 
-    // Agregar token de autenticación
-    const token = this.getToken?.()
+    const token = this.getTokenFn?.() ?? this.token
     if (token) {
-      headers['Authorization'] = \`Bearer \${token}\`
+      headers['Authorization'] = `Bearer ${token}`
     }
 
-    // Agregar tenant slug
-    const tenant = this.getTenant?.()
+    const tenant = this.getTenant()
     if (tenant) {
       headers['X-Tenant-Slug'] = tenant
     }
 
-    const response = await fetch(url, {
+    const init: RequestInit = {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      // Cookie HttpOnly de la PWA Cliente.
       credentials: 'include',
-    })
+    }
+    if (body !== undefined) init.body = JSON.stringify(body)
 
-    // Manejar 401 Unauthorized
+    const response = await fetch(url, init)
+
     if (response.status === 401) {
       this.onUnauthorized?.()
       throw new ApiError(401, undefined, 'No autorizado')
     }
 
-    // Parsear respuesta
-    const data = await response.json()
+    const texto = await response.text()
+    let data: any = undefined
+    if (texto) {
+      try {
+        data = JSON.parse(texto)
+      } catch {
+        data = texto
+      }
+    }
 
     if (!response.ok) {
-      throw new ApiError(response.status, data, data.message || 'Error en la solicitud')
+      throw new ApiError(response.status, data, data?.message || 'Error en la solicitud')
     }
 
     return data as T
@@ -84,84 +120,123 @@ export class ApiClient {
     return this.request<T>('GET', path)
   }
 
-  async post<T>(path: string, body: any): Promise<T> {
+  async post<T>(path: string, body?: any): Promise<T> {
     return this.request<T>('POST', path, body)
   }
 
-  async patch<T>(path: string, body: any): Promise<T> {
+  async patch<T>(path: string, body?: any): Promise<T> {
     return this.request<T>('PATCH', path, body)
   }
 
-  async delete<T>(path: string): Promise<T> {
-    return this.request<T>('DELETE', path)
+  async put<T>(path: string, body?: any): Promise<T> {
+    return this.request<T>('PUT', path, body)
+  }
+
+  async delete<T>(path: string, body?: any): Promise<T> {
+    return this.request<T>('DELETE', path, body)
   }
 }
 
-// Configuración de Socket.io
 export interface SocketConfig {
   url: string
-  token?: string
+  token?: string | null
   namespace?: string
   onConnect?: () => void
   onDisconnect?: () => void
 }
 
-// Factory para crear socket
+/**
+ * Crea un socket. El token va en `auth.token` porque es lo que lee el gateway
+ * del backend (`handshake.auth.token`); tambien acepta la cookie HttpOnly si no
+ * se pasa token (withCredentials: true).
+ */
 export function createSocket(config: SocketConfig): Socket {
-  return io(config.url, {
-    namespace: config.namespace || '/',
-    auth: config.token
-      ? {
-          Authorization: \`Bearer \${config.token}\`,
-        }
-      : undefined,
+  const socket = io(`${config.url}${config.namespace ?? ''}`, {
+    // Se arma con spread condicional: `auth: undefined` no compila con
+    // exactOptionalPropertyTypes.
+    ...(config.token ? { auth: { token: config.token } } : {}),
+    withCredentials: true,
+    transports: ['websocket'],
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     reconnectionAttempts: 5,
   })
+
+  if (config.onConnect) socket.on('connect', config.onConnect)
+  if (config.onDisconnect) socket.on('disconnect', config.onDisconnect)
+
+  return socket
 }
 
-// Hook para usar en React (si se necesita)
+/** Atajo para no instanciar el cliente a mano en cada PWA. */
 export function useApiClient(config: ApiClientConfig): ApiClient {
   return new ApiClient(config)
 }
 
-// Endpoints helpers (optional, para tipado fuerte)
+/**
+ * Rutas del backend (prefijo global /api).
+ * Los `:param` se interpolan con los helpers.
+ */
 export const endpoints = {
-  // Auth
   auth: {
+    registrarCliente: '/api/auth/cliente/registrar',
+    recuperarCliente: '/api/auth/cliente/recuperar',
+    meCliente: '/api/auth/cliente/me',
+    logoutCliente: '/api/auth/cliente/logout',
     loginEmpleado: '/api/auth/empleado/login',
+    logoutEmpleado: '/api/auth/empleado/logout',
     loginDueno: '/api/auth/dueno/login',
-    verify2FA: '/api/auth/verify-2fa',
-    refresh: '/api/auth/refresh',
-    logout: '/api/auth/logout',
+    verificar2FA: '/api/auth/dueno/verificar-2fa',
+    refreshDueno: '/api/auth/dueno/refresh',
+    logoutDueno: '/api/auth/dueno/logout',
   },
-  // Clientes
-  clientes: {
-    list: '/api/clientes',
-    get: (id: string) => \`/api/clientes/\${id}\`,
-    create: '/api/clientes',
-    update: (id: string) => \`/api/clientes/\${id}\`,
-    verificar: '/api/clientes/verificar',
-    registrar: '/api/clientes/registrar',
+  negocios: {
+    publico: (slug: string) => `/api/negocios/publico/${slug}`,
+    miNegocio: '/api/negocios/mi-negocio',
+    features: '/api/negocios/features',
+    qrInfo: '/api/negocios/qr-info',
   },
-  // Visitas
+  sucursales: {
+    publico: '/api/sucursales/publico',
+    list: '/api/sucursales',
+    misSucursales: '/api/sucursales/mis-sucursales',
+    get: (id: string) => `/api/sucursales/${id}`,
+  },
   visitas: {
-    list: '/api/visitas',
     solicitar: '/api/visitas/solicitar',
-    aprobar: '/api/visitas/aprobar',
-    rechazar: '/api/visitas/rechazar',
-    regalo: '/api/visitas/regalo',
+    estado: (token: string) => `/api/visitas/estado/${token}`,
+    validar: (token: string) => `/api/visitas/validar/${token}`,
+    aprobar: (token: string) => `/api/visitas/aprobar/${token}`,
+    rechazar: (token: string) => `/api/visitas/rechazar/${token}`,
+    miTarjeta: '/api/visitas/mi-tarjeta',
+    miHistorial: '/api/visitas/mi-historial',
   },
-  // Carta
   carta: {
     list: '/api/carta',
+    admin: '/api/carta/admin',
     create: '/api/carta',
-    update: (id: string) => \`/api/carta/\${id}\`,
-    delete: (id: string) => \`/api/carta/\${id}\`,
+    update: (id: string) => `/api/carta/${id}`,
+    delete: (id: string) => `/api/carta/${id}`,
     reordenar: '/api/carta/reordenar',
   },
-  // Health
+  modificadores: {
+    gruposDeItem: (itemId: string) => `/api/modificadores/items/${itemId}/grupos`,
+  },
+  pedidos: {
+    crear: '/api/pedidos',
+    publico: (linkToken: string) => `/api/pedidos/publico/${linkToken}`,
+    get: (id: string) => `/api/pedidos/${id}`,
+  },
+  upsell: {
+    calcular: '/api/upsell/calcular',
+  },
+  resenas: {
+    publicas: '/api/resenas',
+  },
+  push: {
+    vapidPublicKey: '/api/push/vapid-public-key',
+    suscribir: '/api/push/suscribir',
+  },
   health: '/api/health',
 } as const

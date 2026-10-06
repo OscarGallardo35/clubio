@@ -388,6 +388,97 @@ export class AuthService {
   }
 
   // =========================================================================
+  // 5) ESTADO DEL CLIENTE (QR #2: punto de entrada de la PWA Cliente)
+  // =========================================================================
+
+  /**
+   * GET /auth/cliente/me.
+   *
+   * La PWA resuelve con esto su estado inicial: si devuelve 401 muestra el
+   * registro; si devuelve 200 sabe quien es, cuantos sellos lleva en cada
+   * sucursal y si YA SUMO HOY (para no ofrecerle sumar dos veces).
+   */
+  async meCliente(clienteId: string) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: clienteId, eliminadoEn: null },
+      select: {
+        id: true, negocioId: true, nombre: true, telefono: true, aceptaNotificaciones: true,
+        sellosActuales: true, puntosActuales: true, totalVisitas: true, etiqueta: true,
+        ultimaVisita: true, creadoEn: true,
+      },
+    });
+    if (!cliente) throw new UnauthorizedException('Cliente no valido');
+
+    const negocio = await this.prisma.negocio.findFirst({
+      where: { id: cliente.negocioId, activo: true },
+      select: {
+        id: true, slug: true, nombre: true, modoClientes: true, plan: true,
+        logoUrl: true, colorPrimario: true, colorSecundario: true, placeId: true,
+      },
+    });
+    if (!negocio) throw new UnauthorizedException('Negocio no disponible');
+
+    const inicioHoy = new Date();
+    inicioHoy.setHours(0, 0, 0, 0);
+
+    const [config, sucursales, tarjetas, visitasHoy] = await Promise.all([
+      this.prisma.configuracionClub.findUnique({
+        where: { negocioId: negocio.id },
+        select: {
+          modoFidelizacion: true, sellosParaPremio: true, premioTexto: true,
+          menuActivo: true, mostrarResenaPostVisita: true,
+          tiposPedidoHabilitados: true, modosPagoHabilitados: true,
+        },
+      }),
+      this.prisma.sucursal.findMany({
+        where: { negocioId: negocio.id, activa: true },
+        select: { id: true, nombre: true, slug: true, esPrincipal: true, direccion: true },
+        orderBy: [{ esPrincipal: 'desc' }, { nombre: 'asc' }],
+      }),
+      this.prisma.tarjetaClienteSucursal.findMany({
+        where: { clienteId },
+        select: {
+          sucursalId: true, sellosActuales: true, puntosActuales: true,
+          totalVisitas: true, premiosCanjeados: true, ultimaVisita: true,
+        },
+      }),
+      this.prisma.visita.count({
+        where: { clienteId, negocioId: negocio.id, aprobadoEn: { gte: inicioHoy } },
+      }),
+    ]);
+
+    const porSucursal = negocio.modoClientes === 'POR_SUCURSAL';
+
+    return {
+      cliente: {
+        id: cliente.id, nombre: cliente.nombre, telefono: cliente.telefono,
+        etiqueta: cliente.etiqueta, totalVisitas: cliente.totalVisitas,
+        ultimaVisita: cliente.ultimaVisita, aceptaNotificaciones: cliente.aceptaNotificaciones,
+      },
+      negocio: {
+        id: negocio.id, slug: negocio.slug, nombre: negocio.nombre, plan: negocio.plan,
+        logoUrl: negocio.logoUrl, colorPrimario: negocio.colorPrimario,
+        colorSecundario: negocio.colorSecundario, placeId: negocio.placeId,
+      },
+      modoClientes: negocio.modoClientes,
+      configuracion: config,
+      sucursales,
+      tarjetas,
+      // El saldo "global" solo tiene sentido con GLOBAL; con POR_SUCURSAL la
+      // fuente de verdad es la tarjeta de cada sucursal.
+      sellosActuales: porSucursal ? null : cliente.sellosActuales,
+      puntosActuales: porSucursal ? null : cliente.puntosActuales,
+      sumoHoy: visitasHoy > 0,
+      visitasHoy,
+    };
+  }
+
+  /** POST /auth/cliente/logout. El JWT de cliente es stateless: solo se limpia la cookie. */
+  logoutCliente() {
+    return { ok: true };
+  }
+
+  // =========================================================================
   // LOGOUT
   // =========================================================================
   async logoutEmpleado(empleadoId: string) {

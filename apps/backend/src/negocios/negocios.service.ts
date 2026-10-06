@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
+import { PlanService } from '../planes/plan.service';
 import type { ActualizarNegocioDto } from './dto/actualizar-negocio.dto';
 
 /** Campos seguros para exponer publicamente (PWA Cliente). */
@@ -19,6 +20,7 @@ export class NegociosService {
     private readonly configuracion: ConfiguracionService,
     private readonly resolver: SucursalResolverService,
     private readonly auditoria: AuditoriaService,
+    private readonly plan: PlanService,
   ) {}
 
   /** Refinamiento 6: incluye plan, modoClientes, features y sucursales activas. */
@@ -93,12 +95,19 @@ export class NegociosService {
       negocio.id, sucursal?.id ?? null,
     );
 
+    // F (#3.0): la PWA Cliente hace gating VISUAL con esto (tab Carta, resenas).
+    // Se cachea en Redis desde PlanService (TTL 10 min) y el fallback es
+    // restrictivo: una feature desconocida no se habilita.
+    const featuresPlan = await this.plan.obtenerFeatures(negocio.plan);
+    const features = featuresPlan.filter((f) => f.habilitada).map((f) => f.feature);
+
     return {
       ...negocio,
       configuracion,
       numeroAtendiente,
       sucursalActiva: sucursal,
       sucursales,
+      features,
     };
   }
 

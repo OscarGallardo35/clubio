@@ -581,3 +581,94 @@ posterior ("Pedro aprueba en norte") dio 403 y parecia un bug de permisos cuando
 dato ya no era el del seed. Despues de una tanda de e2e conviene verificar el estado
 contra el seed (sucursales, empleados, contadores de `UsoMensual`).
 
+## #3.0 — Soporte de backend para la PWA Cliente
+
+### La cookie del cliente (A1): HttpOnly y no localStorage
+
+Decision: el JWT del cliente viaja en una cookie **HttpOnly** (`cliente_token`) en
+vez de quedar en `localStorage`, que es accesible desde JS y por lo tanto robable
+con un XSS. `registrar` y `recuperar` la setean; `logout` la borra.
+
+- En **produccion** (app y API en dominios distintos) hace falta
+  `SameSite=None` **y** `Secure`: un navegador RECHAZA `SameSite=None` sin `Secure`.
+- En **desarrollo** van `SameSite=Lax` y sin `Secure`, porque sobre
+  `http://localhost` una cookie `Secure` no se guarda.
+- Todo esto vive en `common/utils/cookie.util.ts` y se puede forzar con
+  `COOKIE_SAMESITE` / `COOKIE_SECURE` / `COOKIE_DOMAIN`.
+- El `accessToken` se sigue devolviendo en el body: el WebSocket no puede leer una
+  cookie HttpOnly desde JS, asi que la PWA necesita el token para el handshake.
+
+### El WebSocket NO ve `req.cookies`: hay que parsear el header a mano
+
+En el handshake de un socket no existe `req.cookies` (no pasa por `cookie-parser`).
+El gateway lee el header crudo:
+
+```ts
+leerCookie(socket.handshake.headers?.cookie, COOKIE_CLIENTE);
+```
+
+Y el servidor socket.io **tiene que** declarar `credentials: true` en el CORS, si
+no el navegador directamente no manda la cookie en el handshake.
+
+Orden de lectura del token en el gateway: `auth.token` -> `?token=` ->
+`Authorization` -> cookie. Ojo: el gateway **no** lee `auth.Authorization` (el
+`@repo/api-client` mandaba eso y no habria autenticado nunca).
+
+### `@Public()` NO salva de un guard declarado a nivel de CLASE
+
+`ModificadoresController` tiene `@UseGuards(StaffGuard, TenantGuard, RolesGuard,
+PlanGuard)` en la clase: un metodo marcado `@Public()` adentro igual pasa por esos
+guards. Para un endpoint publico hay que crear un **controller aparte**
+(`ModificadoresPublicoController`) con solo `TenantGuard`.
+
+**Victima real de esta trampa**: `GET /sucursales/publico` estaba declarado como
+publico (con solo `@UseGuards(TenantGuard)` en el metodo) dentro de
+`SucursalesController`, que tiene `@UseGuards(StaffGuard, TenantGuard, RolesGuard)`
+en la CLASE. Respondia **401** y el comentario del codigo decia que era publico: el
+selector de sucursal de la PWA Cliente no habria funcionado. Se movio a
+`SucursalesPublicoController`. Regla: antes de dar por publico un endpoint, mirar
+los guards de la CLASE, no solo los del metodo.
+
+### `TenantGuard` deja pasar un tenant NULO
+
+Si el host no tiene subdominio (por ejemplo `localhost`) y no hay header, el guard
+setea `req.tenant = null` y **devuelve true** (falla abierto respecto del tenant,
+no de la autenticacion). Un endpoint publico que haga `String(req.tenant)` termina
+buscando el slug literal `"null"`. Hay que cortar explicitamente con 400, como hace
+`GET /sucursales/publico`.
+
+### La tabla no puede distinguir APROBADA de RECHAZADA
+
+`TokenValidacion` solo tiene `usado`, asi que `aprobar` y `rechazar` dejan la fila
+**identica**, y el evento de auditoria de `visita.rechazada` **no guarda el
+tokenId**. `GET /visitas/estado/:token` no podria diferenciarlas.
+
+Solucion sin migracion: al rechazar se escribe `visita:rechazada:{token}` en Redis
+(TTL 30 min, seis veces la vida del token). Alcanza para el caso real, que es la PWA
+consultando dentro de la ventana de 5 minutos del token. Si algun dia hace falta la
+distincion historica, la alternativa limpia es `TokenValidacion.rechazadoEn
+DateTime?` (requiere migracion).
+
+### Los packages usan `exactOptionalPropertyTypes: true`
+
+En `packages/*`, un `campo?: F` **no** acepta `undefined` asignado. Hay que declarar
+la union explicita (`campo: F | undefined`) y, al armar opciones para una libreria,
+usar spread condicional en vez de pasar `undefined`:
+
+```ts
+// MAL: { body: body ? JSON.stringify(body) : undefined }  -> TS2379
+// BIEN:
+const init: RequestInit = { method, headers, credentials: 'include' };
+if (body !== undefined) init.body = JSON.stringify(body);
+
+// MAL: { auth: config.token ? { token } : undefined }      -> TS2379
+// BIEN: { ...(config.token ? { auth: { token } } : {}) }
+```
+
+### `node apps/backend/dist/main.js` desde la RAIZ falla con P1012
+
+`ConfigModule.forRoot({ envFilePath: ['../../.env'] })` es **relativo al cwd**, y el
+cwd esperado es `apps/backend`. Corriendo desde la raiz, `../../.env` cae fuera del
+repo y Prisma muere con `P1012` (parece un error de schema y no lo es). Usar
+`pnpm --filter backend start` o `cd apps/backend && node dist/main.js`.
+

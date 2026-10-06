@@ -4,6 +4,7 @@ import {
 import { randomUUID } from 'crypto';
 import { Prisma, TipoVisita } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../common/redis/redis.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { SegmentosService } from '../clientes/segmentos.service';
@@ -26,10 +27,25 @@ export interface ClienteCtx {
 
 const TTL_TOKEN_MS = 5 * 60 * 1000; // 5 min
 
+/**
+ * El RECHAZO se guarda en Redis, no en la tabla.
+ *
+ * Motivo: `TokenValidacion` solo tiene `usado`, asi que aprobar y rechazar dejan
+ * la fila IDENTICA y `GET /visitas/estado/:token` no podria distinguirlos. El
+ * evento de auditoria de `visita.rechazada` tampoco guarda el tokenId, asi que
+ * no sirve para consultarlo.
+ *
+ * Alternativa durable (requiere migracion): agregar `rechazadoEn DateTime?` a
+ * TokenValidacion. La clave de Redis alcanza para el caso real (la PWA consulta
+ * dentro de la ventana de 5 min del token) y no toca el schema consolidado.
+ */
+const CLAVE_RECHAZO = (token: string) => `visita:rechazada:${token}`;
+
 @Injectable()
 export class VisitasService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
     private readonly auditoria: AuditoriaService,
     private readonly resolver: SucursalResolverService,
     private readonly segmentos: SegmentosService,
@@ -144,7 +160,8 @@ export class VisitasService {
 
     return {
       token: token.token,
-      urlValidacion: `https://staff.dominio.com/validar?ref=${token.token}`,
+      // E (#3.0): la URL del staff sale del entorno, no hardcodeada.
+      urlValidacion: `${(process.env.STAFF_APP_URL ?? 'https://staff.clubio.lat').replace(/\/$/, '')}/validar?ref=${token.token}`,
       mensajeWhatsApp,
       expiraEn: token.expiraEn,
       reutilizado: !!activo,
@@ -190,9 +207,13 @@ export class VisitasService {
     const sucursalId = fila.sucursalId ?? empleado.sucursalId;
 
     const config = await this.prisma.configuracionClub.findUnique({
-      where: { negocioId }, select: { sellosParaPremio: true, sellosBienvenida: true },
+      where: { negocioId },
+      select: { sellosParaPremio: true, sellosBienvenida: true, mostrarResenaPostVisita: true },
     });
     const sellosParaPremio = config?.sellosParaPremio ?? 10;
+    // Estaba HARDCODEADO en true: el dueño apaga las resenas y la PWA igual las
+    // mostraba. Ahora manda la configuracion del club.
+    const mostrarResena = config?.mostrarResenaPostVisita ?? false;
 
     const negocio = await this.prisma.negocio.findUnique({
       where: { id: negocioId }, select: { modoClientes: true },
@@ -286,7 +307,7 @@ export class VisitasService {
       sellosCliente: resultado.actualizado.sellosActuales,
       sellosTarjetaSucursal: resultado.tarjeta.sellosActuales,
       premioDesbloqueado: progreso.completado,
-      mostrarResena: true,
+      mostrarResena,
     };
   }
 
@@ -298,6 +319,16 @@ export class VisitasService {
     if (fila.usado) throw new BadRequestException('Este token ya fue usado');
 
     await this.prisma.tokenValidacion.update({ where: { id: fila.id }, data: { usado: true } });
+
+    // Para que la PWA pueda distinguir "rechazada" de "aprobada" al consultar
+    // el estado del token (la tabla no lo distingue).
+    await this.redis
+      .set(
+        CLAVE_RECHAZO(token),
+        JSON.stringify({ motivo: dto.motivo ?? 'Rechazada por el local', rechazadoEn: new Date().toISOString() }),
+        Math.ceil(TTL_TOKEN_MS / 1000) * 6,
+      )
+      .catch(() => undefined);
 
     await this.auditoria.registrar({
       negocioId, accion: 'visita.rechazada', empleadoId: empleado.id, clienteId: fila.clienteId,
@@ -360,6 +391,158 @@ export class VisitasService {
       this.prisma.visita.count({ where }),
     ]);
     return { data, total, desde };
+  }
+
+  // ---------------------------------------------------------------------------
+  // PWA Cliente: estado del token, tarjeta e historial (JWT de cliente)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Sellos efectivos segun el modo del negocio. Con POR_SUCURSAL manda la
+   * TARJETA de esa sucursal; con GLOBAL, el contador del cliente.
+   */
+  private async sellosEfectivos(negocioId: string, clienteId: string, sucursalId: string) {
+    const [negocio, config, cliente, tarjeta] = await Promise.all([
+      this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
+      this.prisma.configuracionClub.findUnique({
+        where: { negocioId },
+        select: { sellosParaPremio: true, premioTexto: true, mostrarResenaPostVisita: true },
+      }),
+      this.prisma.cliente.findFirst({
+        where: { id: clienteId, eliminadoEn: null },
+        select: { sellosActuales: true, puntosActuales: true, totalVisitas: true },
+      }),
+      this.prisma.tarjetaClienteSucursal.findUnique({
+        where: { clienteId_sucursalId: { clienteId, sucursalId } },
+        select: { sellosActuales: true, puntosActuales: true, totalVisitas: true },
+      }),
+    ]);
+
+    const porSucursal = negocio?.modoClientes === 'POR_SUCURSAL';
+    const sellos = porSucursal ? (tarjeta?.sellosActuales ?? 0) : (cliente?.sellosActuales ?? 0);
+    const sellosParaPremio = config?.sellosParaPremio ?? 10;
+    const progreso = this.segmentos.progreso(sellos, sellosParaPremio);
+
+    return {
+      sucursalId,
+      modoClientes: porSucursal ? 'POR_SUCURSAL' : 'GLOBAL',
+      sellosActuales: sellos,
+      sellosParaPremio,
+      premioTexto: config?.premioTexto ?? '',
+      premioDesbloqueado: progreso.completado,
+      faltantes: progreso.faltantes,
+      porcentaje: progreso.porcentaje,
+      mostrarResena: config?.mostrarResenaPostVisita ?? false,
+      sellosCliente: cliente?.sellosActuales ?? 0,
+      sellosTarjetaSucursal: tarjeta?.sellosActuales ?? 0,
+      puntosActuales: porSucursal ? (tarjeta?.puntosActuales ?? 0) : (cliente?.puntosActuales ?? 0),
+      totalVisitas: porSucursal ? (tarjeta?.totalVisitas ?? 0) : (cliente?.totalVisitas ?? 0),
+    };
+  }
+
+  /**
+   * GET /visitas/estado/:token (cliente). Respaldo del WebSocket: la PWA lo
+   * consulta cada 5s si el socket no conecta.
+   */
+  async estadoParaCliente(negocioId: string, clienteId: string, token: string) {
+    const fila = await this.prisma.tokenValidacion.findFirst({
+      where: { negocioId, token },
+      select: { id: true, clienteId: true, sucursalId: true, usado: true, expiraEn: true },
+    });
+
+    // Un token de OTRO cliente responde 404 igual que uno inexistente: no hay
+    // que revelar que existe.
+    if (!fila || fila.clienteId !== clienteId) {
+      throw new NotFoundException('Solicitud no encontrada');
+    }
+
+    const sucursalId =
+      fila.sucursalId ??
+      ((await this.resolver.resolverSucursal(negocioId, { clienteId })).id as string);
+    const base = await this.sellosEfectivos(negocioId, clienteId, sucursalId);
+
+    if (fila.usado) {
+      const rechazo = await this.redis.get(CLAVE_RECHAZO(token)).catch(() => null);
+      if (rechazo) {
+        let motivo = 'Rechazada por el local';
+        try {
+          motivo = (JSON.parse(rechazo) as { motivo?: string }).motivo ?? motivo;
+        } catch {
+          // si el valor no es JSON se usa el motivo por defecto
+        }
+        return { estado: 'RECHAZADA', motivo, ...base };
+      }
+      return { estado: 'APROBADA', ...base };
+    }
+
+    if (fila.expiraEn < new Date()) return { estado: 'EXPIRADA', ...base };
+    return { estado: 'PENDIENTE', expiraEn: fila.expiraEn, ...base };
+  }
+
+  /** GET /visitas/mi-tarjeta (cliente). */
+  async miTarjeta(negocioId: string, clienteId: string, sucursalSlug?: string) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: clienteId, negocioId, eliminadoEn: null },
+      select: {
+        id: true, nombre: true, telefono: true, etiqueta: true,
+        sellosActuales: true, puntosActuales: true, totalVisitas: true, ultimaVisita: true,
+      },
+    });
+    if (!cliente) throw new NotFoundException('Cliente no encontrado');
+
+    const sucursal = await this.resolver.resolverSucursal(negocioId, { sucursalSlug, clienteId });
+    const base = await this.sellosEfectivos(negocioId, clienteId, sucursal.id as string);
+
+    // Con POR_SUCURSAL la PWA muestra una tarjeta por sucursal.
+    const tarjetas = await this.prisma.tarjetaClienteSucursal.findMany({
+      where: { clienteId },
+      select: {
+        sucursalId: true, sellosActuales: true, puntosActuales: true,
+        totalVisitas: true, premiosCanjeados: true, ultimaVisita: true,
+      },
+    });
+
+    return {
+      cliente,
+      sucursal: {
+        id: sucursal.id, nombre: sucursal.nombre, slug: sucursal.slug,
+        esPrincipal: sucursal.esPrincipal ?? false,
+      },
+      tarjetas,
+      ...base,
+    };
+  }
+
+  /** GET /visitas/mi-historial (cliente): sus propias visitas. */
+  async miHistorial(
+    negocioId: string,
+    clienteId: string,
+    opts: { page?: number | string; pageSize?: number | string; sucursalSlug?: string } = {},
+  ) {
+    const { page, pageSize, skip, take } = getPagination(opts);
+
+    const where: Prisma.VisitaWhereInput = { negocioId, clienteId };
+    if (opts.sucursalSlug) {
+      const s = await this.resolver.resolverSucursal(negocioId, {
+        sucursalSlug: opts.sucursalSlug,
+        clienteId,
+      });
+      where.sucursalId = s.id as string;
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.visita.findMany({
+        where, orderBy: { aprobadoEn: 'desc' }, skip, take,
+        select: {
+          id: true, tipo: true, metodo: true, sellosOtorgados: true, puntosOtorgados: true,
+          aprobadoEn: true, origen: true, notas: true,
+          sucursal: { select: { id: true, nombre: true, slug: true } },
+          empleado: { select: { id: true, nombre: true, rol: true } },
+        },
+      }),
+      this.prisma.visita.count({ where }),
+    ]);
+    return paginar(data, total, page, pageSize);
   }
 
   private async cargarToken(negocioId: string, token: string) {

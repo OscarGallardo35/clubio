@@ -31,6 +31,34 @@ export class VisitasController {
     return this.visitas.solicitar(cli.negocioId, cli, dto);
   }
 
+  // ----- PWA Cliente (JWT de cliente) -----
+
+  /** Respaldo del WebSocket: la PWA consulta el estado cada 5s si el socket falla. */
+  @UseGuards(JwtClienteGuard, TenantGuard)
+  @Get('estado/:token')
+  estado(@CurrentCliente() cli: ClienteCtx, @Param('token') token: string) {
+    return this.visitas.estadoParaCliente(cli.negocioId, cli.id, token);
+  }
+
+  /** Tarjeta del cliente (sellos, premio, progreso). Acepta ?sucursalSlug=. */
+  @UseGuards(JwtClienteGuard, TenantGuard)
+  @Get('mi-tarjeta')
+  miTarjeta(@CurrentCliente() cli: ClienteCtx, @Query('sucursalSlug') sucursalSlug?: string) {
+    return this.visitas.miTarjeta(cli.negocioId, cli.id, sucursalSlug);
+  }
+
+  /** Historial de visitas del propio cliente. */
+  @UseGuards(JwtClienteGuard, TenantGuard)
+  @Get('mi-historial')
+  miHistorial(
+    @CurrentCliente() cli: ClienteCtx,
+    @Query('sucursalSlug') sucursalSlug?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.visitas.miHistorial(cli.negocioId, cli.id, { sucursalSlug, page, pageSize });
+  }
+
   // ----- de aca para abajo: staff (token de empleado o de dueño) -----
 
   @UseGuards(StaffGuard, TenantGuard, RolesGuard)

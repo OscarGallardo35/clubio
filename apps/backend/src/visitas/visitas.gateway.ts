@@ -5,6 +5,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { COOKIE_CLIENTE, leerCookie } from '../common/utils/cookie.util';
 
 /**
  * WebSocket de visitas (namespace /visitas).
@@ -17,7 +18,12 @@ import { PrismaService } from '../prisma/prisma.service';
  * CORS: se refleja el origen (`origin: true`) porque estas opciones se evaluan
  * al definir la clase, ANTES de que ConfigModule cargue el .env, asi que leer
  * CORS_ORIGINS aca no seria fiable. La autenticacion real es el JWT del
- * handshake (no hay cookies), por eso reflejar el origen es seguro.
+ * handshake, por eso reflejar el origen es seguro.
+ *
+ * A1 (#3.0): el token del cliente ahora viaja tambien en la cookie HttpOnly, y
+ * el navegador NO la manda si el handshake no admite credenciales: por eso el
+ * gateway mantiene `credentials: true`. El orden de lectura es auth.token ->
+ * ?token= -> Authorization -> cookie.
  */
 @WebSocketGateway({ namespace: '/visitas', cors: { origin: true, credentials: true } })
 export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -40,7 +46,9 @@ export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect 
     const q = socket.handshake.query?.token;
     if (typeof q === 'string') return q;
     const h = socket.handshake.headers?.authorization ?? '';
-    return h.startsWith('Bearer ') ? h.slice(7) : '';
+    if (h.startsWith('Bearer ')) return h.slice(7);
+    // A1 (#3.0): cookie HttpOnly de la PWA Cliente.
+    return leerCookie(socket.handshake.headers?.cookie, COOKIE_CLIENTE);
   }
 
   async handleConnection(socket: Socket) {

@@ -663,3 +663,71 @@ moria con `Cannot find module dist\main`, por el `incremental: true` + tsbuildin
 al dia (el mismo problema que `build` ya tenia resuelto). Se agregaron `prestart` y
 `prestart:dev` con `rimraf dist tsconfig.tsbuildinfo`.
 
+## #3.0 — Soporte de backend para la PWA Cliente (CERRADO)
+
+Implementado antes de escribir una linea de PWA, porque el backend tenia el lado
+cliente practicamente vacio: solo `registrar` y `recuperar`.
+
+**A) Cookie HttpOnly** (`common/utils/cookie.util.ts`): `registrar`/`recuperar`
+setean `cliente_token` (HttpOnly, SameSite=None+Secure en produccion, Lax sin Secure
+en desarrollo); `logout` la borra. La estrategia `jwt-cliente` la acepta como
+extractor ademas del `Authorization: Bearer`, y el gateway recibe el token por
+`auth.token`, `?token=`, `Authorization` o cookie.
+
+**E) `urlValidacion`** sale de `STAFF_APP_URL` (antes hardcodeado a
+`staff.dominio.com`).
+
+**F) `features` del plan** en `GET /negocios/publico/:slug` (via `PlanService`, con
+su cache de 10 min) para el gating visual: PRO devuelve 19 features, FREE devuelve
+`['fidelizacion','resenas','clientes','empleados','sucursales']` y **no** `menu`.
+
+**G) `GET /modificadores/items/:itemId/grupos`** publico, en un controller aparte
+(el de staff tiene los guards a nivel de clase). Devuelve grupos + opciones con
+`precioExtra`; 404 si el item no existe o no esta disponible; 400 sin tenant.
+
+**H) `GET /visitas/estado/:token`** (cliente): `PENDIENTE | APROBADA | RECHAZADA |
+EXPIRADA` + sellos y `mostrarResena`. Un token de otro cliente da 404, igual que uno
+inexistente.
+
+**I) `GET /visitas/mi-tarjeta` y `GET /visitas/mi-historial`** (cliente), con
+`?sucursalSlug=` opcional.
+
+**J) Push del cliente**: ya existia como `POST /push/suscribir` con
+`JwtClienteGuard` + `@RequiereFeature('push')` — no se duplico como
+`suscribir-cliente`.
+
+### Bugs reales encontrados y corregidos en el camino
+
+- **`mostrarResena` hardcodeado en `true`**: el dueño apagaba las resenas en la
+  configuracion y la PWA las mostraba igual.
+- **`urlValidacion` hardcodeado** a un dominio de ejemplo.
+- **`@repo/api-client` no compilaba** (14 backticks escapados) y su `createSocket`
+  mandaba `auth: { Authorization }`, una clave que el gateway **no lee**: el
+  WebSocket nunca se habria autenticado. Se agrego `setToken`/`setTenant`, se
+  corrigio el mapa `endpoints` (tenia rutas inexistentes) y se ajusto al
+  `exactOptionalPropertyTypes` de los packages.
+
+### Verificacion (todo con salida real)
+
+```
+cookie:   Set-Cookie: cliente_token=<jwt>; Max-Age=2592000; Path=/;
+          Expires=...; HttpOnly; SameSite=Lax     (dev: sin Secure)
+          me con cookie -> 200 | sin cookie -> 401 | Bearer -> 200
+          cookie + tenant AJENO -> 403 (TenantGuard) | logout -> Max-Age=0
+ws:       A con cookie conecta y RECIBE visita:aprobada (entro a cliente:{A}); B no
+          sin cookie -> error "No autenticado" + disconnect
+estado:   PENDIENTE -> APROBADA (sellos 1) -> RECHAZADA con motivo ("QR ya usado")
+          expirado -> EXPIRADA | token de otro cliente -> 404
+tarjeta:  sucursal, modo, sellos/de, premioTexto, faltantes, tarjetas[]
+historial: total y filas con tipo/sellos/empleado/sucursal
+modif.:   200 publico con "Punto de coccion" -> [Jugoso, A punto, Cocido]
+```
+
+### Bug extra encontrado en la verificacion final
+
+`GET /sucursales/publico` respondia **401**: estaba en `SucursalesController`, que
+tiene `@UseGuards(StaffGuard, TenantGuard, RolesGuard)` a nivel de CLASE, asi que su
+`@Public()` no lo salvaba (misma trampa que los modificadores). Movido a
+`SucursalesPublicoController`. Verificado: 200 sin auth, 400 sin tenant, 404 con
+tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
+

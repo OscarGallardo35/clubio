@@ -1,5 +1,5 @@
 import {
-  BadRequestException, Body, Controller, Delete, Get, Ip, Param, Patch, Post, Query, Req, UseGuards,
+  Body, Controller, Delete, Get, Ip, Param, Patch, Post, Query, UseGuards,
 } from '@nestjs/common';
 import { RolEmpleado } from '@prisma/client';
 import { SucursalesService } from './sucursales.service';
@@ -39,17 +39,6 @@ export class SucursalesController {
   @Get('mis-sucursales')
   misSucursales(@CurrentEmpleado() emp: EmpleadoAuth, @Ip() ip: string) {
     return this.sucursales.misSucursales(emp.negocioId, this.ctx(emp, ip));
-  }
-
-  /**
-   * Publico (PWA Cliente): solo las activas, sin metricas ni datos internos.
-   * No pasa por StaffGuard: el negocio sale del tenant (X-Tenant-Slug/subdominio).
-   */
-  @Get('publico')
-  @UseGuards(TenantGuard)
-  publico(@Req() req: { tenant?: string }) {
-    if (!req.tenant) throw new BadRequestException('Falta el tenant (X-Tenant-Slug o subdominio)');
-    return this.sucursales.listarPublicoPorSlug(req.tenant);
   }
 
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)

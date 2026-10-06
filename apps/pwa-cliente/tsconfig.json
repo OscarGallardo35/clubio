@@ -25,7 +25,8 @@
     "incremental": true,
     "noEmit": true,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "allowImportingTsExtensions": true
   },
   "include": [
     "next-env.d.ts",

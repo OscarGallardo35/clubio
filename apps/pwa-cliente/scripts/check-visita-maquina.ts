@@ -1,0 +1,180 @@
+/**
+ * Check de la maquina de estados del flujo QR #2.
+ *
+ * Corre en node pelado (sin Vitest, sin jsdom, sin browser):
+ *
+ *   node scripts/check-visita-maquina.ts
+ *
+ * Verifica transiciones, las reglas de diseño (nunca reintentar solo, la
+ * aprobacion gana, EXPIRAR no pisa un exito), totalidad e inmutabilidad.
+ */
+import {
+  ESTADO_INICIAL,
+  PASOS,
+  TIPOS_DE_EVENTO,
+  esFinal,
+  puedeReintentar,
+  textoDelMotivo,
+  visitaReducir,
+} from '../lib/visita-maquina.ts'
+import type { EstadoFlujo, EventoFlujo, Paso } from '../lib/visita-maquina.ts'
+
+let ok = 0
+const fallas: string[] = []
+
+function chk(nombre: string, cond: boolean, detalle = '') {
+  if (cond) {
+    ok++
+    console.log(`  OK    ${nombre}`)
+  } else {
+    fallas.push(nombre)
+    console.log(`  FALLA ${nombre}${detalle ? `  -> ${detalle}` : ''}`)
+  }
+}
+function igual(nombre: string, real: unknown, esperado: unknown) {
+  chk(nombre, JSON.stringify(real) === JSON.stringify(esperado), `real=${JSON.stringify(real)} esperado=${JSON.stringify(esperado)}`)
+}
+
+/** Estado de partida en un paso dado, para probar cada transicion aislada. */
+function en(paso: Paso, extra: Partial<EstadoFlujo> = {}): EstadoFlujo {
+  return { ...ESTADO_INICIAL, paso, ...extra }
+}
+
+// Un evento de muestra por tipo: alimenta los tests de totalidad e inmutabilidad.
+const EVENTOS: Record<(typeof TIPOS_DE_EVENTO)[number], EventoFlujo> = {
+  ABRIR_REGISTRO: { tipo: 'ABRIR_REGISTRO' },
+  CERRAR_REGISTRO: { tipo: 'CERRAR_REGISTRO' },
+  SOLICITAR: { tipo: 'SOLICITAR' },
+  SOLICITADA: { tipo: 'SOLICITADA', token: 'tok-1', expiraEn: '2026-10-06T03:00:00.000Z', sucursalId: 'suc-1' },
+  SOLICITUD_RECHAZADA: { tipo: 'SOLICITUD_RECHAZADA', motivo: 'esperaHoras', faltanHoras: 4 },
+  ESTADO_RECIBIDO: { tipo: 'ESTADO_RECIBIDO', estado: 'PENDIENTE' },
+  WS_APROBADA: { tipo: 'WS_APROBADA', sellosActuales: 4, premioDesbloqueado: false },
+  WS_RECHAZADA: { tipo: 'WS_RECHAZADA', motivo: 'QR ya usado' },
+  EXPIRAR: { tipo: 'EXPIRAR' },
+  REINTENTAR: { tipo: 'REINTENTAR' },
+  ERROR_RED: { tipo: 'ERROR_RED', mensaje: 'sin red' },
+  RESET: { tipo: 'RESET' },
+}
+
+console.log('=== 1. estado inicial ===')
+igual('arranca en inicio', ESTADO_INICIAL.paso, 'inicio')
+igual('sin token', ESTADO_INICIAL.token, null)
+chk('no es final', !esFinal(ESTADO_INICIAL))
+chk('no se puede reintentar', !puedeReintentar(ESTADO_INICIAL))
+igual('no hay texto de motivo', textoDelMotivo(ESTADO_INICIAL), null)
+
+console.log('\n=== 2. camino feliz ===')
+let e = visitaReducir(ESTADO_INICIAL, { tipo: 'ABRIR_REGISTRO' })
+igual('ABRIR_REGISTRO -> registrando', e.paso, 'registrando')
+e = visitaReducir(e, { tipo: 'SOLICITAR' })
+igual('SOLICITAR -> solicitando', e.paso, 'solicitando')
+e = visitaReducir(e, { tipo: 'SOLICITADA', token: 'tok-abc', expiraEn: '2026-10-06T03:05:00.000Z', sucursalId: 'suc-norte' })
+igual('SOLICITADA -> esperando', e.paso, 'esperando')
+igual('guarda el token', e.token, 'tok-abc')
+igual('guarda la sucursal', e.sucursalId, 'suc-norte')
+igual('no viene de reanudar', e.reanudado, false)
+e = visitaReducir(e, { tipo: 'WS_APROBADA', sellosActuales: 5, premioDesbloqueado: false })
+igual('WS_APROBADA -> aprobada', e.paso, 'aprobada')
+igual('sellos del payload (fuente de verdad)', e.sellos, { sellosActuales: 5, premioDesbloqueado: false })
+chk('aprobada es final', esFinal(e))
+chk('aprobada no ofrece reintentar', !puedeReintentar(e))
+
+console.log('\n=== 3. sellos y premio en el payload del WS ===')
+const aprobadoConPremio = visitaReducir(en('esperando', { token: 't' }), { tipo: 'WS_APROBADA', sellosActuales: 10, premioDesbloqueado: true })
+igual('premioDesbloqueado se propaga', aprobadoConPremio.sellos, { sellosActuales: 10, premioDesbloqueado: true })
+
+console.log('\n=== 4. polling (estado/:token) ===')
+igual('PENDIENTE se queda esperando', visitaReducir(en('esperando'), { tipo: 'ESTADO_RECIBIDO', estado: 'PENDIENTE' }).paso, 'esperando')
+igual('PENDIENTE marca reanudado', visitaReducir(en('inicio'), { tipo: 'ESTADO_RECIBIDO', estado: 'PENDIENTE' }).reanudado, true)
+igual('APROBADA por polling', visitaReducir(en('esperando'), { tipo: 'ESTADO_RECIBIDO', estado: 'APROBADA', sellosActuales: 7 }).paso, 'aprobada')
+igual('APROBADA por polling toma los sellos', visitaReducir(en('esperando'), { tipo: 'ESTADO_RECIBIDO', estado: 'APROBADA', sellosActuales: 7 }).sellos, { sellosActuales: 7, premioDesbloqueado: false })
+const rec = visitaReducir(en('esperando'), { tipo: 'ESTADO_RECIBIDO', estado: 'RECHAZADA', motivo: 'QR ya usado' })
+igual('RECHAZADA -> noSumada', rec.paso, 'noSumada')
+igual('motivo rechazada', rec.motivo, 'rechazada')
+igual('guarda el motivo del backend', rec.mensaje, 'QR ya usado')
+const exp = visitaReducir(en('esperando'), { tipo: 'ESTADO_RECIBIDO', estado: 'EXPIRADA' })
+igual('EXPIRADA -> noSumada/expirada', [exp.paso, exp.motivo], ['noSumada', 'expirada'])
+
+console.log('\n=== 5. regla: NUNCA reintentar solo ===')
+igual('ESTADO_RECIBIDO se IGNORA desde noSumada', visitaReducir(en('noSumada', { motivo: 'expirada' }), { tipo: 'ESTADO_RECIBIDO', estado: 'PENDIENTE' }).paso, 'noSumada')
+igual('EXPIRAR no toca aprobada (no pisa un exito)', visitaReducir(en('aprobada'), { tipo: 'EXPIRAR' }).paso, 'aprobada')
+igual('EXPIRAR no toca noSumada', visitaReducir(en('noSumada', { motivo: 'expirada' }), { tipo: 'EXPIRAR' }).paso, 'noSumada')
+igual('ERROR_RED no pisa una aprobada', visitaReducir(en('aprobada'), { tipo: 'ERROR_RED', mensaje: 'x' }).paso, 'aprobada')
+igual('REINTENTAR no hace nada en aprobada', visitaReducir(en('aprobada'), { tipo: 'REINTENTAR' }).paso, 'aprobada')
+igual('REINTENTAR no hace nada en esperando', visitaReducir(en('esperando'), { tipo: 'REINTENTAR' }).paso, 'esperando')
+
+console.log('\n=== 6. regla: la aprobacion GANA (carrera WS vs contador) ===')
+igual('WS_APROBADA pisa un "expiro"', visitaReducir(en('noSumada', { motivo: 'expirada' }), { tipo: 'WS_APROBADA', sellosActuales: 6, premioDesbloqueado: false }).paso, 'aprobada')
+igual('WS_APROBADA desde inicio (reanudar)', visitaReducir(en('inicio'), { tipo: 'WS_APROBADA', sellosActuales: 9, premioDesbloqueado: true }).paso, 'aprobada')
+
+console.log('\n=== 7. 400 del backend con texto propio ===')
+const espera = visitaReducir(en('solicitando'), { tipo: 'SOLICITUD_RECHAZADA', motivo: 'esperaHoras', faltanHoras: 4 })
+igual('esperaHoras -> noSumada', [espera.paso, espera.motivo], ['noSumada', 'esperaHoras'])
+igual('guardadas las horas que faltan', espera.faltanHoras, 4)
+chk('texto de espera nombra las horas', (textoDelMotivo(espera) || '').includes('4 horas'), textoDelMotivo(espera) || '')
+const limite = visitaReducir(en('solicitando'), { tipo: 'SOLICITUD_RECHAZADA', motivo: 'yaSumadaHoy' })
+igual('limite diario -> noSumada/yaSumadaHoy', [limite.paso, limite.motivo], ['noSumada', 'yaSumadaHoy'])
+igual('texto de ya sumaste', textoDelMotivo(limite), 'Ya sumaste hoy, mirá tu tarjeta.')
+const otro = visitaReducir(en('solicitando'), { tipo: 'SOLICITUD_RECHAZADA', motivo: 'otro', mensaje: 'boom' })
+igual('otro 400 si es error', [otro.paso, otro.mensaje], ['error', 'boom'])
+igual('texto de expirada invita a reintentar', textoDelMotivo(en('noSumada', { motivo: 'expirada' })), 'La solicitud expiró, ¿querés intentar de nuevo?')
+igual('texto de 1 hora en singular', textoDelMotivo(en('noSumada', { motivo: 'esperaHoras', faltanHoras: 1 })), 'Todavía no podés sumar otra visita: esperá 1 hora más.')
+
+console.log('\n=== 8. REINTENTAR (accion explicita) ===')
+const re1 = visitaReducir(en('noSumada', { motivo: 'expirada', mensaje: 'x' }), { tipo: 'REINTENTAR' })
+igual('REINTENTAR -> solicitando', re1.paso, 'solicitando')
+igual('limpia motivo', re1.motivo, null)
+igual('limpia mensaje', re1.mensaje, null)
+igual('REINTENTAR desde error -> solicitando', visitaReducir(en('error', { mensaje: 'x' }), { tipo: 'REINTENTAR' }).paso, 'solicitando')
+
+console.log('\n=== 9. no se pide dos veces la misma visita ===')
+igual('SOLICITAR en esperando es no-op', visitaReducir(en('esperando', { token: 't' }), { tipo: 'SOLICITAR' }).paso, 'esperando')
+igual('SOLICITAR en solicitando es no-op', visitaReducir(en('solicitando'), { tipo: 'SOLICITAR' }).paso, 'solicitando')
+igual('SOLICITAR en esperando NO pierde el token', visitaReducir(en('esperando', { token: 't' }), { tipo: 'SOLICITAR' }).token, 't')
+
+console.log('\n=== 10. RESET / registro ===')
+const reseteado = visitaReducir(en('noSumada', { motivo: 'rechazada' }), { tipo: 'RESET' })
+igual('RESET vuelve a inicio', reseteado.paso, 'inicio')
+igual('RESET limpia el token', reseteado.token, null)
+igual('CERRAR_REGISTRO vuelve a inicio', visitaReducir(en('registrando'), { tipo: 'CERRAR_REGISTRO' }).paso, 'inicio')
+igual('ABRIR_REGISTRO desde aprobada', visitaReducir(en('aprobada'), { tipo: 'ABRIR_REGISTRO' }).paso, 'registrando')
+
+console.log('\n=== 11. totalidad: ningun paso x evento rompe ni devuelve un estado invalido ===')
+let combos = 0
+let invalidos: string[] = []
+for (const paso of PASOS) {
+  for (const tipo of TIPOS_DE_EVENTO) {
+    combos++
+    try {
+      const salida = visitaReducir(en(paso), EVENTOS[tipo])
+      if (!salida || typeof salida !== 'object') invalidos.push(`${paso} x ${tipo}: no es objeto`)
+      else if (!PASOS.includes(salida.paso)) invalidos.push(`${paso} x ${tipo}: paso invalido ${salida.paso}`)
+    } catch (err) {
+      invalidos.push(`${paso} x ${tipo}: lanzo ${(err as Error).message}`)
+    }
+  }
+}
+chk(`${combos} combinaciones (${PASOS.length} pasos x ${TIPOS_DE_EVENTO.length} eventos) sin excepciones ni pasos invalidos`, invalidos.length === 0, invalidos.slice(0, 4).join(' | '))
+
+console.log('\n=== 12. inmutabilidad: el reducer no muta la entrada ===')
+let mutados: string[] = []
+for (const paso of PASOS) {
+  for (const tipo of TIPOS_DE_EVENTO) {
+    const original = en(paso, { token: 'tok-x', motivo: 'rechazada', sellos: { sellosActuales: 3, premioDesbloqueado: false } })
+    const copia = JSON.parse(JSON.stringify(original))
+    visitaReducir(original, EVENTOS[tipo])
+    if (JSON.stringify(original) !== JSON.stringify(copia)) mutados.push(`${paso} x ${tipo}`)
+  }
+}
+chk('ninguna combinacion muta el estado de entrada', mutados.length === 0, mutados.slice(0, 4).join(' | '))
+
+console.log('\n=== 13. eventos desconocidos son identidad ===')
+const raro = { tipo: 'EVENTO_QUE_NO_EXISTE' } as unknown as EventoFlujo
+const antes = en('esperando', { token: 't' })
+igual('evento desconocido no cambia nada', visitaReducir(antes, raro), antes)
+
+console.log(`\n  TOTAL: ${ok} OK, ${fallas.length} FALLA`)
+if (fallas.length) {
+  console.log('  FALLARON: ' + fallas.join(' | '))
+  process.exit(1)
+}

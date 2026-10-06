@@ -1100,6 +1100,25 @@ resuelve, porque hay DOS en esta maquina:
   `Error: Invalid value for '-e' / '--export': './.env' is not a valid boolean`.
   Sus subcomandos son `get/list/run/set/unset` (`dotenv -f .env run <cmd>`).
 
+### La `-e` significa UNA COSA DISTINTA en cada `dotenv` (la trampa)
+
+| | dotenv de **Node** (`apps/backend/node_modules/.bin/dotenv`, dotenv-cli 11) | dotenv de **Python** (el del PATH, venv de Hermes) |
+|---|---|---|
+| flag para el archivo | `-e <path>` **y** `--env-file <path>` | `-f/--file <path>`; `-e` es `--export` (BOOLEAN) |
+| `-e ./.env` | carga el archivo | **falla**: `Invalid value for '-e' / '--export'` |
+| como corre un comando | `dotenv -e .env -- <cmd>` | `dotenv -f .env run <cmd>` |
+
+Verificado en esta maquina (el hijo ve `NODE_ENV=development` en los dos casos validos):
+
+```bash
+./apps/backend/node_modules/.bin/dotenv -e ./.env -- node -e "..."        # OK
+./apps/backend/node_modules/.bin/dotenv --env-file ./.env -- node -e "..." # OK (no figura en --help, pero funciona)
+pnpm dotenv -e ../../.env -- next build    # FALLA desde la raiz o apps/pwa-cliente
+```
+
+**Regla**: usar el bin local explicito desde la raiz, o instalar `dotenv-cli` en cada
+package que lo necesite (hoy solo `apps/backend` lo declara, para los scripts `db:*`).
+
 `node_modules/.bin/dotenv` NO existe en la raiz ni en `apps/pwa-cliente`, asi que ahi el
 nombre suelto cae al de Python. Verificado:
 

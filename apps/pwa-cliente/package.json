@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write \"app/**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:maquina": "node scripts/check-visita-maquina.ts"
   },
   "dependencies": {
     "@repo/api-client": "workspace:*",

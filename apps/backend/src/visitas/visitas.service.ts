@@ -220,10 +220,13 @@ export class VisitasService {
         },
       });
 
+      // Cliente: los AGREGADOS globales (totalVisitas, ultimaVisita, etiqueta) se
+      // actualizan siempre. Los SELLOS solo con modoClientes = GLOBAL: con
+      // POR_SUCURSAL el saldo vive en la tarjeta de cada sucursal.
       const actualizado = await tx.cliente.update({
         where: { id: fila.clienteId },
         data: {
-          sellosActuales: { increment: sellosOtorgados },
+          ...(porSucursal ? {} : { sellosActuales: { increment: sellosOtorgados } }),
           totalVisitas: { increment: 1 },
           ultimaVisita: new Date(),
           etiqueta: this.segmentos.calcularEtiqueta(fila.cliente.totalVisitas + 1, new Date()),
@@ -231,23 +234,24 @@ export class VisitasService {
         select: { id: true, sellosActuales: true, puntosActuales: true, totalVisitas: true, etiqueta: true, ultimaVisita: true },
       });
 
-      // Tarjeta por sucursal (modo POR_SUCURSAL)
-      if (porSucursal) {
-        await tx.tarjetaClienteSucursal.upsert({
-          where: { clienteId_sucursalId: { clienteId: fila.clienteId, sucursalId } },
-          update: {
-            sellosActuales: { increment: sellosOtorgados },
-            totalVisitas: { increment: 1 },
-            ultimaVisita: new Date(),
-          },
-          create: {
-            clienteId: fila.clienteId, sucursalId,
-            sellosActuales: sellosOtorgados, totalVisitas: 1, ultimaVisita: new Date(),
-          },
-        });
-      }
+      // Tarjeta de la sucursal: se actualiza SIEMPRE (con GLOBAL ademas de los
+      // sellos del cliente). Antes se actualizaba solo con POR_SUCURSAL, asi que
+      // con GLOBAL la tarjeta quedaba en 0 para siempre.
+      const tarjeta = await tx.tarjetaClienteSucursal.upsert({
+        where: { clienteId_sucursalId: { clienteId: fila.clienteId, sucursalId } },
+        update: {
+          sellosActuales: { increment: sellosOtorgados },
+          totalVisitas: { increment: 1 },
+          ultimaVisita: new Date(),
+        },
+        create: {
+          clienteId: fila.clienteId, sucursalId,
+          sellosActuales: sellosOtorgados, totalVisitas: 1, ultimaVisita: new Date(),
+        },
+        select: { sellosActuales: true },
+      });
 
-      return { visita, actualizado };
+      return { visita, actualizado, tarjeta };
     });
 
     await this.auditoria.registrar({
@@ -256,12 +260,19 @@ export class VisitasService {
       ip: empleado.ip,
     });
 
-    const progreso = this.segmentos.progreso(resultado.actualizado.sellosActuales, sellosParaPremio);
+    // El saldo con el que se mide el premio depende del modo: con POR_SUCURSAL es
+    // el de la TARJETA de esa sucursal, con GLOBAL el del cliente.
+    const sellosEfectivos = porSucursal
+      ? resultado.tarjeta.sellosActuales
+      : resultado.actualizado.sellosActuales;
+    const progreso = this.segmentos.progreso(sellosEfectivos, sellosParaPremio);
 
     this.gateway.emitirAprobada(fila.clienteId, {
       visitaId: resultado.visita.id,
       sucursalId,
-      sellosActuales: resultado.actualizado.sellosActuales,
+      sellosActuales: sellosEfectivos,
+      sellosCliente: resultado.actualizado.sellosActuales,
+      sellosTarjetaSucursal: resultado.tarjeta.sellosActuales,
       premioDesbloqueado: progreso.completado,
       aprobadoEn: resultado.visita.aprobadoEn.toISOString(),
     });
@@ -270,7 +281,10 @@ export class VisitasService {
       success: true,
       visitaId: resultado.visita.id,
       sucursalId,
-      sellosActuales: resultado.actualizado.sellosActuales,
+      modoClientes: porSucursal ? 'POR_SUCURSAL' : 'GLOBAL',
+      sellosActuales: sellosEfectivos,
+      sellosCliente: resultado.actualizado.sellosActuales,
+      sellosTarjetaSucursal: resultado.tarjeta.sellosActuales,
       premioDesbloqueado: progreso.completado,
       mostrarResena: true,
     };

@@ -2,6 +2,28 @@
 
 Errores conocidos del monorepo y sus soluciones.
 
+---
+
+## REGLA #1
+
+### El build NO valida el grafo de dependencias: hay que ARRANCAR el server
+
+`pnpm build` sale con exit 0 y `lint` tambien, pero si un modulo no importa el modulo
+dueño de un provider, la aplicacion **no arranca**:
+
+```
+Nest can't resolve dependencies of the NegociosService (..., ?, ...).
+Please make sure that the argument ConfiguracionService at index [1] is available
+in the NegociosModule context.
+```
+
+Es un error de RUNTIME, no de compilacion: tsc no ve el grafo de DI. Despues de
+cualquier cambio de modulos hay que **levantar el server y pegarle a `/api/health`**
+(no alcanza con build + lint).
+
+Relacionada: un `error TS` no es la unica forma en que falla `build`. Mirar SIEMPRE el
+exit code, no un grep de "error TS" (ver Fase 2 — Gating por plan).
+
 ## Bug: seedUsoMensual con upsert de clave compuesta nullable
 
 El upsert de UsoMensual usa la clave compuesta
@@ -469,20 +491,6 @@ UsoMensualService). No duplicarla.
 
 ## Fase 2 — Refactor multi-sucursal (#2.11)
 
-### El build NO valida el grafo de dependencias: hay que ARRANCAR el server
-
-`pnpm build` da exit 0 y `lint` tambien, pero si un modulo no importa el modulo
-dueño de un provider, la app **no arranca**:
-
-```
-Nest can't resolve dependencies of the NegociosService (..., ?, ...).
-Please make sure that the argument ConfiguracionService at index [1] is available
-in the NegociosModule context.
-```
-
-Es un error de RUNTIME, no de compilacion. Despues de cada cambio de modulos hay que
-levantar el server (o al menos `curl /api/health`) antes de dar algo por bueno.
-
 ### `@Global()` no alcanza para todo: el provider tiene que estar EXPORTADO
 
 `SucursalResolverService` vive en `SucursalesModule` (@Global) y funciona en todos
@@ -515,4 +523,61 @@ GLOBAL) pero contradice el contrato y ensucia el token.
 `/sucursales/:id/configuracion` es **POST** (upsert), no PATCH. Un PATCH devuelve 405 y
 el override nunca se guarda: si un test "falla" al verificar que el cambio se
 propago, primero confirmar que el metodo HTTP es el correcto.
+
+### Un server VIEJO escuchando en 3000 invalida TODOS los e2e
+
+Si queda un `node dist/main.js` de una corrida anterior, el nuevo `spawn` no puede
+tomar el puerto y **los requests van al proceso viejo**, con codigo viejo. Los tests
+fallan de formas que no tienen nada que ver con el cambio que estas probando (en un
+caso la respuesta tenia la forma ANTERIOR a la edicion, y el bug "desaparecia").
+
+Antes de correr un e2e:
+
+```bash
+netstat -ano | grep ":3000.*LISTENING"        # ¿quien escucha?
+taskkill /F /PID <pid>                        # OJO: en este bash es /F, no //F
+```
+
+`taskkill //F //IM node.exe` **falla** ("Argumento u opcion no valido - //F") y deja
+el proceso vivo en silencio.
+
+### `start:dev` no arrancaba: el mismo bug del `tsbuildinfo` que el build
+
+`nest start --watch` reportaba "Found 0 errors" y despues moria con
+`Cannot find module ...\dist\main`. Causa: `incremental: true` + un
+`tsconfig.tsbuildinfo` al dia -> tsc cree que no hay nada que emitir y **no genera
+`dist/main.js`**. `build` lo tenia resuelto con `prebuild: rimraf dist tsconfig.tsbuildinfo`,
+pero `start`/`start:dev` no corrian ese limpio. Se agregaron `prestart` y
+`prestart:dev` con el mismo `rimraf`.
+
+### Los sellos GLOBAL vs POR_SUCURSAL estaban INVERTIDOS
+
+`visitas.aprobar` hacia lo contrario de lo que pide el diseño:
+
+- con `modoClientes = GLOBAL` actualizaba **solo** `Cliente.sellosActuales` (la
+  `TarjetaClienteSucursal` quedaba en 0 para siempre);
+- con `POR_SUCURSAL` actualizaba **tambien** `Cliente.sellosActuales` (no deberia:
+  el saldo vive en la tarjeta de cada sucursal);
+- y `premioDesbloqueado` se calculaba **siempre** con los sellos del cliente, nunca
+  con la tarjeta de la sucursal.
+
+Corregido: la tarjeta se actualiza **siempre**; `Cliente.sellosActuales` solo con
+GLOBAL; y el premio se mide con la tarjeta cuando el modo es POR_SUCURSAL. Los
+agregados globales (`totalVisitas`, `ultimaVisita`, `etiqueta`) siguen siendo globales
+en los dos modos.
+
+### Un checklist estatico en verde NO significa que este bien
+
+`test:checklist` verifica estructura (resolver usado, filtro por sucursal, WS con
+sala de sucursal, sin hardcodeos). Daba **16/16 OK** con el bug de sellos arriba
+descrito, porque ese bug es de comportamiento y ningun chequeo estatico lo ve. El
+script imprime su propio alcance para que nadie lo lea como una garantia.
+
+### Los tests dejan DATOS sucios: revisar el seed despues de correr e2e
+
+La prueba del `DELETE /sucursales/:id?force=true` **reasigna los empleados a la
+sucursal principal**: dejo a Pedro Mesero en `centro` en vez de `norte`. Un e2e
+posterior ("Pedro aprueba en norte") dio 403 y parecia un bug de permisos cuando el
+dato ya no era el del seed. Despues de una tanda de e2e conviene verificar el estado
+contra el seed (sucursales, empleados, contadores de `UsoMensual`).
 

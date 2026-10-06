@@ -575,7 +575,7 @@ completa de Business Profile queda como "nice to have" para cuando:
 
 ---
 
-## Fase 2 — #2.11 Refactor multi-sucursal (en curso)
+## Fase 2 — #2.11 Refactor multi-sucursal (CERRADO)
 
 ### Auditoria inicial (evidencia, no checklist)
 
@@ -623,4 +623,43 @@ TarjetaClienteSucursal: visitas (tx), clientes (upsert), pedidos (lectura)
 
 El JWT del cliente se firmaba con `sucursalId` **siempre**, aunque el negocio fuera
 GLOBAL. Corregido para que el claim aparezca solo con `POR_SUCURSAL`.
+
+### Verificacion final del #2.11
+
+**1) Sellos GLOBAL vs POR_SUCURSAL (e2e con visita real)** — encontro un bug real
+(invertido, ver TROUBLESHOOTING). Ya corregido:
+
+```
+GLOBAL        -> Cliente 0->1 Y Tarjeta(centro) 0->1, Tarjeta(norte) no existe
+POR_SUCURSAL  -> Cliente sigue en 0, Tarjeta(centro) 0->1
+premio        -> POR_SUCURSAL con cliente=99 y tarjeta=1 -> premio FALSE (mide la tarjeta);
+                 la 2da en la misma sucursal -> premio TRUE con el cliente en 99
+independencia -> aprobar en NORTE: centro 2->2, norte 0->1
+```
+
+**2) Aislamiento de WebSocket en /visitas (e2e con sockets reales)**:
+
+```
+salas: Pedro(norte) [sucursal:norte] | Juan(centro) [sucursal:centro]
+       Maria(multi) [sucursal:centro, sucursal:norte]
+       Carlos(dueno,multi) [centro, norte, DUENOS] | Cliente A [cliente:A]
+
+solicitud en NORTE -> Pedro 1 | Juan 0 | Maria 1 | Carlos 1 | ClienteA 0 | ClienteB 0
+  (Maria y Carlos estan en las 2 salas y reciben UNA sola vez: emision encadenada)
+aprobacion -> visita:aprobada solo al Cliente A (B: 0)
+inverso: solicitud en el negocio B -> NADIE de A la recibe (0 en los 4 + ClienteA 0)
+```
+
+**3) `pnpm --filter backend test:checklist`** — script ejecutable
+(`apps/backend/scripts/checklist-multisucursal.js`): 16 modulos, tabla con
+modulo/estado/resolver/filtro/nota y exit 1 si falla. Auto-verificado inyectando dos
+violaciones (un broadcast sin sala y un `sucursalId` hardcodeado): el script las
+detecta y sale con 1.
+
+### Bug de infraestructura encontrado en la verificacion
+
+`pnpm start:dev` **no arrancaba**: `nest start --watch` reportaba "Found 0 errors" y
+moria con `Cannot find module dist\main`, por el `incremental: true` + tsbuildinfo
+al dia (el mismo problema que `build` ya tenia resuelto). Se agregaron `prestart` y
+`prestart:dev` con `rimraf dist tsconfig.tsbuildinfo`.
 

@@ -191,17 +191,33 @@ export function claveDeLinea(itemId: string, modificadores: ModificadorElegido[]
 }
 
 /** Los grupos obligatorios tienen que estar completos y respetar min/max. */
-export function validarModificadores(grupos: GrupoModificador[], elegidos: ModificadorElegido[]): string[] {
+/**
+ * Lo minimo que necesita el validador. Los min/max van opcionales a proposito: el carrito los
+ * tiene requeridos, pero el grupo que viene de la API los declara opcionales. Sin este tipo
+ * comun, el modal (que valida el grupo publico) no podia reusar la validacion del carrito.
+ */
+export type GrupoValidable = {
+  id: string
+  nombre: string
+  tipo: 'UNICA_SELECCION' | 'MULTIPLE_SELECCION'
+  obligatorio: boolean
+  minSelecciones?: number | undefined
+  maxSelecciones?: number | undefined
+}
+
+export function validarModificadores(grupos: GrupoValidable[], elegidos: ModificadorElegido[]): string[] {
   const errores: string[] = []
   for (const g of grupos) {
     const elegido = elegidos.find((e) => e.grupoId === g.id)
     const cuantas = elegido?.opciones.length ?? 0
-    if (g.obligatorio && cuantas < Math.max(1, g.minSelecciones)) {
+    const min = g.minSelecciones ?? (g.obligatorio ? 1 : 0)
+    const max = g.maxSelecciones ?? Infinity
+    if (g.obligatorio && cuantas < Math.max(1, min)) {
       errores.push(`Elegi ${g.nombre}`)
       continue
     }
-    if (cuantas > 0 && cuantas < g.minSelecciones) errores.push(`En ${g.nombre} elegi al menos ${g.minSelecciones}`)
-    if (cuantas > g.maxSelecciones) errores.push(`En ${g.nombre} podes elegir hasta ${g.maxSelecciones}`)
+    if (cuantas > 0 && cuantas < min) errores.push(`En ${g.nombre} elegi al menos ${min}`)
+    if (cuantas > max) errores.push(`En ${g.nombre} podes elegir hasta ${max}`)
   }
   return errores
 }

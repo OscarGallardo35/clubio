@@ -9,6 +9,7 @@
  */
 import { formatearPrecio } from '@repo/utils'
 import { seleccionarTotal, useCarritoStore } from '@/stores/carritoStore'
+import { ALTO_NAV_REM } from '@/lib/nav-tabs'
 
 export interface BadgeCarritoProps {
   onClick: () => void
@@ -31,7 +32,8 @@ export function BadgeCarrito({ onClick, oculto }: BadgeCarritoProps) {
       aria-label={`Ver el carrito: ${cantidad} ${cantidad === 1 ? 'item' : 'items'}, ${formatearPrecio(total)}`}
       className="fixed right-4 z-50 flex min-h-12 items-center gap-3 rounded-full px-5 shadow-lg transition active:scale-95"
       style={{
-        bottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
+        // Arriba del BottomNav (z-40) para no quedar tapado, y con el safe-area de iOS.
+        bottom: `calc(env(safe-area-inset-bottom) + ${ALTO_NAV_REM}rem + 1rem)`,
         background: 'var(--color-primary)',
         color: 'var(--color-primary-foreground)',
       }}

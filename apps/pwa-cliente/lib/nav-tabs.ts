@@ -8,9 +8,13 @@
  * es un placeholder, por eso vive fuera del tenant).
  */
 
+/** Alto de la barra, en rem. Lo usa tambien el BadgeCarrito para no quedar debajo. */
+export const ALTO_NAV_REM = 4
+
 export type ClaveTab = 'carta' | 'club' | 'tarjeta'
 
 export interface TabDef {
+  /** Icono lucide ya renderizado por el componente (no se guarda el componente aca). */
   clave: ClaveTab
   etiqueta: string
   /** Ruta para el tenant dado. */

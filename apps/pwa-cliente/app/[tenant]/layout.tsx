@@ -2,6 +2,7 @@ import { BrandingProvider } from '@/components/BrandingProvider'
 import { SucursalProvider } from '@/components/SucursalProvider'
 import { getNegocio } from '@/lib/api-servidor'
 import { EnlaceInvalido } from '@/components/EnlaceInvalido'
+import { BottomNav } from '@/components/carta/BottomNav'
 
 /**
  * Layout del tenant: es un Server Component ASYNC a proposito.
@@ -24,7 +25,12 @@ export default async function TenantLayout({
 
   return (
     <BrandingProvider negocioInicial={negocio} tenant={params.tenant}>
-      <SucursalProvider>{children}</SucursalProvider>
+      <SucursalProvider>
+        {/* padding-bottom para que el nav fijo no tape el final del contenido */}
+        <div className="pb-20">{children}</div>
+        {/* Dentro del BrandingProvider: BottomNav usa useBranding para saber si mostrar Carta. */}
+        <BottomNav />
+      </SucursalProvider>
     </BrandingProvider>
   )
 }

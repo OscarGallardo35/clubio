@@ -49,6 +49,20 @@ export const ETIQUETAS: Record<EstadoPedido, string> = {
  * daba "efectivo" en minuscula: los enums del backend vienen en MAYUSCULAS y no son copy para el
  * usuario.
  */
+/**
+ * Link de WhatsApp para el staff a partir del numero del atendiente.
+ *
+ * La base es `https://wa.me/<numero sin simbolos>`: NO la `urlCorta` (esa es la pagina del pedido en
+ * la app del staff, no un enlace de WhatsApp). El mensaje ya trae adentro el link del staff, asi que
+ * aca solo se cambia la base.
+ * Devuelve `null` si no hay digitos: sin numero no se puede armar el link (y el boton no se muestra).
+ */
+export function urlWhatsAppStaff(numero: string | null | undefined, mensaje: string): string | null {
+  const digitos = (numero ?? '').replace(/\D/g, '')
+  if (!digitos) return null
+  return `https://wa.me/${digitos}?text=${encodeURIComponent(mensaje)}`
+}
+
 export type FalloSeguimiento = 'no-encontrado' | 'vencido' | 'otro' | 'tenant'
 
 /**

@@ -26,7 +26,8 @@ export interface DatosMensaje {
 
 /**
  * Mensaje pre-armado que el cliente le manda al negocio por WhatsApp.
- * Corto y sin emojis raros: algunos clientes de WhatsApp los rompen.
+ * Corto y sin emojis raros: algunos clientes de WhatsApp los rompen. El unico a proposito es el
+ * ⚠️ de la ultima linea, que marca que el link es lo que hay que verificar.
  */
 export function generarMensajeWhatsApp(d: DatosMensaje): string {
   const lineas: string[] = [];
@@ -51,7 +52,10 @@ export function generarMensajeWhatsApp(d: DatosMensaje): string {
   if (d.notas) lineas.push(`Nota: ${d.notas}`);
 
   lineas.push('');
-  lineas.push(`Ver detalle: ${d.urlCorta}`);
+  // El pedido YA esta persistido cuando se arma esto: el link del staff es la fuente de verdad
+  // (muestra los items del GET publico, no el texto de este mensaje, que el cliente puede editar
+  // antes de mandarlo). Por eso se le pide al staff que verifique el pedido ANTES de prepararlo.
+  lineas.push(`⚠️ Verificá el pedido acá antes de prepararlo: ${d.urlCorta}`);
 
   return lineas.join('\n');
 }

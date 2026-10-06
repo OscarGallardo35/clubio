@@ -1953,3 +1953,18 @@ el propio fetch, con el slug que ya viene en la URL (`api.setTenant(slugNegocio)
 que el header no dependa del orden de los efectos; y (2) clasificar el 404 por el body, dejando el
 caso transitorio como reintentable.
 
+### REGLA: el pedido se persiste antes del WhatsApp, y el link es la fuente de verdad
+
+"El pedido se persiste en el backend ANTES de mandar el WhatsApp. El link del staff es la fuente de
+verdad: muestra los items del GET público, no del mensaje de WhatsApp. El texto de WhatsApp es una
+'preview' informativa para el staff — puede ser modificado por el cliente antes de enviar, pero el
+pedido real está en la DB. Por eso el mensaje debe decir 'Verificá el pedido acá' con el link."
+
+Caso real (dos bugs en el mismo boton): el boton "Abrir WhatsApp" del seguimiento armaba
+`${urlCorta}?text=${mensajeWhatsApp}`, o sea que abria la PAGINA DEL PEDIDO en la app del staff (un
+link `http://192.168.0.103:3002/pedido/<token>`) en vez de WhatsApp. La `urlCorta` es el link del
+staff, no una base de WhatsApp. El fix es que la base salga del numero del atendiente:
+`https://wa.me/<numero sin simbolos>?text=<mensaje>`, con el mensaje intacto (que ya trae el link del
+staff adentro). Y el copy del mensaje pide verificar el pedido con ese link, porque el texto de
+WhatsApp lo puede editar el cliente antes de mandarlo.
+

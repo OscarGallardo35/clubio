@@ -21,7 +21,7 @@ import {
   validarCheckout,
 } from '../lib/carrito-maquina.ts'
 import type { EstadoCarrito, ItemCarta, ModificadorElegido } from '../lib/carrito-maquina.ts'
-import { ETIQUETAS_MODO_PAGO, armarBody, clasificarFalloPedido, normalizarError } from '../lib/checkout-maquina.ts'
+import { ETIQUETAS_MODO_PAGO, armarBody, clasificarFalloPedido, normalizarError, urlWhatsAppStaff } from '../lib/checkout-maquina.ts'
 import { validarTelefonoE164 } from '../lib/carrito-maquina.ts'
 import { modificadoresParaApi } from '../lib/modificadores-seleccion.ts'
 
@@ -277,6 +277,21 @@ igual('el mensaje del tenant no depende de mayusculas', clasificarFalloPedido(40
 igual('410 es link vencido', clasificarFalloPedido(410, 'cualquiera'), 'vencido')
 igual('500 es otro (no terminal)', clasificarFalloPedido(500, ''), 'otro')
 igual('un 404 con mensaje desconocido cae al lado terminal', clasificarFalloPedido(404, ''), 'no-encontrado')
+
+
+// --- 14. Link de WhatsApp del staff -----------------------------------------
+console.log('\n== link de WhatsApp ==')
+const MSG_WA = 'Nuevo pedido de oscar\n\n-----\nTotal: $1.500\n\nVerificá el pedido acá: http://192.168.0.103:3002/pedido/tok-1'
+igual('la base es wa.me con los digitos pelados',
+  urlWhatsAppStaff('+5493585705745', 'hola'), 'https://wa.me/5493585705745?text=hola')
+igual('saca espacios, guiones y parentesis',
+  urlWhatsAppStaff('+54 (9) 358-570-5745', 'hola'), 'https://wa.me/5493585705745?text=hola')
+igual('sin digitos no hay link', urlWhatsAppStaff('', 'hola'), null)
+igual('null tampoco', urlWhatsAppStaff(null, 'hola'), null)
+chk('la base NO es la url del staff (el bug original)',
+  urlWhatsAppStaff('+5493585705745', MSG_WA)?.startsWith('https://wa.me/5493585705745?text=') === true)
+chk('el mensaje viaja codificado y conserva el link del staff adentro',
+  urlWhatsAppStaff('+5493585705745', MSG_WA)?.includes(encodeURIComponent('http://192.168.0.103:3002/pedido/tok-1')) === true)
 
 console.log(fallas.length === 0
   ? `\nTODO OK: ${ok} aserciones OK, 0 fallas\n`

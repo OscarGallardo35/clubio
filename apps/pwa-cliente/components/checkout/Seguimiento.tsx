@@ -22,7 +22,7 @@ import type { Socket } from 'socket.io-client'
 import { buttonVariants } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
 import { api, pedidosApi } from '@/lib/api'
-import { ETIQUETAS_MODO_PAGO, clasificarFalloPedido, normalizarError, timeline } from '@/lib/checkout-maquina'
+import { ETIQUETAS_MODO_PAGO, clasificarFalloPedido, normalizarError, timeline, urlWhatsAppStaff } from '@/lib/checkout-maquina'
 import type { EstadoPedido } from '@/lib/checkout-maquina'
 import type { FalloSeguimiento } from '@/lib/checkout-maquina'
 import { crearSocketPedidos } from '@/lib/socket'
@@ -163,10 +163,15 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   // El WhatsApp sale del store, y SOLO si el pedido guardado es el de este linkToken (si no,
   // abrir otro link mostraria el mensaje de un pedido ajeno). Un pedido viejo no lo tiene: ahi no
   // se muestra el boton.
-  const whatsapp =
-    pedidoGuardado && pedidoGuardado.linkToken === linkToken && pedidoGuardado.urlCorta && pedidoGuardado.mensajeWhatsApp
-      ? { url: pedidoGuardado.urlCorta, mensaje: pedidoGuardado.mensajeWhatsApp }
-      : undefined
+  // El boton abre WhatsApp con el numero del atendiente (el que resuelve el backend al crear el
+  // pedido). Antes la base era `urlCorta`, que es la pagina del pedido: el boton abria la app del
+  // staff en vez de WhatsApp. El mensaje ya incluye el link del staff adentro.
+  const mensajeWhatsApp =
+    pedidoGuardado && pedidoGuardado.linkToken === linkToken ? pedidoGuardado.mensajeWhatsApp : undefined
+  // El numero sale del pedido (lo resuelve el backend al crearlo) y, si esa sucursal no tenia
+  // atendiente configurado, del default del negocio.
+  const numeroAtendiente = pedido.numeroAtendiente ?? negocio?.numeroAtendiente ?? null
+  const whatsapp = mensajeWhatsApp ? urlWhatsAppStaff(numeroAtendiente, mensajeWhatsApp) : null
 
   const pasos = timeline(pedido.estado as EstadoPedido)
   const cancelado = pedido.estado === 'CANCELADO' || pedido.estado === 'RECHAZADO'
@@ -269,7 +274,7 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
 
       {whatsapp ? (
         <a
-          href={`${whatsapp.url}${whatsapp.url.includes('?') ? '&' : '?'}text=${encodeURIComponent(whatsapp.mensaje)}`}
+          href={whatsapp}
           target="_blank"
           rel="noopener noreferrer"
           className={buttonVariants({ className: 'min-h-12' })}

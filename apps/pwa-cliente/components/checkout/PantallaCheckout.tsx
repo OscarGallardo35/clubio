@@ -131,8 +131,11 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
       refs.current[primero]?.focus()
       return
     }
-    despachar({ tipo: 'ENVIAR' })
-    onEnviar?.(armarBody(carrito))
+    // OJO: aca NO se despacha ENVIAR. La transicion a 'enviando' la hace el hook, que es quien
+    // manda el POST: si el componente la adelanta, el guard anti-doble-tap del hook ve
+    // fase === 'enviando' y corta, y el pedido nunca sale (bug real).
+    if (!onEnviar) return
+    onEnviar(armarBody(carrito))
   }
 
   const setCliente = (campo: keyof DatosCliente, valor: string) =>

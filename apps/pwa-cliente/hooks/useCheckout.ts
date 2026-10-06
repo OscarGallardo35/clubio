@@ -53,14 +53,28 @@ export function useCheckout(): UsoCheckout {
   const error = useCarritoStore((s) => s.error)
 
   const enviar = useCallback(async () => {
+    // LOG TEMPORAL - sacar despues del diagnostico
+    console.log('[checkout] enviar() llamado')
     const estado = useCarritoStore.getState()
-    // El reducer tambien lo frena, pero cortar aca evita armar el body al pedo.
-    if (estado.fase === 'enviando' || estado.fase === 'enviado') return
-    if (Object.keys(validarCheckout(estado)).length > 0) return
+    // Guard anti-doble-tap. OJO: este es el UNICO lugar que mueve la fase a 'enviando' (el
+    // componente no la adelanta), asi que llegar aca con 'enviando' significa un segundo toque.
+    if (estado.fase === 'enviando' || estado.fase === 'enviado') {
+      console.log('[checkout] enviar() cortado por el guard. fase:', estado.fase)
+      return
+    }
+    if (Object.keys(validarCheckout(estado)).length > 0) {
+      console.log('[checkout] enviar() cortado: validacion incompleta', validarCheckout(estado))
+      return
+    }
 
     despachar({ tipo: 'ENVIAR' })
     try {
-      const r = await crearConReintento(armarBody(estado))
+      const body = armarBody(estado)
+      // LOG TEMPORAL - sacar despues del diagnostico
+      console.log('[checkout] POST /api/pedidos con:', body)
+      const r = await crearConReintento(body)
+      // LOG TEMPORAL - sacar despues del diagnostico
+      console.log('[checkout] POST response:', r)
       // SOLO PEDIDO_OK. Ver el comentario del encabezado.
       despachar({
         tipo: 'PEDIDO_OK',
@@ -71,6 +85,8 @@ export function useCheckout(): UsoCheckout {
         mensajeWhatsApp: r.mensajeWhatsApp,
       })
     } catch (e) {
+      // LOG TEMPORAL - sacar despues del diagnostico
+      console.error('[checkout] catch:', e)
       const { status, mensaje } = normalizarError(e)
       despachar({ tipo: 'PEDIDO_ERROR', status, mensaje })
     }

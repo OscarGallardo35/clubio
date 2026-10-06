@@ -1,3 +1,4 @@
+import type { SugerenciaUpsell } from './carrito-maquina'
 import { ApiClient, endpoints } from '@repo/api-client'
 import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta } from '@/types/api'
 
@@ -55,3 +56,21 @@ export const visitasApi = {
     return api.get<Paginado<VisitaHistorial>>(`${endpoints.visitas.miHistorial}${qs ? `?${qs}` : ''}`)
   },
 }
+
+/**
+ * Upsell del carrito. La ruta vive en la app y no en el mapa de `@repo/api-client` para no
+ * tocar el package: es una llamada de la PWA y nada mas.
+ */
+export const upsellApi = {
+  calcular: (body: {
+    items: { itemId: string; cantidad: number }[]
+    maxSugerencias?: number
+    sucursalId?: string
+    sucursalSlug?: string
+  }) =>
+    api.post<{ sugerencias: SugerenciaUpsell[]; motivo?: string | null; upsellActivo?: boolean }>(
+      '/upsell/calcular',
+      body,
+    ),
+}
+

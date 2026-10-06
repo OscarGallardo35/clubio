@@ -13,7 +13,8 @@
     "check:maquina": "node scripts/check-visita-maquina.mts",
     "check:flujo": "node scripts/check-flujo-ws.mts",
     "check:carrito": "node scripts/check-carrito.mts",
-    "check:carta": "node scripts/check-carta.mts"
+    "check:carta": "node scripts/check-carta.mts",
+    "check:upsell": "node scripts/check-upsell.mts"
   },
   "dependencies": {
     "@repo/api-client": "workspace:*",

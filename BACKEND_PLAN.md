@@ -751,6 +751,16 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 
 ## TODO antes de la demo con un cliente real
 
+### TODO pre-deploy: `configuracion.turnosActivos` (default `false`)
+
+- La tab **Turnos** de la PWA Staff solo aparece si `tieneFeature('turnos')` **y** `configuracion.turnosActivos`.
+- Se configura desde la PWA Admin.
+- Migracion chica (1 campo en `ConfiguracionClub`), con default `false` para que los negocios existentes no
+  cambien de comportamiento.
+- Motivo: hoy la Fase 4 (turnos/check-in) esta postergada "segun demanda", pero la tab ya esta en el
+  BottomNav. Sin el flag, todos los locales ven una tab vacia.
+
+
 - [ ] Limpiar clientes de prueba antes de la demo con cliente real. Los `e2e_s3/e2e_s4`
   y el harness de visitas registran clientes en el tenant demo (hoy: 34 total, 20 del seed
   + 14 de tests). Borrarlos con un script especifico, revisando que no tengan pedidos ni

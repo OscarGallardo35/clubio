@@ -46,7 +46,12 @@ export function useEmpleado(): UsoEmpleado {
       const { status, mensaje } = normalizarError(e);
       if (status === 401) {
         limpiar();
-        router.replace('/login');
+        // Se vuelve al destino ACTUAL (con query) para no perder un `?ref=` en
+        // curso. window y no useSearchParams: este hook vive en el layout y
+        // useSearchParams obligaria a un <Suspense> para prerenderizar.
+        const actual =
+          typeof window === 'undefined' ? '/login' : `/login?volver=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+        router.replace(actual);
       } else {
         setError(mensaje);
       }

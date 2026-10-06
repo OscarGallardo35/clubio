@@ -1,5 +1,12 @@
 import { ApiClient, endpoints } from '@repo/api-client';
-import type { EmpleadoMe, LoginEmpleadoRespuesta } from '@/types/api';
+import type {
+  EmpleadoMe,
+  LoginEmpleadoRespuesta,
+  RespuestaAprobacion,
+  RespuestaRechazo,
+  VisitaAprobada,
+  VisitaValidable,
+} from '@/types/api';
 
 /**
  * Cliente HTTP unico de la PWA Staff.
@@ -22,4 +29,32 @@ export const staffApi = {
   logout: () => api.post<{ ok: boolean }>(endpoints.auth.logoutEmpleado, {}),
   /** 401 => no hay sesion (es un estado, no un error). */
   me: () => api.get<EmpleadoMe>(endpoints.auth.meEmpleado),
+};
+
+/** Visitas del lado staff (los 5 endpoints que existen hoy). */
+export const visitasApi = {
+  /** Detalle de una solicitud por token. 404 si no existe; 403 si es de otra sucursal. */
+  validar: (token: string) => api.get<VisitaValidable>(endpoints.visitas.validar(token)),
+
+  aprobar: (token: string, body: { origen?: string } = {}) =>
+    api.post<RespuestaAprobacion>(endpoints.visitas.aprobar(token), { origen: 'pwa_staff', ...body }),
+
+  rechazar: (token: string, body: { motivo?: string }) =>
+    api.post<RespuestaRechazo>(endpoints.visitas.rechazar(token), body),
+
+  /**
+   * ATENCION: `mis-aprobaciones` NO es la cola de pendientes. Devuelve las visitas
+   * que YO aprobe hoy. La cola de pendientes no tiene endpoint (ver CHECKPOINT).
+   */
+  misAprobaciones: () =>
+    api.get<{ data: VisitaAprobada[]; total: number; desde: string }>(endpoints.visitas.misAprobaciones),
+
+  historial: (filtros: { page?: string; pageSize?: string } = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(filtros).filter(([, v]) => v !== undefined) as [string, string][],
+    ).toString();
+    return api.get<{ data: unknown[]; total: number }>(
+      `${endpoints.visitas.historial}${qs ? `?${qs}` : ''}`,
+    );
+  },
 };

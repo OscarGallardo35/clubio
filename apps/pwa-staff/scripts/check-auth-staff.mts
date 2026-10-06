@@ -154,6 +154,68 @@ chk('logout manda el clear de empleado_token', /empleado_token=;/.test(out.setCo
 // Token vencido: NO se puede forjar desde aca porque JWT_EMPLEADO_SECRET es un
 // secreto real (64 chars) en .env, no el fallback de desarrollo. Queda anotado
 // como el unico caso del spec sin cubrir, a proposito y no por olvido.
+
+// ---------------------------------------------------------------------------
+// 13) El loop completo del QR #2: el cliente pide, el staff valida y resuelve.
+//     Es la unica forma de saber que el flujo entero sigue en pie (y de que el
+//     link del WhatsApp, /validar?ref=, tenga una pantalla detras).
+// ---------------------------------------------------------------------------
+const sufijo = String(Date.now()).slice(-6);
+
+async function clienteNuevo(nombre: string) {
+  const reg = await call('/auth/cliente/registrar', {
+    method: 'POST',
+    body: JSON.stringify({ negocioSlug: SLUG, nombre, telefono: `+5493585${sufijo}${Math.floor(Math.random() * 10)}` }),
+  });
+  return { cookie: reg.setCookie.split(';')[0], status: reg.status };
+}
+
+const c1 = await clienteNuevo('E2E Loop Aprobacion');
+chk('se puede registrar un cliente nuevo (201)', c1.status === 201, `status ${c1.status}`);
+const sol1 = await call('/visitas/solicitar', {
+  method: 'POST', cookie: c1.cookie, body: JSON.stringify({ sucursalSlug: 'centro' }),
+});
+const token1: string | undefined = sol1.body?.token;
+chk('el cliente pide la visita y recibe un token', sol1.status === 201 && typeof token1 === 'string');
+chk('el token trae urlValidacion (es el link del WhatsApp)', typeof sol1.body?.urlValidacion === 'string');
+chk('urlValidacion apunta a /validar?ref= del STAFF_APP_URL', /\/validar\?ref=/.test(String(sol1.body?.urlValidacion)));
+
+if (token1) {
+  const v1 = await call(`/visitas/validar/${token1}`, { cookie: cookieEmpleado });
+  chk('el staff valida el token -> 200 y estado VALIDO', v1.status === 200 && v1.body?.estado === 'VALIDO', `status ${v1.status} estado ${v1.body?.estado}`);
+  chk('la validacion trae al cliente (con telefono ENMASCARADO)', Boolean(v1.body?.cliente?.nombre) && String(v1.body?.cliente?.telefono).includes('*'));
+  chk('la validacion trae la sucursal', v1.body?.sucursal?.slug === 'centro');
+  chk('la validacion trae expiraEn (TTL 5 min)', Boolean(v1.body?.expiraEn));
+
+  const a1 = await call(`/visitas/aprobar/${token1}`, { method: 'POST', cookie: cookieEmpleado, body: JSON.stringify({ origen: 'check_auth_staff' }) });
+  chk('el staff aprueba -> 2xx con success', a1.status < 300 && a1.body?.success === true, `status ${a1.status}`);
+  chk('la aprobacion devuelve sellosActuales y el modo del negocio', typeof a1.body?.sellosActuales === 'number' && ['GLOBAL', 'POR_SUCURSAL'].includes(a1.body?.modoClientes));
+
+  const e1 = await call(`/visitas/estado/${token1}`, { cookie: c1.cookie });
+  chk('el CLIENTE ve su visita APROBADA', e1.status === 200 && e1.body?.estado === 'APROBADA', `estado ${e1.body?.estado}`);
+  const v1b = await call(`/visitas/validar/${token1}`, { cookie: cookieEmpleado });
+  chk('un token ya usado queda como USADO (no se aprueba dos veces)', v1b.body?.estado === 'USADO', `estado ${v1b.body?.estado}`);
+}
+
+const c2 = await clienteNuevo('E2E Loop Rechazo');
+const sol2 = await call('/visitas/solicitar', { method: 'POST', cookie: c2.cookie, body: JSON.stringify({ sucursalSlug: 'centro' }) });
+const token2: string | undefined = sol2.body?.token;
+const MOTIVO = 'El telefono ya sumo una visita hoy';
+if (token2) {
+  const r2 = await call(`/visitas/rechazar/${token2}`, { method: 'POST', cookie: cookieEmpleado, body: JSON.stringify({ motivo: MOTIVO }) });
+  chk('el staff rechaza con motivo -> 2xx', r2.status < 300 && r2.body?.success === true, `status ${r2.status}`);
+  const e2 = await call(`/visitas/estado/${token2}`, { cookie: c2.cookie });
+  chk('el CLIENTE ve RECHAZADA', e2.body?.estado === 'RECHAZADA', `estado ${e2.body?.estado}`);
+  chk('el CLIENTE ve EXACTAMENTE el motivo que escribio el staff', e2.body?.motivo === MOTIVO, String(e2.body?.motivo));
+}
+
+const inv = await call('/visitas/validar/token-que-no-existe', { cookie: cookieEmpleado });
+chk('un token inexistente -> 404 (no 500)', inv.status === 404, `status ${inv.status}`);
+
+// `mis-aprobaciones` NO es la cola de pendientes: devuelve lo que YO aprobe hoy.
+const ma = await call('/visitas/mis-aprobaciones', { cookie: cookieEmpleado });
+chk('mis-aprobaciones devuelve {data,total,desde} y NO una cola de pendientes', ma.status === 200 && Array.isArray(ma.body?.data) && typeof ma.body?.total === 'number' && ma.body?.desde !== undefined);
+
 console.log('  (nota: el caso "token vencido" no se cubre: requiere firmar con JWT_EMPLEADO_SECRET real)');
 
 console.log(`\n  ${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`);

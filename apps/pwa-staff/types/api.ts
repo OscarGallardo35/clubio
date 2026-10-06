@@ -58,3 +58,72 @@ export interface LoginEmpleadoRespuesta {
   empleado: { id: string; nombre: string; rol: string; sucursalId: string | null };
   negocio: { id: string; slug: string; nombre: string };
 }
+
+// ---------------------------------------------------------------------------
+// Visitas (staff). Formas REALES leidas de visitas.service.ts.
+// ---------------------------------------------------------------------------
+
+/** GET /visitas/validar/:token */
+export interface VisitaValidable {
+  token: string
+  estado: 'VALIDO' | 'USADO' | 'EXPIRADO'
+  expiraEn: string
+  sucursalId: string | null
+  sucursal: { id: string; nombre: string; slug: string; esPrincipal: boolean } | null
+  cliente: {
+    id: string
+    nombre: string
+    /** Viene ENMASCARADO del backend (enmascararTelefono). */
+    telefono: string
+    sellosActuales: number
+    puntosActuales: number
+    totalVisitas: number
+    etiqueta: string | null
+    ultimaVisita: string | null
+  }
+}
+
+/** POST /visitas/aprobar/:token */
+export interface RespuestaAprobacion {
+  success: true
+  visitaId: string
+  sucursalId: string
+  modoClientes: 'GLOBAL' | 'POR_SUCURSAL'
+  sellosActuales: number
+  sellosCliente: number
+  sellosTarjetaSucursal: number
+  premioDesbloqueado: boolean
+  mostrarResena: boolean
+}
+
+/** POST /visitas/rechazar/:token */
+export interface RespuestaRechazo {
+  success: true
+}
+
+/**
+ * Fila de `GET /visitas/mis-aprobaciones`.
+ *
+ * OJO CON EL NOMBRE: este endpoint NO lista solicitudes pendientes. Devuelve las
+ * visitas que ESE empleado ya aprobo HOY (`{ data, total, desde }`). El nombre
+ * invita a confundirlo; se deja dicho aca para que nadie lo use como cola de
+ * pendientes.
+ */
+export interface VisitaAprobada {
+  id: string
+  clienteId: string
+  sucursalId: string | null
+  aprobadoEn: string | null
+  sellosOtorgados: number
+  cliente: { id: string; nombre: string }
+  sucursal: { id: string; nombre: string; slug: string } | null
+}
+
+/** Payload del WS `visita:solicitada` (a la sala de la sucursal + duenos). */
+export interface VisitaSolicitadaWs {
+  negocioId: string
+  sucursalId: string
+  token: string
+  expiraEn: string
+  emitidoEn: string
+}

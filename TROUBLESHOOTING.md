@@ -2162,3 +2162,10 @@ Truco de diagnostico que sirvio: si sospechas que un middleware no corre, ponele
 `console.log` propio y mira la respuesta cruda (`curl -i`). El silencio de Next no distingue "no matcheo"
 de "no existe".
 
+**Ampliacion (Fase 2 de la PWA Staff)**: siguen siendo stubs, ademas de los tres de arriba, **`Dialog`**,
+**`AlertDialog`**, `Select`, `Sheet`, `Tabs`... `Switch`, `RadioGroup`, `Checkbox` y `Textarea` ya se
+implementaron. El primer sintoma NO fue un crash: al escribir el modal de rechazo con `<Dialog>` el
+typecheck avisaba "Parameter 'v' implicitly has an 'any' type" en `onOpenChange={(v) => ...}` (las props
+del stub son `Record<string, unknown>`) y en runtime el modal **no se abria, sin error**. Donde hacía
+falta un modal se uso `<BottomSheet>` (ese si esta implementado). Antes de usar un componente de
+`@repo/ui`, mirar si sale de `crearStub`.

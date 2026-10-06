@@ -33,8 +33,11 @@ export function middleware(req: NextRequest) {
   if (!tieneCookie && !esPublica) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
-    // Se guarda a donde iba para volver despues del login.
-    url.search = pathname === '/' ? '' : `?volver=${encodeURIComponent(pathname)}`;
+    // Se guarda a donde iba (CON query) para volver despues del login: sin el
+    // search, el link del WhatsApp (`/validar?ref=TOKEN`) perderia el token al
+    // pasar por /login.
+    const destino = `${pathname}${req.nextUrl.search}`;
+    url.search = pathname === '/' ? '' : `?volver=${encodeURIComponent(destino)}`;
     return NextResponse.redirect(url);
   }
 

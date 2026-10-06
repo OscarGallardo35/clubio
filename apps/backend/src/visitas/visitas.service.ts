@@ -142,8 +142,16 @@ export class VisitasService {
     }
 
     const telefonoEnmascarado = enmascararTelefono(cliente.telefono);
+    // El link de validacion va en el mensaje: el staff lo abre desde el WhatsApp y cae
+    // directo en la pantalla de aprobacion, con el token ya puesto.
+    const urlValidacion = `${(process.env.STAFF_APP_URL ?? 'https://staff.clubio.lat').replace(/\/$/, '')}/validar?ref=${token.token}`;
+    const negocio = await this.prisma.negocio.findUnique({
+      where: { id: negocioId },
+      select: { nombre: true },
+    });
     const mensajeWhatsApp =
-      `Hola, soy ${cliente.nombre}. Quiero sumar mi visita. Ref: ${token.token}`;
+      `Hola, soy ${cliente.nombre}. Quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}. ` +
+      `Ref: ${token.token}. Validar aqui: ${urlValidacion}`;
 
     // WebSocket: solo a la sucursal destino + a los dueños
     this.gateway.emitirSolicitada({

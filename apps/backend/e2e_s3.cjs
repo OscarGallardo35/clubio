@@ -2,7 +2,7 @@
 const { spawn } = require('child_process');
 const { PrismaClient } = require('@prisma/client');
 const BASE='http://localhost:3000/api';
-const prisma = new PrismaClient({ datasources:{ db:{ url: process.env.DB_URL } } });
+const prisma = new PrismaClient({ datasources:{ db:{ url: process.env.DATABASE_URL || process.env.DB_URL } } });
 async function req(m,p,b,h={}){ const r=await fetch(BASE+p,{method:m,headers:{'Content-Type':'application/json',...h},body:b?JSON.stringify(b):undefined}); const t=await r.text(); let j; try{j=JSON.parse(t)}catch{j=t} return {status:r.status,body:j}; }
 async function waitServer(){ for(let i=0;i<45;i++){ try{ if((await fetch(BASE+'/health')).ok) return true }catch{} await new Promise(r=>setTimeout(r,700)) } return false }
 const ok=(c)=>c?'OK':'FALLO';
@@ -18,7 +18,8 @@ async function limpiar(){
     if (negId) await prisma.configuracionSucursal.deleteMany({ where:{ sucursalId: norteId } });
     // Restaurar la config tal cual estaba: el test la pisa con menuActivo:true y tipos ['MESA'].
     if (negId && configOriginal) await prisma.configuracionClub.update({ where:{ negocioId: negId }, data: configOriginal });
-    if (negId && clubTipos) await prisma.configuracionClub.update({ where:{ negocioId: negId }, data:{ tiposPedidoHabilitados: clubTipos, permitirOverrideSucursal:true } });
+    // (la restauracion de tiposPedidoHabilitados y permitirOverrideSucursal la hace el
+    //  configOriginal de arriba: antes esta linea pisaba permitirOverrideSucursal con true).
   }catch(e){ console.log('  (limpieza parcial:', e.message, ')'); }
 }
 
@@ -34,6 +35,9 @@ async function limpiar(){
   const Hd={Authorization:`Bearer ${TD}`,'X-Tenant-Slug':'bar-la-esquina'};
   const club=await prisma.configuracionClub.findUnique({where:{negocioId:neg.id}});
   clubTipos=club.tiposPedidoHabilitados;
+  // Captura de la config ORIGINAL en el primer punto posible: si se hace despues de
+  // algun update, el "original" ya viene sucio y el teardown restaura el valor equivocado.
+  configOriginal={menuActivo:club.menuActivo,tiposPedidoHabilitados:club.tiposPedidoHabilitados,permitirOverrideSucursal:club.permitirOverrideSucursal};
   console.log('  (setup) global: tiposPedido=',JSON.stringify(club.tiposPedidoHabilitados),'| premio="'+club.premioTexto+'" | sellos=',club.sellosParaPremio);
 
   console.log('\n===== T8: override de config campo por campo (merge delegado) =====');
@@ -69,9 +73,7 @@ async function limpiar(){
   const fila=(lista.body?.data??[]).find(x=>x.itemCartaId===item.id);
   console.log('  GET overrides ->',lista.body?.total,'|',JSON.stringify({item:fila?.itemNombre,global:fila?.precioGlobal,override:fila?.precioOverride,disp:fila?.disponibleOverride}));
 
-    // Guardamos la config ANTES de pisarla: el teardown la restaura tal cual estaba.
-  configOriginal = await prisma.configuracionClub.findUnique({where:{negocioId:neg.id},select:{menuActivo:true,tiposPedidoHabilitados:true}});
-await prisma.configuracionClub.update({where:{negocioId:neg.id},data:{menuActivo:true,tiposPedidoHabilitados:['MESA']}});
+  await prisma.configuracionClub.update({where:{negocioId:neg.id},data:{menuActivo:true,tiposPedidoHabilitados:['MESA']}});
   const pedN=await req('POST','/pedidos',{tipo:'MESA',modoPago:'EFECTIVO',nombreCliente:'Override Test',telefono:'11 5555-4444',mesa:'3',sucursalSlug:'norte',items:[{itemId:item.id,cantidad:1}]},{'X-Tenant-Slug':'bar-la-esquina'});
   if(pedN.body?.pedidoId) peds.push(pedN.body.pedidoId);
   const pedC=await req('POST','/pedidos',{tipo:'MESA',modoPago:'EFECTIVO',nombreCliente:'Override Test',telefono:'11 5555-4444',mesa:'4',sucursalSlug:'centro',items:[{itemId:item.id,cantidad:1}]},{'X-Tenant-Slug':'bar-la-esquina'});

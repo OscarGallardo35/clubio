@@ -1378,3 +1378,39 @@ evento no se hace cargo.
 
 Sintoma: la pantalla queda igual y no hay error ni log. Lo cazo `check:carrito`.
 
+### En un test que muta config, la captura va en el PRIMER punto posible
+
+Regla: si el test guarda el valor original para restaurarlo, la lectura tiene que ocurrir ANTES
+de cualquier mutacion. Si se hace despues, el "original" ya viene sucio y el teardown restaura
+el valor equivocado: el test pasa y deja la config peor que antes.
+
+Paso en `e2e_s3.cjs`: la captura estaba justo antes de la ultima mutacion, asi que
+`permitirOverrideSucursal` se guardaba ya en `true` y el teardown lo reponia en `true`. Se
+detecto porque la verificacion arranco el flag en `false`: si el valor de partida hubiera sido
+el mismo que el hardcode, el test habria pasado sin probar nada. Corolario: **verificar con un
+valor distinto del que el codigo hardcodea**, o la verificacion es vacua.
+
+### Los e2e de sucursales: como se corren
+
+`e2e_s3.cjs` / `e2e_s4.cjs` leen la base de `DATABASE_URL || DB_URL` (ojo: `DB_URL` solo NO
+existe en el `.env`, ahi es `DATABASE_URL`). Se corren con:
+
+```
+pnpm --filter backend test:e2e:s3
+pnpm --filter backend test:e2e:s4
+```
+
+que ya inyectan el `.env` con `dotenv -e ../../.env --`. Corridos pelados salen con exit 1 y
+sin imprimir nada.
+
+### Arrancar el backend desde un script: DETACHED_PROCESS
+
+El terminal devolvia `stdin is not a tty` de forma intermitente cuando el comando encadenaba
+un `taskkill`, y el servidor no arrancaba. Desde Python es determinista:
+
+```python
+subprocess.Popen(["node","dist/main.js"], cwd=apps_backend,
+                 stdout=open(log,"w"), stderr=subprocess.STDOUT,
+                 creationflags=0x00000008|0x00000200, close_fds=True)   # DETACHED|NEW_GROUP
+```
+

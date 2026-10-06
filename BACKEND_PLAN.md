@@ -749,3 +749,12 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
    `RegistrarClienteDto` no acepta. Hay que revisar los 21 esquemas contra
    `apps/backend/src/**/dto/*.dto.ts`.
 
+## TODO antes de la demo con un cliente real
+
+- [ ] Limpiar clientes de prueba antes de la demo con cliente real. Los `e2e_s3/e2e_s4`
+  y el harness de visitas registran clientes en el tenant demo (hoy: 34 total, 20 del seed
+  + 14 de tests). Borrarlos con un script especifico, revisando que no tengan pedidos ni
+  visitas asociadas.
+- [ ] Regenerar los 6 secretos JWT y los placeholders `Tu nombre` / `UNLICENSED` del
+  `apps/backend/package.json`.
+

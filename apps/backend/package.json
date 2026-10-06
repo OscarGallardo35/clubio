@@ -27,7 +27,9 @@
     "db:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:seed": "dotenv -e ../../.env -- ts-node --transpile-only prisma/seed.ts",
-    "db:reset": "dotenv -e ../../.env -- prisma migrate reset --force --skip-seed && dotenv -e ../../.env -- ts-node --transpile-only prisma/seed.ts"
+    "db:reset": "dotenv -e ../../.env -- prisma migrate reset --force --skip-seed && dotenv -e ../../.env -- ts-node --transpile-only prisma/seed.ts",
+    "test:e2e:s3": "dotenv -e ../../.env -- node e2e_s3.cjs",
+    "test:e2e:s4": "dotenv -e ../../.env -- node e2e_s4.cjs"
   },
   "dependencies": {
     "@nestjs/bullmq": "^10.2.3",

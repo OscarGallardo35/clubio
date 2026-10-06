@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const { PrismaClient } = require('@prisma/client');
 const IORedis = require('ioredis');
 const BASE='http://localhost:3000/api';
-const prisma = new PrismaClient({ datasources:{ db:{ url: process.env.DB_URL } } });
+const prisma = new PrismaClient({ datasources:{ db:{ url: process.env.DATABASE_URL || process.env.DB_URL } } });
 const rds = new IORedis(process.env.REDIS_URL,{tls:String(process.env.REDIS_URL).startsWith('rediss:')?{rejectUnauthorized:false}:undefined});
 async function req(m,p,b,h={}){ const r=await fetch(BASE+p,{method:m,headers:{'Content-Type':'application/json',...h},body:b?JSON.stringify(b):undefined}); const t=await r.text(); let j; try{j=JSON.parse(t)}catch{j=t} return {status:r.status,body:j}; }
 async function waitServer(){ for(let i=0;i<45;i++){ try{ if((await fetch(BASE+'/health')).ok) return true }catch{} await new Promise(r=>setTimeout(r,700)) } return false }

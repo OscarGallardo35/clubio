@@ -44,6 +44,13 @@ const SLUG = 'bar-la-esquina'
 
 const PREFIJOS_TEL = ['+5491112349', '+5493585', '+5493587']
 const NOMBRES_EXACTOS = ['Oscar Gabriel']
+/**
+ * Prefijos de nombre que dejan los harness. 'Harness ' y 'Cliente Test ' se descubrieron
+ * DESPUES del primer apply: `check-flujo-ws` (el harness de integracion de la PWA Cliente)
+ * crea clientes con esos nombres y no estaban filtrados, asi que quedaron 60 clientes de
+ * prueba vivos despues de la primera limpieza. El dry-run los mostro.
+ */
+const PREFIJOS_NOMBRE = ['E2E ', 'Prueba ', 'Harness ', 'Cliente Test ']
 
 /** Mismo criterio que enmascararTelefono del backend, para no escupir telefonos enteros. */
 const enmascarar = (tel) => {
@@ -59,8 +66,7 @@ async function main() {
   const dondeCliente = {
     negocioId: neg.id,
     OR: [
-      { nombre: { startsWith: 'E2E ' } },
-      { nombre: { startsWith: 'Prueba ' } },
+      ...PREFIJOS_NOMBRE.map((p) => ({ nombre: { startsWith: p } })),
       ...NOMBRES_EXACTOS.map((n) => ({ nombre: n })),
       ...PREFIJOS_TEL.map((p) => ({ telefono: { startsWith: p } })),
     ],
@@ -83,8 +89,7 @@ async function main() {
       negocioId: neg.id,
       clienteId: null,
       OR: [
-        { nombreCliente: { startsWith: 'E2E ' } },
-        { nombreCliente: { startsWith: 'Prueba ' } },
+        ...PREFIJOS_NOMBRE.map((p) => ({ nombreCliente: { startsWith: p } })),
         ...PREFIJOS_TEL.map((p) => ({ telefono: { startsWith: p } })),
       ],
     },
@@ -145,9 +150,19 @@ async function main() {
     NotificacionPush: notifs, ItemCartaPrueba: itemsPrueba.length,
   }
 
+  // Totales del negocio: sirve para confirmar que despues del --apply queda SOLO el seed.
+  const totales = {
+    Cliente: await prisma.cliente.count({ where: { negocioId: neg.id } }),
+    Visita: await prisma.visita.count({ where: { negocioId: neg.id } }),
+    TokenValidacion: await prisma.tokenValidacion.count({ where: { negocioId: neg.id } }),
+    Pedido: await prisma.pedido.count({ where: { negocioId: neg.id } }),
+    TarjetaClienteSucursal: await prisma.tarjetaClienteSucursal.count({ where: { cliente: { negocioId: neg.id } } }),
+  }
+
   if (!APLICAR) {
     console.log('\n  --- DRY-RUN: esto es lo que borraria ---')
     console.log('  ' + Object.entries(resumen).map(([k, v]) => `${k}: ${v}`).join(', '))
+    console.log('\n  En el negocio quedan (hoy): ' + Object.entries(totales).map(([k, v]) => `${k}: ${v}`).join(', '))
     console.log('\n  Para aplicar:  node scripts/limpiar-datos-test.cjs --apply\n')
     return
   }
@@ -167,6 +182,14 @@ async function main() {
 
   console.log('\n  --- BORRADO ---')
   console.log('  ' + Object.entries(borrado).map(([k, v]) => `${k}: ${v}`).join(', '))
+  const quedan = {
+    Cliente: await prisma.cliente.count({ where: { negocioId: neg.id } }),
+    Visita: await prisma.visita.count({ where: { negocioId: neg.id } }),
+    TokenValidacion: await prisma.tokenValidacion.count({ where: { negocioId: neg.id } }),
+    Pedido: await prisma.pedido.count({ where: { negocioId: neg.id } }),
+    TarjetaClienteSucursal: await prisma.tarjetaClienteSucursal.count({ where: { cliente: { negocioId: neg.id } } }),
+  }
+  console.log('\n  En el negocio QUEDAN: ' + Object.entries(quedan).map(([k, v]) => `${k}: ${v}`).join(', '))
   console.log('')
 }
 

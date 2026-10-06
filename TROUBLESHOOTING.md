@@ -2199,3 +2199,25 @@ Ahi estan TODOS. Hoy: accordion, alert-dialog, avatar, data-table, dialog, dropd
 radio-group(*), select, sheet, tooltip. (*) radio-group ya se implemento: si sigue en la lista, la copia
 del log quedo vieja — manda el grep.
 
+### REGLA: los harness que crean clientes/pedidos mutan la DB de desarrollo
+
+"Los harness que crean clientes/pedidos mutan la DB de desarrollo. Un dry-run previo revela el volumen
+real (77 clientes en una sesión). Los pedidos de invitado (clienteId=null) requieren filtro por
+nombreCliente/telefono, no solo por clienteId. Correr el script en una transacción + idempotente."
+
+Caso real (script `apps/backend/scripts/limpiar-datos-test.cjs`). Tres cosas que solo se vieron corriendo
+el dry-run y NO se podian deducir leyendo el codigo de los harness:
+
+1. **El volumen**: 77 clientes de prueba en una sesion (uno por corrida del harness). A ojo parecian 14.
+2. **Los pedidos de invitado**: se crean sin cookie de cliente, asi que `clienteId` es `null` y el filtro
+   por cliente devolvia `Pedido: 0`. Habia 38 pedidos de prueba que se salvaban del borrado. Hay que
+   filtrarlos por SUS marcas (`nombreCliente` / `telefono` del pedido).
+3. **Los patrones de nombre son de MAS DE UN harness**: filtrar 'E2E %' y 'Prueba %' dejo 60 clientes
+   vivos, porque `check-flujo-ws` (el harness de la PWA Cliente) los nombra 'Harness %' y 'Cliente Test %'.
+   Un dry-run despues del apply los delato: **un apply "exitoso" no prueba que no quede basura**; hay que
+   volver a contar DESPUES.
+
+Regla: el script va con **dry-run por defecto**, `--apply` explicito, todo en **una transaccion** (o se
+aplica entero o nada) e **idempotente** (la segunda corrida dice "no hay nada para limpiar"). Y despues de
+limpiar, **volver a mirar los totales del negocio**, no confiar en el conteo del borrado.
+

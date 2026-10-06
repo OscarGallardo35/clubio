@@ -1343,7 +1343,11 @@ otro rol** (`admin_role` en vez de `neondb_owner`): credenciales viejas en el `.
 arregla actualizando `DATABASE_URL` (host con `-pooler`) y `DIRECT_URL` (el mismo host sin
 `-pooler`) y reiniciando el backend.
 
-### En una maquina de estados, el payload no puede llamarse como el discriminante
+### Nunca usar el mismo campo como discriminante del evento y como payload
+
+Cuando el evento lleva un valor que tambien sirve para identificarlo, renombrar el payload
+(`nuevoTipo`, `nuevoEstado`, etc.). Si se repite el nombre, gana el payload y el
+discriminante deja de matchear:
 
 ```ts
 // MAL: `evento.tipo` pasa a valer 'DELIVERY', ningun case coincide y cae al default.
@@ -1352,8 +1356,8 @@ arregla actualizando `DATABASE_URL` (host con `-pooler`) y `DIRECT_URL` (el mism
 | { tipo: 'SET_TIPO'; nuevoTipo: TipoPedido }
 ```
 
-Sintoma: la transicion "no hace nada" y no hay error de runtime. Lo cazo `check:carrito`
-(el switch caia al `default` y el tipo quedaba en null, lo que a su vez frenaba el envio).
+Sintoma: la transicion "no hace nada", sin error de runtime y sin log. Lo cazo `check:carrito`
+(el switch caia al `default`; el tipo quedaba en `null` y eso frenaba el envio del pedido).
 
 ### Los opcionales que reciben un valor posiblemente `undefined` lo declaran
 

@@ -226,14 +226,31 @@ export function validarModificadores(grupos: GrupoValidable[], elegidos: Modific
 }
 
 /** Chequeos del checkout antes de habilitar el envio. */
+/**
+ * Telefono en formato E.164, que es el unico que acepta el backend. Se valida ANTES de mandar el
+ * pedido: el backend contesta 400 y el pedido nunca sale, asi que es mejor decirlo en el campo.
+ * E.164: "+" seguido de 10 a 15 digitos (sin espacios, sin guiones, sin 0 ni 00 adelante).
+ */
+/** Telefono en formato E.164 (el unico que acepta el backend) */
+export function validarTelefonoE164(tel: string): boolean {
+  const t = (tel ?? '').trim()
+  if (!t.startsWith('+')) return false
+  const digitos = t.slice(1)
+  if (digitos.length < 10 || digitos.length > 15) return false
+  return /^[0-9]+$/.test(digitos)
+}
+
 export function validarCheckout(estado: EstadoCarrito): Partial<Record<keyof DatosCliente | 'tipo' | 'modoPago' | 'items', string>> {
   const fallas: Partial<Record<keyof DatosCliente | 'tipo' | 'modoPago' | 'items', string>> = {}
   if (estado.items.length === 0) fallas.items = 'El carrito esta vacio'
   if (!estado.tipo) fallas.tipo = 'Elegi si es para la mesa, para llevar o delivery'
   if (!estado.modoPago) fallas.modoPago = 'Elegi como vas a pagar'
   if (estado.cliente.nombre.trim().length < 2) fallas.nombre = 'Poné tu nombre'
-  const tel = estado.cliente.telefono.replace(/[^0-9+]/g, '')
-  if (tel.length < 6) fallas.telefono = 'Poné un telefono de contacto'
+  // El backend solo acepta E.164 y responde 400 si no: se valida aca para no mandar el pedido al
+  // pedo y poder decirselo en el campo (el mensaje sale del mismo lugar que el del backend).
+  if (!validarTelefonoE164(estado.cliente.telefono)) {
+    fallas.telefono = 'Incluí el código de país. Ej: +5491112345678'
+  }
   if (estado.tipo === 'DELIVERY' && (estado.cliente.direccion ?? '').trim().length < 5) {
     fallas.direccion = 'Necesitamos la direccion para el delivery'
   }

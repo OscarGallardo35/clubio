@@ -283,6 +283,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
           id="telefono"
           ref={registrar('telefono') as never}
           value={carrito.cliente.telefono}
+                placeholder="Ej: +5491112345678"
           disabled={enviando}
           onChange={(e) => setCliente('telefono', e.target.value)}
           inputMode="tel"

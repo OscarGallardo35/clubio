@@ -22,6 +22,7 @@ import {
 } from '../lib/carrito-maquina.ts'
 import type { EstadoCarrito, ItemCarta, ModificadorElegido } from '../lib/carrito-maquina.ts'
 import { ETIQUETAS_MODO_PAGO, armarBody, normalizarError } from '../lib/checkout-maquina.ts'
+import { validarTelefonoE164 } from '../lib/carrito-maquina.ts'
 import { modificadoresParaApi } from '../lib/modificadores-seleccion.ts'
 
 let ok = 0
@@ -232,6 +233,17 @@ chk('ninguna queda en minuscula ni con guion bajo',
   Object.values(ETIQUETAS_MODO_PAGO).every((v) => v !== v.toLowerCase() && !v.includes('_')),
   JSON.stringify(Object.values(ETIQUETAS_MODO_PAGO)))
 igual('estan las 4 del enum', Object.keys(ETIQUETAS_MODO_PAGO).sort(), ['EFECTIVO', 'MERCADO_PAGO', 'TARJETA', 'TRANSFERENCIA'])
+
+
+// --- 11. Telefono E.164 ------------------------------------------------------
+console.log('\n== telefono E.164 ==')
+chk('acepta el ejemplo del backend', validarTelefonoE164('+5491112345678') === true)
+chk('rechaza un numero sin codigo de pais', validarTelefonoE164('3423432') === false)
+chk('acepta el minimo de 10 digitos', validarTelefonoE164('+549111234567') === true)
+chk('rechaza mas de 15 digitos', validarTelefonoE164('+1234567890123456') === false)
+chk('rechaza vacio', validarTelefonoE164('') === false)
+chk('rechaza sin el +', validarTelefonoE164('5491112345678') === false)
+chk('rechaza letras', validarTelefonoE164('+54911abc45678') === false)
 
 console.log(fallas.length === 0
   ? `\nTODO OK: ${ok} aserciones OK, 0 fallas\n`

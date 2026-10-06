@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "check:validators": "node scripts/check-validators.mts"
+    "check:validators": "node scripts/check-validators.mts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.0.0"

@@ -1,25 +1,19 @@
 'use client'
 
 import * as React from 'react'
-import { z } from 'zod'
+import { registrarClienteSchema } from '@repo/validators'
 import { Badge, Button, Input, Label, TarjetaSellos } from '@repo/ui'
 import { IconoCheck } from './iconos'
 
 /**
  * Primer paso: si no hay sesion se pide nombre + WhatsApp; si ya la hay, se
- * ofrece sumar la visita directo (el cliente que ya es del club no tiene que
- * volver a registrarse).
+ * ofrece sumar la visita directo (quien ya es del club no se registra de nuevo).
  *
- * El schema va inline con zod y no desde @repo/validators: ese package hoy no
- * compila (errores previos a esto) y no se puede importar sin romper el build.
+ * La validacion sale de @repo/validators: es la MISMA que usa la API. Se toma
+ * solo la parte del formulario con .pick, porque negocioSlug y sucursalSlug los
+ * agrega FlujoVisita.
  */
-const esquema = z.object({
-  nombre: z.string().trim().min(2, 'Poné tu nombre').max(60, 'Nombre demasiado largo'),
-  telefono: z
-    .string()
-    .trim()
-    .regex(/^\+[1-9]\d{7,14}$/, 'Usá el formato internacional, ej: +5491123456789'),
-})
+const esquema = registrarClienteSchema.pick({ nombre: true, telefono: true })
 
 export interface PasoRegistroProps {
   nombreNegocio: string

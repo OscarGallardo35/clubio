@@ -731,3 +731,20 @@ tiene `@UseGuards(StaffGuard, TenantGuard, RolesGuard)` a nivel de CLASE, asi qu
 `SucursalesPublicoController`. Verificado: 200 sin auth, 400 sin tenant, 404 con
 tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 
+## TODO (deuda tecnica anotada)
+
+1. **`@repo/validators`: migrar las listas `as const` a `z.nativeEnum()`** cuando se haga
+   **Project References** en el monorepo. Hoy no se puede: importar `@repo/types` desde el
+   package mete sus fuentes en el programa de `tsc` y rompe con TS6059 (`rootDir`), que es
+   justamente lo que Project References resuelve (consumir `dist` + `references`).
+   Los enums de `@repo/types` ya son `export enum` de runtime, asi que `z.nativeEnum`
+   funcionara sin cambios del lado de los tipos.
+2. **`@repo/utils`: su `build` sigue fallando por `rootDir`** (importa `@repo/types` como
+   valor, para los miembros del enum). El `typecheck` ya es verde con `--rootDir ../..`.
+   Se cierra con el mismo Project References del punto 1.
+3. **Alinear el resto de los schemas de `@repo/validators` con sus DTOs**: se revisaron los
+   enums, pero las FORMAS de los campos tambien divergen. `registrarClienteSchema` no tiene
+   `negocioSlug` (que la API exige) y tiene `email`/`fechaNacimiento` que
+   `RegistrarClienteDto` no acepta. Hay que revisar los 21 esquemas contra
+   `apps/backend/src/**/dto/*.dto.ts`.
+

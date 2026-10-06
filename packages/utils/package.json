@@ -7,11 +7,13 @@
   "types": "src/index.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit --rootDir ../.."
   },
   "devDependencies": {
     "typescript": "^5.0.0",
     "@repo/config": "workspace:*",
-    "@repo/types": "workspace:*"
+    "@repo/types": "workspace:*",
+    "@types/node": "^20.0.0"
   }
 }

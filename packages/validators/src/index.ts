@@ -62,11 +62,18 @@ export const verificar2FASchema = z.object({
   rememberDevice: z.boolean().optional().default(false)
 })
 
+/**
+ * Espeja RegistrarClienteDto del backend. La API normaliza el telefono a E.164 en
+ * el servicio, asi que aca se valida sintaxis (digitos, +, espacios, guiones) y no
+ * un formato unico; obligar a E.164 rechazaria numeros que la API acepta.
+ */
 export const registrarClienteSchema = z.object({
-  nombre: z.string().min(2, 'Nombre mínimo 2 caracteres').max(100, 'Nombre máximo 100 caracteres'),
-  telefono: z.string().min(8, 'Teléfono inválido').max(20, 'Teléfono muy largo'),
-  email: z.string().email('Email inválido').optional(),
-  fechaNacimiento: z.string().datetime({ offset: true }).optional()
+  nombre: z.string().trim().min(2, 'Nombre mínimo 2 caracteres').max(100, 'Nombre máximo 100 caracteres'),
+  telefono: z.string().trim().min(8, 'Teléfono inválido').max(20, 'Teléfono muy largo')
+    .regex(/^\+?[0-9][0-9\s()-]{6,19}$/, 'Teléfono inválido'),
+  aceptaNotificaciones: z.boolean().optional(),
+  negocioSlug: z.string().trim().min(2, 'Falta el negocio').max(60, 'Slug de negocio demasiado largo'),
+  sucursalSlug: z.string().max(60, 'Slug de sucursal máximo 60 caracteres').optional()
 })
 
 export const recuperarClienteSchema = z.object({

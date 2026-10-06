@@ -1228,3 +1228,55 @@ el lint tampoco y los tests no los tocan: **solo la integracion real los expone*
 aunque sea de una linea. Y cuando se toca un enum del schema, correr el check que lo
 vigila (`check:validators`).
 
+### Los IDs son cuid: la regex y como se verifica
+
+Prisma genera los IDs con `@default(cuid())`: `'c'` + 24 caracteres `[a-z0-9]` = **25**.
+En `@repo/validators` eso vive en `src/lib/cuid.ts`:
+
+```ts
+export const cuidSchema = z.string().regex(/^c[a-z0-9]{24}$/, 'ID inválido')
+```
+
+No usar `z.string().uuid()`: ningun endpoint de este proyecto acepta UUIDs, y el sintoma
+es un "ID inválido" sobre un ID correcto (nueve schemas lo tenian).
+
+Verificacion contra IDs reales (sirve cualquier ID que devuelva la API):
+
+```bash
+curl -s http://localhost:3000/api/negocios/publico/bar-la-esquina | grep -o '"id":"[^"]*"' | head -3
+# cmuvjy46c001mbq7ja9r4edfd  -> 25 chars, matchea
+```
+
+Un UUID de ejemplo (`3f2504e0-4f89-11d3-9a0c-0305e82c3301`) NO matchea: por eso `.uuid()`
+rechazaba IDs buenos. El `check:validators` prohibe `.uuid()` en el codigo del package.
+
+### En Windows los scripts de pnpm corren con cmd.exe: comillas SIMPLES son literales
+
+`pnpm -r --filter './packages/*' typecheck` responde `No projects matched the filters`
+porque el filtro le llega al CLI **con las comillas pegadas**. Con comillas dobles
+funciona igual en cmd.exe y en bash:
+
+```json
+"check:packages": "pnpm -r --filter \"./packages/*\" typecheck"
+```
+
+Regla: en los `scripts` de `package.json`, comillas dobles (el shell del sistema en Windows
+no interpreta las simples).
+
+### `check:packages`: el smoke test de los packages, en CI
+
+`pnpm check:packages` = `tsc --noEmit` en cada package de `packages/*` (via el script
+`typecheck` de cada uno). Existe porque un package que nadie importa no lo valida nadie y
+tres de este repo nacieron rotos (ver mas arriba).
+
+Detalles que importan:
+
+- `@repo/config` queda afuera: es solo el tsconfig base, sin fuentes.
+- `@repo/utils` usa `tsc --noEmit --rootDir ../..`: importa `@repo/types` como valor, y con
+  su `rootDir: ./src` saltaban 4 TS6059. `--rootDir` es solo para el typecheck; el `build`
+  sigue con su config (y sigue fallando por lo mismo: se cierra con Project References).
+- `@repo/utils` necesito `@types/node` + `"types": ["node"]` para `crypto` y `atob`.
+- El job `check-packages` de `.github/workflows/ci.yml` corre esto + `check:validators` +
+  `check:maquina`, con Node 24 (los scripts `.mts` corren sin flag). Para que "si falla el
+  PR no se mergea" hay que marcarlo como required en la proteccion de la rama.
+

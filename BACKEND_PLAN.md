@@ -751,6 +751,14 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 
 ## TODO antes de la demo con un cliente real
 
+### TODO: contrasena de Neon
+
+La contrasena del rol `admin_role` de Neon **ya fue rotada** (quedo expuesta en el historial de una
+sesion de trabajo). Para el deploy se usa la del `.env`; si se vuelve a exponer, rotarla en Neon y
+actualizar `DATABASE_URL` + `DIRECT_URL` (el pooler y el directo usan la misma credencial con host
+distinto).
+
+
 ### TODO pre-demo: limpiar los datos de prueba
 
 Los harnesses de integracion (`check-auth-staff`, `check-flujo-ws`) **crean datos reales** en la DB de

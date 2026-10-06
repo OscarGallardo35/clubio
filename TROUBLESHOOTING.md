@@ -814,3 +814,62 @@ usuario no entiende que ahi esta el regalo. Son dos cosas distintas:
 
 Para 10 sellos con 3 llenos: 3 Stamp + 6 Circle + 1 Gift.
 
+## #3 — Patron de accesibilidad: resumen arriba, detalle en el subarbol
+
+En TarjetaSellos conviven dos cosas que a primera vista se contradicen: el
+contenedor lleva `role="img"` con un `aria-label` descriptivo **y** cada sello
+tiene su propio `aria-label` ("Visita 1 de 10, completada").
+
+No se contradicen, es un patron deliberado:
+
+- **`role="img"` en el contenedor** hace que el subarbol sea presentacional para
+  el lector de pantalla: se anuncia UN resumen
+  ("Tarjeta de Bar La Esquina: 3 de 10 visitas. Faltan 7 para Cafe gratis"), que
+  es lo que el usuario necesita oir. Anunciar 10 sellos uno por uno es ruido.
+- **El detalle queda en el DOM** (los 10 `aria-label`): no lo lee el lector de
+  pantalla, pero es verificable en tests y sirve para debug.
+
+Regla: cuando la informacion visual es densa y repetitiva, se resume en el
+contenedor; el detalle se deja en el subarbol para tests, no para AT.
+
+## #3 — Windows no puede con `output: 'standalone'` sin Modo Desarrollador
+
+`next build` con `output: 'standalone'` copia `node_modules` a
+`.next/standalone` usando **symlinks**, y en Windows eso falla con
+`EPERM: operation not permitted, symlink` si no esta activado el Modo
+Desarrollador. El error aparece al FINAL del build, despues de "Compiled
+successfully": parece un fallo de compilacion y no lo es.
+
+Solucion en `next.config.js`: standalone solo donde tiene sentido (Linux, que es
+donde corre el Dockerfile), forzable con `NEXT_OUTPUT`:
+
+```js
+function salidaStandalone() {
+  if (process.env.NEXT_OUTPUT === 'standalone') return 'standalone';
+  if (process.env.NEXT_OUTPUT === 'default') return undefined;
+  return process.platform === 'win32' ? undefined : 'standalone';
+}
+```
+
+## #3 — Las props opcionales de los componentes de UI llevan `| undefined`
+
+El monorepo usa `exactOptionalPropertyTypes`, y con eso una prop declarada
+`estado?: EstadoTarjeta` **no acepta** que le pasen `undefined` explicito. El
+caso normal en una app es justamente pasar una prop que puede ser undefined:
+
+```tsx
+// esto NO compilaba (TS2322 / TS2375)
+<TarjetaSellos estado={estadoDerivado} />   // estadoDerivado: EstadoTarjeta | undefined
+```
+
+Por eso las props opcionales de `TarjetaSellosProps`, `BottomSheetProps` y
+`GoogleReviewsProps` se declaran `prop?: T | undefined`. Es mas verboso, pero
+evita que cada consumidor tenga que hacer spread condicional.
+
+## #3 — `curl` (binario nativo) no entiende rutas MSYS `/tmp/...`
+
+En este entorno bash es MSYS, pero `curl` es un ejecutable de Windows: con
+`curl -o /tmp/x.html` escribe en OTRO lado (o falla) y despues el `grep` sobre
+`/tmp/x.html` no encuentra nada. Para archivos que escribe un binario nativo hay
+que usar una ruta nativa (`C:/Users/...`) o `$HOME`.
+

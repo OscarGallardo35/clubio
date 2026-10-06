@@ -1,0 +1,37 @@
+{
+  "extends": "@repo/config/tsconfig.next.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ],
+      "@repo/types": [
+        "../../packages/types/src"
+      ],
+      "@repo/validators": [
+        "../../packages/validators/src"
+      ],
+      "@repo/ui": [
+        "../../packages/ui/src"
+      ],
+      "@repo/utils": [
+        "../../packages/utils/src"
+      ],
+      "@repo/api-client": [
+        "../../packages/api-client/src"
+      ]
+    },
+    "incremental": true,
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

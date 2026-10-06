@@ -25,10 +25,15 @@ import { cn } from '../lib/utils'
 export type EstadoTarjeta = 'vacia' | 'progreso' | 'casi' | 'completa' | 'canjeada'
 export type TamanoTarjeta = 'full' | 'medium' | 'small' | 'micro'
 
+/**
+ * OJO: las props opcionales llevan `| undefined` a proposito. El monorepo usa
+ * exactOptionalPropertyTypes, y sin eso pasar una prop que puede ser undefined
+ * (el caso normal: `estado={estadoDerivado}`) NO compila en quien consume.
+ */
 export interface TarjetaSellosProps {
-  nombreCliente?: string
+  nombreCliente?: string | undefined
   nombreNegocio: string
-  logoUrl?: string
+  logoUrl?: string | undefined
   tipo: 'VISITAS' | 'PUNTOS'
   actuales: number
   meta: number
@@ -36,12 +41,12 @@ export interface TarjetaSellosProps {
   colorPrimario: string
   colorSecundario: string
   tamaño: TamanoTarjeta
-  estado?: EstadoTarjeta
-  mostrarUltimaVisita?: boolean
-  ultimaVisita?: Date
-  onClick?: () => void
-  reducedMotion?: boolean
-  className?: string
+  estado?: EstadoTarjeta | undefined
+  mostrarUltimaVisita?: boolean | undefined
+  ultimaVisita?: Date | undefined
+  onClick?: () => void | undefined
+  reducedMotion?: boolean | undefined
+  className?: string | undefined
 }
 
 // --- geometria por tamano -------------------------------------------------

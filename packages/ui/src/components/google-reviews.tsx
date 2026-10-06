@@ -29,17 +29,17 @@ export interface Resena {
 export interface GoogleReviewsProps {
   placeId: string | null
   negocioNombre: string
-  resenas?: Resena[]
-  cargando?: boolean
-  error?: string | null
-  maxResenasAMostrar?: number
-  estrellasMinimas?: number
+  resenas?: Resena[] | undefined
+  cargando?: boolean | undefined
+  error?: string | null | undefined
+  maxResenasAMostrar?: number | undefined
+  estrellasMinimas?: number | undefined
   /** Si el backend ya calculo el promedio real (sobre TODAS las reseñas). */
-  promedio?: number
-  onDejarResena?: () => void
-  onReintentar?: () => void
-  reducedMotion?: boolean
-  className?: string
+  promedio?: number | undefined
+  onDejarResena?: () => void | undefined
+  onReintentar?: () => void | undefined
+  reducedMotion?: boolean | undefined
+  className?: string | undefined
 }
 
 const URL_RESENA = (placeId: string) =>

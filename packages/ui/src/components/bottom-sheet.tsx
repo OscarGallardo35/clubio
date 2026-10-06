@@ -23,14 +23,14 @@ export type AlturaSheet = 'auto' | 'media' | 'completa'
 export interface BottomSheetProps {
   abierto: boolean
   onCerrar: () => void
-  titulo?: string
-  altura?: AlturaSheet
-  mostrarDragHandle?: boolean
-  cerrarAlClickFuera?: boolean
-  cerrarAlSwipeDown?: boolean
+  titulo?: string | undefined
+  altura?: AlturaSheet | undefined
+  mostrarDragHandle?: boolean | undefined
+  cerrarAlClickFuera?: boolean | undefined
+  cerrarAlSwipeDown?: boolean | undefined
   /** Se propaga por prop (no se lee el hook adentro) para que sea testeable. */
-  reducedMotion?: boolean
-  className?: string
+  reducedMotion?: boolean | undefined
+  className?: string | undefined
   children: React.ReactNode
 }
 

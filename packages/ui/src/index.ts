@@ -37,5 +37,7 @@ export type { BottomSheetProps, AlturaSheet } from './components/bottom-sheet'
 // Utilidades
 export { cn } from './lib/utils'
 
-// Estilos globales
-import './styles/globals.css'
+// NOTA: no se importa aca './styles/globals.css' a proposito. Un package no debe
+// inyectar CSS global a sus consumidores: Next solo admite CSS global en el root
+// layout y ademas forzaria a las PWAs de Staff/Admin a cargar este archivo.
+// Cada app define su globals.css (y puede copiar los tokens de este package).

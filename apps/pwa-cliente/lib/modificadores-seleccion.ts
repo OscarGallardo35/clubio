@@ -113,3 +113,18 @@ export function gruposObligatoriosFaltantes(
     .filter((g) => g.obligatorio && (seleccion[g.id]?.length ?? 0) < Math.max(1, g.minSelecciones))
     .map((g) => g.nombre)
 }
+
+/**
+ * La forma que espera la API al crear el pedido: `{ grupoId, opcionIds }`.
+ *
+ * El carrito guarda la forma CON nombre y precio (la necesita para mostrar y para calcular), asi
+ * que la conversion se hace recien en el borde de la API. No muta la entrada.
+ */
+export function modificadoresParaApi(
+  modificadores: ModificadorElegido[],
+): { grupoId: string; opcionIds: string[] }[] {
+  return modificadores
+    .map((m) => ({ grupoId: m.grupoId, opcionIds: m.opciones.map((o) => o.id) }))
+    .filter((m) => m.opcionIds.length > 0)
+}
+

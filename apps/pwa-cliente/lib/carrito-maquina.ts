@@ -47,7 +47,7 @@ export interface ItemCarta {
   disponible: boolean
   imagenUrl?: string | undefined
   /** Grupos que aplican a este item (vacio = se agrega directo, sin modal). */
-  grupos: GrupoModificador[]
+  grupos: GrupoValidable[]
 }
 
 // ---------------------------------------------------------------------------

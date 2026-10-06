@@ -22,7 +22,11 @@ import { modificadoresApi } from '@/lib/api'
 import { claveDeModificadores, normalizarModificadores } from '@/lib/modificadores-cache'
 import { useModificadoresStore } from '@/stores/modificadoresStore'
 import { useCarritoStore } from '@/stores/carritoStore'
-import type { ItemCarta } from '@/lib/carrito-maquina'
+import type { ItemCarta, ModificadorElegido } from '@/lib/carrito-maquina'
+import { ordenarCategorias } from '@/lib/ordenar-categorias'
+import { ModalModificadores } from './ModalModificadores'
+import type { ItemParaModal } from './ModalModificadores'
+import type { GrupoModificadorPublico } from '@/lib/modificadores-cache'
 
 export interface CartaDigitalProps {
   negocioSlug: string
@@ -41,13 +45,19 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
   const despachar = useCarritoStore((s) => s.despachar)
   const activarCarrito = useCarritoStore((s) => s.activar)
   const [categoria, setCategoria] = React.useState<string | null>(null)
+  const [modal, setModal] = React.useState<{ item: ItemDeCarta; grupos: GrupoModificadorPublico[] } | null>(null)
 
   React.useEffect(() => {
     void activarCarrito(negocioSlug, sucursalId, sucursalSlug)
   }, [activarCarrito, negocioSlug, sucursalId, sucursalSlug])
 
   const categorias: CategoriaDeLaCarta[] = React.useMemo(
-    () => (carta?.categorias ?? []).map((c) => ({ categoria: c.categoria, items: (c.items ?? []) as ItemDeCarta[] })),
+    // El backend manda las categorias en orden alfabetico y sin campo `orden` (verificado contra
+    // GET /carta): "Principales" quedaba ultima. El criterio vive en la funcion pura.
+    () =>
+      ordenarCategorias(
+        (carta?.categorias ?? []).map((c) => ({ categoria: c.categoria, items: (c.items ?? []) as ItemDeCarta[] })),
+      ),
     [carta],
   )
   const total = categorias.reduce((acc, c) => acc + c.items.length, 0)
@@ -65,6 +75,45 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
     [despachar],
   )
 
+  /** Sin grupos se agrega directo; con grupos, se elige en el modal. */
+  const abrirModal = React.useCallback(
+    (item: ItemDeCarta, grupos: GrupoModificadorPublico[]) => {
+      if (grupos.length === 0) {
+        agregarDirecto(item)
+        return
+      }
+      setModal({ item, grupos })
+    },
+    [agregarDirecto],
+  )
+
+  /**
+   * Lo que devuelve el modal. El carrito guarda la forma con nombre y precio (la usa para
+   * calcular), asi que se despacha esa; `modificadoresParaApi` arma el payload de la API recien
+   * al crear el pedido.
+   */
+  const confirmarAgregado = React.useCallback(
+    (modificadores: ModificadorElegido[], notas: string) => {
+      if (!modal) return
+      despachar({
+        tipo: 'AGREGAR_ITEM',
+        item: {
+          id: modal.item.id,
+          nombre: modal.item.nombre,
+          precio: modal.item.precio,
+          disponible: modal.item.disponible,
+          ...(modal.item.fotoUrl ? { imagenUrl: modal.item.fotoUrl } : {}),
+          grupos: modal.grupos,
+        },
+        cantidad: 1,
+        modificadores,
+        notas,
+      })
+      setModal(null)
+    },
+    [despachar, modal],
+  )
+
   const elegir = React.useCallback(
     async (item: ItemDeCarta) => {
       const store = useModificadoresStore.getState()
@@ -72,22 +121,20 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
       const cacheado = store.porClave[clave]
       const ahora = Date.now()
       if (cacheado && ahora - cacheado.guardadoEn < 5 * 60 * 1000) {
-        if (cacheado.datos.grupos.length === 0) agregarDirecto(item)
-        else toast(`"${item.nombre}" tiene opciones para elegir`)
+        abrirModal(item, cacheado.datos.grupos)
         return
       }
       try {
         const datos = normalizarModificadores(await modificadoresApi.porItem(item.id))
         useModificadoresStore.getState().despachar({ tipo: 'FETCH_OK', clave, datos, ahora })
-        if (datos.grupos.length === 0) agregarDirecto(item)
-        else toast(`"${item.nombre}" tiene opciones para elegir`)
+        abrirModal(item, datos.grupos)
       } catch {
         // Si no se pudieron traer los grupos, se agrega igual: sumar un item no deberia
         // depender de un fetch que puede fallar.
         agregarDirecto(item)
       }
     },
-    [agregarDirecto],
+    [agregarDirecto, abrirModal],
   )
 
   if (cargando && !carta) {
@@ -125,6 +172,23 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
           ))}
         </div>
       )}
+
+      {modal ? (
+        <ModalModificadores
+          item={
+            {
+              id: modal.item.id,
+              nombre: modal.item.nombre,
+              precio: modal.item.precio,
+              fotoUrl: modal.item.fotoUrl,
+              grupos: modal.grupos,
+            } satisfies ItemParaModal
+          }
+          abierto
+          onCerrar={() => setModal(null)}
+          onAgregar={confirmarAgregado}
+        />
+      ) : null}
     </div>
   )
 }

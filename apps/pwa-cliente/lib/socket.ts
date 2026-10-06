@@ -18,3 +18,22 @@ export function crearSocketVisitas(token?: string | null, namespace = '/visitas'
     namespace,
   })
 }
+
+/**
+ * Socket del namespace /pedidos.
+ *
+ * OJO con el invitado: el gateway de pedidos exige token en el handshake (`validarToken`) y corta
+ * el socket si no hay identidad, asi que este socket SOLO sirve para clientes logueados. El que
+ * escanea el QR sin cuenta no tiene WS: para el, el polling es el unico mecanismo, no un respaldo.
+ *
+ * `pedidoId` es opcional: si el cliente esta logueado ya esta en su sala `cliente:{id}` y recibe
+ * los cambios igual. Mandarlo agrega la sala `pedido:{id}`.
+ */
+export function crearSocketPedidos(token?: string | null, pedidoId?: string | null): Socket {
+  return createSocket({
+    url: WS_URL,
+    token: token ?? null,
+    namespace: '/pedidos',
+    ...(pedidoId ? { auth: { pedidoId } } : {}),
+  })
+}

@@ -3,6 +3,7 @@ import { SucursalProvider } from '@/components/SucursalProvider'
 import { getNegocio } from '@/lib/api-servidor'
 import { EnlaceInvalido } from '@/components/EnlaceInvalido'
 import { BottomNav } from '@/components/carta/BottomNav'
+import { BannerPedidoActivo } from '@/components/checkout/BannerPedidoActivo'
 
 /**
  * Layout del tenant: es un Server Component ASYNC a proposito.
@@ -30,6 +31,8 @@ export default async function TenantLayout({
         <div className="pb-20">{children}</div>
         {/* Dentro del BrandingProvider: BottomNav usa useBranding para saber si mostrar Carta. */}
         <BottomNav />
+        {/* Vuelve al pedido en curso: se muestra solo si el store tiene linkToken. */}
+        <BannerPedidoActivo slugNegocio={params.tenant} />
       </SucursalProvider>
     </BrandingProvider>
   )

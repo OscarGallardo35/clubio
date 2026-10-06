@@ -278,9 +278,18 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false }: Pa
       </div>
 
       {carrito.error ? (
-        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-          {carrito.error.mensaje}
-        </p>
+        <div role="alert" className="flex flex-col gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+          <p>{carrito.error.mensaje}</p>
+          {/* REINTENTAR solo limpia el error: sirve cuando la causa fue transitoria. */}
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-12 border-destructive/40 text-destructive"
+            onClick={() => despachar({ tipo: 'REINTENTAR' })}
+          >
+            Reintentar
+          </Button>
+        </div>
       ) : null}
 
       <div className="flex flex-col gap-2">

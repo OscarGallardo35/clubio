@@ -298,3 +298,46 @@ export interface PedidoCreadoRespuesta {
   total: number
   sucursalId: string
 }
+
+/**
+ * Respuesta de GET /api/pedidos/publico/:linkToken. Es una LISTA BLANCA: el endpoint no devuelve
+ * empleadoAsignadoId, encargadoId, negocioId, sucursalId ni clienteId (ver TROUBLESHOOTING).
+ * Los Decimal ya vienen como number y los items como JSON con la forma que armo calcularTotales.
+ */
+export interface ItemDePedidoPublico {
+  itemId: string
+  nombre: string
+  precioBase: number
+  precioFinal: number
+  cantidad: number
+  notas?: string | null | undefined
+  modificadores: { grupoId: string; grupoNombre: string; opcionId: string; opcionNombre: string; precioExtra: number }[]
+  subtotal: number
+}
+
+export interface PedidoPublico {
+  id: string
+  linkToken: string | null
+  linkExpiraEn: string | null
+  nombreCliente: string
+  telefono: string
+  direccion: string | null
+  mesa: string | null
+  origen: string | null
+  tipo: 'MESA' | 'TAKEAWAY' | 'DELIVERY'
+  modoPago: 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA'
+  estado: 'PENDIENTE' | 'CONFIRMADO' | 'EN_PREPARACION' | 'LISTO' | 'ENVIADO' | 'ENTREGADO' | 'CANCELADO' | 'RECHAZADO'
+  notas: string | null
+  motivoRechazo: string | null
+  subtotal: number
+  costoEnvio: number | null
+  total: number
+  numeroAtendiente: string | null
+  items: ItemDePedidoPublico[]
+  creadoEn: string
+  confirmadoEn: string | null
+  enviadoEn: string | null
+  entregadoEn: string | null
+  sucursal: { nombre: string; slug: string }
+  cliente: { nombre: string } | null
+}

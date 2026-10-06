@@ -13,16 +13,17 @@
     "check:auth": "node scripts/check-auth-staff.mts"
   },
   "dependencies": {
+    "@repo/api-client": "workspace:*",
+    "@repo/types": "workspace:*",
+    "@repo/ui": "workspace:*",
+    "@repo/utils": "workspace:*",
+    "@repo/validators": "workspace:*",
+    "next": "^14.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "next": "^14.0.0",
-    "@repo/types": "workspace:*",
-    "@repo/validators": "workspace:*",
-    "@repo/utils": "workspace:*",
-    "@repo/ui": "workspace:*",
-    "@repo/api-client": "workspace:*",
+    "socket.io-client": "^4.7.0",
     "zod": "^3.0.0",
-    "socket.io-client": "^4.7.0"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

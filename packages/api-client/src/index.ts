@@ -186,6 +186,7 @@ export const endpoints = {
     logoutCliente: '/api/auth/cliente/logout',
     loginEmpleado: '/api/auth/empleado/login',
     logoutEmpleado: '/api/auth/empleado/logout',
+    meEmpleado: '/api/auth/empleado/me',
     loginDueno: '/api/auth/dueno/login',
     verificar2FA: '/api/auth/dueno/verificar-2fa',
     refreshDueno: '/api/auth/dueno/refresh',

@@ -2139,3 +2139,26 @@ Caso real: al implementar la cookie de staff, el build dio exit 0 y el `node dis
 murio con MODULE_NOT_FOUND. El `dist/` no existia y el `tsconfig.tsbuildinfo` si, que es la firma exacta
 de este caso.
 
+### REGLA: un `matcher` invalido en `middleware.ts` descarta el middleware ENTERO, sin avisar
+
+Sintoma: el middleware no hace nada. La ruta protegida responde 200 en vez de redirigir, y no hay ningun
+error ni warning en el log del dev server.
+
+Caso real (PWA Staff). El middleware era:
+
+    matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.json|.*\..*).*)']
+
+Con `.*\..*` adentro del lookahead, Next no compila el matcher y **no ejecuta el middleware**. Evidencia:
+se puso una cabecera de diagnostico (`res.headers.set('x-staff-mw', ...)`) y no aparecia en NINGUNA
+respuesta; al sacar ese fragmento, `/turnos` sin cookie paso a devolver 307 a `/login?volver=%2Fturnos`.
+
+Regla: el `matcher` se deja en el minimo documentado
+(`['/((?!_next/static|_next/image|favicon.ico).*)']`) y el filtro fino (archivos con extension, rutas
+internas) va **en el codigo del middleware**, donde se lee y se puede probar:
+
+    if (pathname.startsWith('/_next') || /\.[a-z0-9]+$/i.test(pathname)) return NextResponse.next()
+
+Truco de diagnostico que sirvio: si sospechas que un middleware no corre, ponele una cabecera o un
+`console.log` propio y mira la respuesta cruda (`curl -i`). El silencio de Next no distingue "no matcheo"
+de "no existe".
+

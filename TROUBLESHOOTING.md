@@ -1414,3 +1414,15 @@ subprocess.Popen(["node","dist/main.js"], cwd=apps_backend,
                  creationflags=0x00000008|0x00000200, close_fds=True)   # DETACHED|NEW_GROUP
 ```
 
+### Regla general: verificar con un valor distinto del que el codigo hardcodea
+
+Si lo que se prueba escribe un valor fijo (un `false` hardcodeado, un default, un id semilla),
+la verificacion tiene que arrancar con OTRO valor. Si arranca con el mismo, el sistema queda
+igual que estaba y el test pasa sin haber probado nada: es una verificacion vacua.
+
+Vale para tests, para verificaciones manuales y para scripts de diagnostico. Dos corolarios:
+- Al mutar algo para probar, leer y guardar el valor previo ANTES de tocarlo; si no, se
+  restaura el valor equivocado.
+- Si no se puede partir de otro valor (por ejemplo, un campo que no es editable por API),
+  decirlo: la verificacion es mas debil de lo que parece.
+

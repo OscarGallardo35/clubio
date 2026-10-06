@@ -1859,3 +1859,23 @@ Caso real: `lib/checkout-maquina.ts` importaba `./modificadores-seleccion` (valo
 Nadie lo habia importado desde un script hasta que `check:checkout` lo necesito, y ahi salto. Los
 imports de `carrito-maquina` en ese mismo archivo eran `import type`, asi que no fallaban.
 
+### REGLA: una transicion de estado no se despacha desde dos lugares
+
+Si el componente y el hook tienen guardas que se pisan (**el componente mueve la fase a `enviando` y
+el hook chequea `enviando` antes de enviar**), el segundo guard **bloquea al primero**. El sintoma no
+es un error: es un boton que no hace nada y un estado que se queda a mitad de camino.
+
+Caso real (boton "Enviar pedido"): el componente despachaba `ENVIAR` (fase -> `enviando`) y despues
+llamaba al `enviar()` del hook, que arranca con `if (fase === 'enviando' || 'enviado') return`
+(guarda anti-doble-tap). Como la fase ya estaba en `enviando`, la guarda cortaba **el primer envio**:
+la fase quedaba en `enviando`, el boton deshabilitado en "Enviando...", y el POST a `/api/pedidos`
+**nunca salia**. Cero errores en consola, cero requests en Network.
+
+**Regla: el dueño de la transicion es UNO.** El componente valida y delega; el hook transiciona y
+ejecuta. Si dos capas despachan el mismo evento, la segunda lee el estado que dejo la primera y
+decide con informacion que no le corresponde.
+
+Corolario: una guarda anti-doble-tap tiene que poder distinguir "ya estoy enviando porque YO empece"
+de "ya se estaba enviando antes de que yo mirara". La forma mas simple es que la transicion ocurra
+**dentro de la misma funcion** que manda la request.
+

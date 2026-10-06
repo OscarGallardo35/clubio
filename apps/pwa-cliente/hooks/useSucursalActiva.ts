@@ -18,8 +18,6 @@ interface UseSucursalActiva {
 
 export function useSucursalActiva(): UseSucursalActiva {
   const { activa, lista, origen, hayVarias, cambiar } = useSucursalCtx()
-  // LOG TEMPORAL - sacar despues del diagnostico
-  console.log('[sucursal] activa:', { activa: activa?.slug ?? null, lista: lista.length, origen })
   return {
     sucursal: activa,
     sucursales: lista,

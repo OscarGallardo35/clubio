@@ -83,8 +83,6 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
     return useCarritoStore.persist.onFinishHydration(() => setLocale(true))
   }, [])
 
-  // LOG TEMPORAL - sacar despues del diagnostico
-  console.log('[checkout] render con sucursalId:', sucursalId, '| items:', carrito.items.length, '| locale:', locale)
 
   /**
    * "Asentado" = paso un instante desde que se hidrato. Es una RED DE SEGURIDAD: la guarda por
@@ -101,18 +99,8 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
   const puedeDecidir = locale && asentado
 
   React.useEffect(() => {
-    // LOG TEMPORAL - sacar despues del diagnostico
-    console.log('[checkout] eval:', {
-      locale,
-      asentado,
-      sucursalId,
-      itemsLength: carrito.items.length,
-      puedeDecidir,
-    })
     if (!puedeDecidir) return
     if (carrito.items.length === 0) {
-      // LOG TEMPORAL - sacar despues del diagnostico
-      console.log('[checkout] REDIRECT: carrito vacio despues de hidratar y esperar')
       toast('Tu carrito esta vacio')
       router.replace(`/${slugNegocio}/menu`)
     }

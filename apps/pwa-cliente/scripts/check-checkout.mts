@@ -21,7 +21,7 @@ import {
   validarCheckout,
 } from '../lib/carrito-maquina.ts'
 import type { EstadoCarrito, ItemCarta, ModificadorElegido } from '../lib/carrito-maquina.ts'
-import { armarBody, normalizarError } from '../lib/checkout-maquina.ts'
+import { ETIQUETAS_MODO_PAGO, armarBody, normalizarError } from '../lib/checkout-maquina.ts'
 import { modificadoresParaApi } from '../lib/modificadores-seleccion.ts'
 
 let ok = 0
@@ -222,6 +222,16 @@ console.log('\n== notas del pedido ==')
   chk('un notasPedido invalido se descarta en vez de romper',
     (deserializarCarrito(JSON.stringify({ items: [{ itemId: 'i', precioBase: 1, cantidad: 1, modificadores: [] }], notasPedido: 42 }), 'x')?.notasPedido ?? '') === '')
 }
+
+
+// --- 10. Etiquetas de la forma de pago ---------------------------------------
+console.log('\n== etiquetas de pago ==')
+igual('cada forma de pago tiene su etiqueta',
+  Object.values(ETIQUETAS_MODO_PAGO), ['Efectivo', 'Transferencia', 'Mercado Pago', 'Tarjeta'])
+chk('ninguna queda en minuscula ni con guion bajo',
+  Object.values(ETIQUETAS_MODO_PAGO).every((v) => v !== v.toLowerCase() && !v.includes('_')),
+  JSON.stringify(Object.values(ETIQUETAS_MODO_PAGO)))
+igual('estan las 4 del enum', Object.keys(ETIQUETAS_MODO_PAGO).sort(), ['EFECTIVO', 'MERCADO_PAGO', 'TARJETA', 'TRANSFERENCIA'])
 
 console.log(fallas.length === 0
   ? `\nTODO OK: ${ok} aserciones OK, 0 fallas\n`

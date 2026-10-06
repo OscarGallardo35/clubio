@@ -34,8 +34,8 @@ export function BadgeCarrito({ onClick, oculto }: BadgeCarritoProps) {
       style={{
         // Arriba del BottomNav (z-40) para no quedar tapado, y con el safe-area de iOS.
         bottom: `calc(env(safe-area-inset-bottom) + ${ALTO_NAV_REM}rem + 1rem)`,
-        background: 'var(--color-primary)',
-        color: 'var(--color-primary-foreground)',
+        background: 'hsl(var(--primary))',
+        color: 'hsl(var(--primary-foreground))',
       }}
     >
       <span className="flex size-6 items-center justify-center rounded-full bg-black/20 text-xs font-semibold tabular-nums">

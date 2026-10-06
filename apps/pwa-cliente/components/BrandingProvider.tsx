@@ -165,7 +165,7 @@ export function BrandingProvider({ children, negocioInicial, modo, tenant }: Bra
         }}
         className={
           modoReal === 'inmersivo'
-            ? 'min-h-dvh bg-[linear-gradient(160deg,var(--color-primary),var(--color-secondary))]'
+            ? 'min-h-dvh bg-[linear-gradient(160deg,hsl(var(--primary)),hsl(var(--secondary)))]'
             : 'min-h-dvh bg-background'
         }
       >

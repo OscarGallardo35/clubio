@@ -44,6 +44,18 @@ export const ETIQUETAS: Record<EstadoPedido, string> = {
   RECHAZADO: 'Rechazado',
 }
 
+/**
+ * Etiqueta visible de cada forma de pago. Antes se armaba con `toLowerCase().replace('_',' ')`, que
+ * daba "efectivo" en minuscula: los enums del backend vienen en MAYUSCULAS y no son copy para el
+ * usuario.
+ */
+export const ETIQUETAS_MODO_PAGO: Record<'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA', string> = {
+  EFECTIVO: 'Efectivo',
+  TRANSFERENCIA: 'Transferencia',
+  MERCADO_PAGO: 'Mercado Pago',
+  TARJETA: 'Tarjeta',
+}
+
 export function esFinal(estado: EstadoPedido): boolean {
   return estado === 'CANCELADO' || estado === 'RECHAZADO' || estado === 'ENTREGADO'
 }

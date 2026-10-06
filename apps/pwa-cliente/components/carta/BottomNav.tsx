@@ -67,7 +67,7 @@ export function BottomNav() {
                 href={href}
                 aria-current={esActiva ? 'page' : undefined}
                 className="flex min-h-16 flex-col items-center justify-center gap-1 text-xs"
-                style={esActiva ? { color: 'var(--color-primary)' } : undefined}
+                style={esActiva ? { color: 'hsl(var(--primary))' } : undefined}
               >
                 <Icono className="size-6" />
                 <span className={esActiva ? 'font-medium' : 'text-muted-foreground'}>{tab.etiqueta}</span>

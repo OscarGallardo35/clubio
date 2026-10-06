@@ -196,7 +196,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
               disabled={enviando}
               onChange={() => despachar({ tipo: 'SET_TIPO', nuevoTipo: tp.valor })}
               ref={tp.valor === 'MESA' ? (registrar('tipo') as never) : undefined}
-              className="size-5 accent-[var(--color-primary)]"
+              className="size-5 accent-primary"
             />
             <span className="text-sm">{tp.etiqueta}</span>
           </label>
@@ -252,7 +252,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
               checked={carrito.modoPago === p.valor}
               disabled={enviando}
               onChange={() => despachar({ tipo: 'SET_MODO_PAGO', modoPago: p.valor })}
-              className="size-5 accent-[var(--color-primary)]"
+              className="size-5 accent-primary"
             />
             <span className="text-sm">{p.etiqueta}</span>
           </label>

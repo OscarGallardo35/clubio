@@ -22,7 +22,7 @@ import type { Socket } from 'socket.io-client'
 import { buttonVariants } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
 import { pedidosApi } from '@/lib/api'
-import { normalizarError, timeline } from '@/lib/checkout-maquina'
+import { ETIQUETAS_MODO_PAGO, normalizarError, timeline } from '@/lib/checkout-maquina'
 import type { EstadoPedido } from '@/lib/checkout-maquina'
 import { crearSocketPedidos } from '@/lib/socket'
 import { useClienteStore } from '@/stores/clienteStore'
@@ -167,9 +167,12 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 p-4 pb-24">
       <header className="flex flex-col gap-1">
-        <h1 className="text-lg font-semibold">
-          {pedido.numeroAtendiente ? `Pedido ${pedido.numeroAtendiente}` : 'Tu pedido'}
-        </h1>
+        {/*
+          El titulo NO usa `numeroAtendiente`: ese campo no es un numero de pedido, es el numero del
+          "atendiente" (config del negocio, por sucursal) y en la practica trae un telefono. Tampoco
+          el nombre ni el telefono del cliente: esos van en la seccion Cliente.
+        */}
+        <h1 className="text-lg font-semibold">Tu pedido</h1>
         <p className="text-sm text-muted-foreground">
           {negocio?.nombre ?? pedido.sucursal.nombre} · {pedido.tipo === 'MESA' ? `Mesa ${pedido.mesa ?? '-'}` : pedido.tipo === 'DELIVERY' ? 'Envio' : 'Para llevar'}
         </p>
@@ -186,17 +189,35 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
         <ol className="flex flex-col gap-2" aria-label="Estado del pedido">
           {pasos.map((p) => (
             <li key={p.estado} className="flex items-center gap-3 text-sm">
+              {/* Tres estados visuales distintos: completado (lleno), actual (lleno + anillo) y
+                  pendiente (hueco). Con dos estados, un pedido PENDIENTE se veia igual que uno
+                  entregado. */}
               <span
                 aria-hidden
-                className={`size-3 shrink-0 rounded-full ${p.alcanzado ? 'bg-[var(--color-primary)]' : 'bg-muted'}`}
+                className={
+                  p.actual
+                    ? 'size-4 shrink-0 rounded-full bg-primary ring-2 ring-primary/30'
+                    : p.alcanzado
+                      ? 'size-4 shrink-0 rounded-full bg-primary'
+                      : 'size-4 shrink-0 rounded-full border-2 border-border'
+                }
               />
-              <span className={p.actual ? 'font-semibold' : p.alcanzado ? '' : 'text-muted-foreground'}>
+              <span
+                className={
+                  p.actual ? 'font-semibold' : p.alcanzado ? '' : 'text-muted-foreground'
+                }
+              >
                 {p.etiqueta}
               </span>
             </li>
           ))}
         </ol>
       )}
+
+      <section aria-label="Cliente" className="flex flex-col gap-0.5 text-sm">
+        <span className="font-medium">{pedido.nombreCliente}</span>
+        <span className="text-muted-foreground">{pedido.telefono}</span>
+      </section>
 
       {pedido.tipo === 'DELIVERY' && pedido.direccion ? (
         <p className="text-sm text-muted-foreground">Envio a {pedido.direccion}</p>
@@ -234,7 +255,7 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
           <span className="text-base font-semibold">{formatearPrecio(pedido.total)}</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Pago: {pedido.modoPago.toLowerCase().replace('_', ' ')}
+          Pago: {ETIQUETAS_MODO_PAGO[pedido.modoPago] ?? pedido.modoPago}
         </p>
       </section>
 

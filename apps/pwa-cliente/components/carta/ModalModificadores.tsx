@@ -114,7 +114,7 @@ export function ModalModificadores({
                       checked={marcada}
                       disabled={sinStock}
                       onChange={() => setSeleccion((s) => alternarSeleccion(item.grupos, s, grupo.id, opcion.id))}
-                      className="size-5 shrink-0 accent-[var(--color-primary)]"
+                      className="size-5 shrink-0 accent-primary"
                     />
                     <span className="flex-1 text-sm">{opcion.nombre}</span>
                     {opcion.precioExtra > 0 ? (

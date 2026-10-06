@@ -18,6 +18,8 @@ import {
   reducerModificadores,
 } from '../lib/modificadores-cache.ts'
 import type { EstadoModificadores } from '../lib/modificadores-cache.ts'
+import { alternarSeleccion, armarItemProvisional, elegidosDesde, gruposObligatoriosFaltantes, recortarNotas } from '../lib/modificadores-seleccion.ts'
+import { precioUnitario, validarModificadores } from '../lib/carrito-maquina.ts'
 // Modulo PURO del package (por eso se puede importar desde node sin arrastrar React).
 import { ANCHO_POR_TIPO, RATIO_POR_TIPO, urlOptimizada } from '../../../packages/ui/src/lib/url-optimizada.ts'
 
@@ -174,6 +176,52 @@ igual('sin Cloudinary no se toca ni una URL rara', urlOptimizada('no-es-una-url'
 igual('src vacio devuelve vacio (el placeholder lo decide el componente)', urlOptimizada('', 'item'), '')
 igual('los espacios se recortan', urlOptimizada('  https://ejemplo.com/a.png  ', 'item'), 'https://ejemplo.com/a.png')
 igual('hay ratio por tipo', [RATIO_POR_TIPO.item, ANCHO_POR_TIPO.item], [4 / 3, 600])
+
+
+// --- 6. Seleccion de modificadores (lo que usa el modal) ---------------------
+console.log('\n== seleccion del modal ==')
+const G = norm.grupos // g1 = MULTIPLE (max 4, opciones o1..o3), g2 = UNICA obligatoria (o4, o5)
+
+// obligatorio sin seleccion -> invalido
+igual('obligatorio sin elegir es invalido', validarModificadores(G, elegidosDesde(G, {})).length > 0, true)
+igual('y se sabe cual falta', gruposObligatoriosFaltantes(G, {}), ['Salsas obligatorias'])
+igual('con la obligatoria elegida, valida', validarModificadores(G, elegidosDesde(G, { g2: ['o5'] })), [])
+igual('ya no falta ninguna', gruposObligatoriosFaltantes(G, { g2: ['o5'] }), [])
+
+// UNICA reemplaza; MULTIPLE alterna
+let sel = {}
+sel = alternarSeleccion(G, sel, 'g2', 'o4')
+igual('UNICA: elegir una', sel.g2, ['o4'])
+sel = alternarSeleccion(G, sel, 'g2', 'o5')
+igual('UNICA: elegir otra reemplaza', sel.g2, ['o5'])
+sel = alternarSeleccion(G, sel, 'g2', 'o5')
+igual('UNICA: volver a tocarla la desmarca', sel.g2, [])
+sel = alternarSeleccion(G, sel, 'g1', 'o1')
+sel = alternarSeleccion(G, sel, 'g1', 'o2')
+igual('MULTIPLE: acumula', sel.g1, ['o1', 'o2'])
+sel = alternarSeleccion(G, sel, 'g1', 'o1')
+igual('MULTIPLE: destilda', sel.g1, ['o2'])
+
+// min/max: una de mas no entra (el tope frena el toque), una de menos se detecta
+const grupoChico = [{ id: 'gm', nombre: 'Salsas', tipo: 'MULTIPLE_SELECCION', obligatorio: false, minSelecciones: 2, maxSelecciones: 3, opciones: [1, 2, 3, 4].map((n) => ({ id: 'm' + n, nombre: 'M' + n, precioExtra: 0, disponible: true })) }]
+let s2 = {}
+for (const id of ['m1', 'm2', 'm3', 'm4']) s2 = alternarSeleccion(grupoChico as never, s2, 'gm', id)
+igual('MULTIPLE: al llegar al maximo, el toque de mas no entra', s2.gm, ['m1', 'm2', 'm3'])
+igual('con menos del minimo, la validacion avisa', validarModificadores(grupoChico as never, elegidosDesde(grupoChico as never, { gm: ['m1'] })).length, 1)
+igual('en el maximo, valida', validarModificadores(grupoChico as never, elegidosDesde(grupoChico as never, s2)), [])
+
+// precio en vivo: base + extras ya normalizados a number
+const prov = armarItemProvisional({ id: ITEM, nombre: 'Hamburguesa', precio: norm.precioBase }, { g2: ['o5'] }, '', G)
+igual('el precio del provisorio es base + extra', precioUnitario(prov), 4500 + 200)
+igual('y con la opcion sin costo, queda el base', precioUnitario(armarItemProvisional({ id: ITEM, nombre: 'H', precio: norm.precioBase }, { g2: ['o4'] }, '', G)), 4500)
+chk('los extras son number (no string): el extra es 200, no "200"', prov.modificadores[0].opciones[0].precioExtra === 200, `tipo=${typeof prov.modificadores[0].opciones[0].precioExtra}`)
+
+// forma final y notas
+igual('la forma que sale es {grupoId, grupoNombre, opciones[]}', Object.keys(prov.modificadores[0]).sort(), ['grupoId', 'grupoNombre', 'opciones'])
+igual('y las opciones llevan id/nombre/precioExtra', Object.keys(prov.modificadores[0].opciones[0]).sort(), ['id', 'nombre', 'precioExtra'])
+igual('las notas se recortan a 200', armarItemProvisional({ id: ITEM, nombre: 'H', precio: 100 }, {}, 'x'.repeat(250), []).notas.length, 200)
+igual('recortarNotas deja intacto lo corto', recortarNotas('sin cebolla'), 'sin cebolla')
+igual('un grupo sin elegir no aparece en la forma final', elegidosDesde(G, { g2: ['o5'] }).length, 1)
 
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) { console.log(fallas.map((f) => `  - ${f}`).join('\n')); process.exit(1) }

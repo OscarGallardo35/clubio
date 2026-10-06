@@ -263,3 +263,38 @@ export interface SolicitarVisitaBody {
   sucursalSlug?: string | undefined
   origen?: string | undefined
 }
+
+/** Body de POST /api/pedidos, segun crear-pedido.dto.ts (los nombres son los del backend). */
+export interface CrearPedidoBody {
+  tipo: 'MESA' | 'TAKEAWAY' | 'DELIVERY'
+  modoPago: 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA'
+  /** OJO: es nombreCliente, no nombre. */
+  nombreCliente: string
+  telefono: string
+  direccion?: string | undefined
+  /** OJO: es mesa, no numeroMesa. */
+  mesa?: string | undefined
+  origen?: string | undefined
+  notas?: string | undefined
+  items: {
+    itemId: string
+    cantidad: number
+    notas?: string | undefined
+    modificadores?: { grupoId: string; opcionIds: string[] }[] | undefined
+  }[]
+  sucursalId?: string | undefined
+  sucursalSlug?: string | undefined
+}
+
+/** Respuesta de POST /api/pedidos (el return real de crearPedido). */
+export interface PedidoCreadoRespuesta {
+  pedidoId: string
+  linkToken: string
+  /** OJO: es urlCorta, no linkWhatsApp. */
+  urlCorta: string
+  /** Lo arma el backend; el cliente solo lo muestra. */
+  mensajeWhatsApp: string
+  expiraEn: string | null
+  total: number
+  sucursalId: string
+}

@@ -1,6 +1,6 @@
 import type { SugerenciaUpsell } from './carrito-maquina'
 import { ApiClient, endpoints } from '@repo/api-client'
-import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta } from '@/types/api'
+import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta, CrearPedidoBody, PedidoCreadoRespuesta } from '@/types/api'
 
 /**
  * Cliente HTTP unico de la PWA.
@@ -74,6 +74,16 @@ export const upsellApi = {
       endpoints.upsell.calcular,
       body,
     ),
+}
+
+export const pedidosApi = {
+  /**
+   * Crea el pedido. La ruta sale de `endpoints` (regla: nunca a mano, ni con backticks).
+   * OJO con los nombres: el DTO pide `nombreCliente` y `mesa`, y la respuesta trae `urlCorta`
+   * (no `linkWhatsApp`). El backend ademas ignora cualquier precio que mande el cliente y
+   * recalcula desde la DB.
+   */
+  crear: (body: CrearPedidoBody) => api.post<PedidoCreadoRespuesta>(endpoints.pedidos.crear, body),
 }
 
 /** Modificadores de un item. Publico: lo mira cualquiera que abra la carta. */

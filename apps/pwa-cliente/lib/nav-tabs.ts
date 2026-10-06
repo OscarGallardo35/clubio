@@ -26,7 +26,7 @@ export interface TabDef {
 export const TABS: TabDef[] = [
   { clave: 'carta', etiqueta: 'Carta', href: (t) => `/${t}/menu`, feature: 'menu' },
   { clave: 'club', etiqueta: 'Club', href: (t) => `/${t}/club` },
-  { clave: 'tarjeta', etiqueta: 'Mi tarjeta', href: () => '/tarjeta' },
+  { clave: 'tarjeta', etiqueta: 'Mi tarjeta', href: (t) => `/${t}/tarjeta` },
 ]
 
 /** Las tabs que corresponde mostrar segun el plan. Carta necesita la feature. */
@@ -40,12 +40,14 @@ export function tabsVisibles(menuDisponible: boolean): TabDef[] {
  */
 export function tabActiva(pathname: string, tenant?: string | null): ClaveTab | null {
   const limpio = pathname.split('?')[0]?.replace(/\/+$/, '') ?? ''
-  if (limpio === '/tarjeta' || limpio.startsWith('/tarjeta/')) return 'tarjeta'
   if (tenant) {
     const base = `/${tenant}`
     if (limpio === `${base}/club` || limpio.startsWith(`${base}/club/`)) return 'club'
     if (limpio === `${base}/menu` || limpio.startsWith(`${base}/menu/`)) return 'carta'
+    if (limpio === `${base}/tarjeta` || limpio.startsWith(`${base}/tarjeta/`)) return 'tarjeta'
   }
+  // /tarjeta pelado sigue existiendo como redirect, y mientras redirige no hay que marcar ninguna tab.
+  if (limpio === '/tarjeta' || limpio.startsWith('/tarjeta/')) return 'tarjeta'
   // Sin tenant (o ruta desconocida) se cae al club: es la home del programa.
   if (limpio.endsWith('/club')) return 'club'
   if (limpio.endsWith('/menu')) return 'carta'

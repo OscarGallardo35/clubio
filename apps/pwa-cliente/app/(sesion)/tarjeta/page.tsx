@@ -1,12 +1,14 @@
-import { Placeholder } from '@/components/Placeholder'
+import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { getClienteMe } from '@/lib/api-servidor'
 
 export const metadata = { title: 'Mi tarjeta' }
 
-export default function TarjetaPage() {
-  return (
-    <Placeholder
-      titulo="Mi tarjeta"
-      detalle="Acá va la TarjetaSellos con el progreso real (GET /visitas/mi-tarjeta) y el banner de premio."
-    />
-  )
+/**
+ * /tarjeta (sin tenant) queda como puerta de entrada vieja: se redirige a la ruta con tenant, que es
+ * la que puede mostrar el estado sin sesion. Con sesion el slug sale del propio /me.
+ */
+export default async function TarjetaSinTenant() {
+  const me = await getClienteMe(cookies().toString())
+  redirect(me?.negocio?.slug ? `/${me.negocio.slug}/tarjeta` : '/')
 }

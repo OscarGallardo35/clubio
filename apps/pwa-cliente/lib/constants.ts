@@ -15,7 +15,7 @@ export const RUTAS = {
   inicio: '/',
   club: (tenant: string) => `/${tenant}/club`,
   menu: (tenant: string) => `/${tenant}/menu`,
-  tarjeta: '/tarjeta',
+  tarjeta: (tenant: string) => `/${tenant}/tarjeta`,
   historial: '/historial',
   sucursales: '/seleccionar-sucursal',
   offline: '/offline',

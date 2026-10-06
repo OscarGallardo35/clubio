@@ -100,7 +100,7 @@ export function FlujoVisita() {
         nombreCliente={cliente?.nombre ?? null}
         mostrarResena={configuracion?.mostrarResenaPostVisita === true}
         placeId={negocio?.placeId ?? null}
-        onVerTarjeta={() => router.push(RUTAS.tarjeta)}
+        onVerTarjeta={() => router.push(RUTAS.tarjeta(negocio?.slug ?? ''))}
         onVolver={() => router.push(`/${negocio?.slug ?? ''}/menu`)}
       />
     )
@@ -112,7 +112,7 @@ export function FlujoVisita() {
         motivo={visita.flujo.motivo}
         texto={visita.textoMotivo}
         onReintentar={visita.reintentar}
-        onVerTarjeta={() => router.push(RUTAS.tarjeta)}
+        onVerTarjeta={() => router.push(RUTAS.tarjeta(negocio?.slug ?? ''))}
         onVolverMenu={() => router.push(`/${negocio?.slug ?? ''}/menu`)}
       faltanHoras={visita.flujo.faltanHoras}
         />

@@ -276,6 +276,6 @@ igual('una ruta que no es de la barra no marca nada', tabActiva('/dev/carrito'),
 igual('el checkout tampoco marca', tabActiva('/bar-la-esquina/checkout', 'bar-la-esquina'), null)
 igual('con menu activo se ven las 3 tabs', tabsVisibles(true).map((t) => t.clave), ['carta', 'club', 'tarjeta'])
 igual('sin menu se ven 2 (Carta no)', tabsVisibles(false).map((t) => t.clave), ['club', 'tarjeta'])
-igual('las rutas se arman con el tenant', TABS.map((t) => t.href('x')), ['/x/menu', '/x/club', '/tarjeta'])
+igual('las rutas se arman con el tenant', TABS.map((t) => t.href('x')), ['/x/menu', '/x/club', '/x/tarjeta'])
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) { console.log(fallas.map((f) => `  - ${f}`).join('\n')); process.exit(1) }

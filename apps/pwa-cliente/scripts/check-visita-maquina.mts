@@ -18,6 +18,8 @@ import {
   textoDelMotivo,
   visitaReducir,
 } from '../lib/visita-maquina.ts'
+import { tipoDeTarjeta, vistaDeTarjeta } from '../lib/tarjeta.ts'
+import type { MiTarjetaRespuesta } from '../types/api.ts'
 import type { EstadoFlujo, EventoFlujo, Paso } from '../lib/visita-maquina.ts'
 
 let ok = 0
@@ -216,6 +218,38 @@ igual('ABRIR_REGISTRO sale de "solicitando" (el estado real cuando falla el POST
   visitaReducir(en('solicitando'), { tipo: 'ABRIR_REGISTRO' }).paso, 'registrando')
 igual('ABRIR_REGISTRO tambien sale de la pantalla de error',
   visitaReducir(en('error', { mensaje: 'No autorizado' }), { tipo: 'ABRIR_REGISTRO' }).paso, 'registrando')
+
+
+// --- Tarjeta de sellos: la vista que se le pasa a <TarjetaSellos /> -------
+console.log('\n== tarjeta ==')
+// Fixture con la forma REAL de GET /visitas/mi-tarjeta (verificada contra el backend).
+const RESPUESTA = {
+  cliente: { id: 'c1', nombre: 'Oscar Gabriel', telefono: '+5493585705745', sellosActuales: 1, puntosActuales: 250,
+             totalVisitas: 1, ultimaVisita: '2026-10-06T14:32:02.876Z' },
+  sucursal: { id: 's1', nombre: 'Centro', slug: 'centro', esPrincipal: true },
+  tarjetas: [], sucursalId: 's1', modoClientes: 'GLOBAL',
+  sellosActuales: 1, sellosParaPremio: 10, premioTexto: 'Cafe gratis', premioDesbloqueado: false,
+  faltantes: 9, porcentaje: 10, mostrarResena: true, puntosActuales: 250, totalVisitas: 1,
+} as unknown as MiTarjetaRespuesta
+igual('SOLO_PUNTOS -> PUNTOS', tipoDeTarjeta('SOLO_PUNTOS'), 'PUNTOS')
+igual('SOLO_VISITAS -> VISITAS', tipoDeTarjeta('SOLO_VISITAS'), 'VISITAS')
+igual('HIBRIDO cae a VISITAS (una sola tarjeta)', tipoDeTarjeta('HIBRIDO'), 'VISITAS')
+igual('sin modo tambien VISITAS', tipoDeTarjeta(undefined), 'VISITAS')
+const v = vistaDeTarjeta(RESPUESTA, 'SOLO_VISITAS')
+igual('toma sellos y meta del backend', [v.actuales, v.meta], [1, 10])
+igual('recalcula faltantes y porcentaje', [v.faltantes, v.porcentaje], [9, 10])
+igual('muestra el premio del backend', [v.premioTexto, v.premioDesbloqueado], ['Cafe gratis', false])
+igual('nombre y sucursal salen de la respuesta', [v.nombreCliente, v.sucursalNombre], ['Oscar Gabriel', 'Centro'])
+chk('la ultima visita es Date', v.ultimaVisita instanceof Date)
+// Con PUNTOS cambia lo que se cuenta, y el progreso se recalcula (no se copia el del backend).
+const vp = vistaDeTarjeta(RESPUESTA, 'SOLO_PUNTOS')
+igual('en PUNTOS cuenta puntos', [vp.tipo, vp.actuales], ['PUNTOS', 250])
+chk('en PUNTOS el porcentaje es el de puntos', vp.porcentaje === 100)
+// Blindaje: si el backend dice que NO hay premio pero los sellos ya alcanzan, el premio gana.
+const conPremio = vistaDeTarjeta({ ...RESPUESTA, sellosActuales: 10 } as MiTarjetaRespuesta, 'SOLO_VISITAS')
+igual('con los sellos completos el premio se marca solo', [conPremio.premioDesbloqueado, conPremio.faltantes, conPremio.porcentaje], [true, 0, 100])
+const sinMeta = vistaDeTarjeta({ ...RESPUESTA, sellosParaPremio: 0 } as MiTarjetaRespuesta, 'SOLO_VISITAS')
+igual('sin meta cae a 10 (nunca divide por cero)', [sinMeta.meta, sinMeta.porcentaje], [10, 10])
 
 console.log(`\n  TOTAL: ${ok} OK, ${fallas.length} FALLA`)
 if (fallas.length) {

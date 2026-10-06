@@ -1658,3 +1658,36 @@ Regla practica: un fixture tiene que llegar hasta el camino que se quiere probar
 caso base. Y cuando el fixture se corrige, vale agregar la asercion que confirma que ese camino se
 recorrio (en el caso real: que los items sobrevivan junto con las notas).
 
+### REGLA: antes de despachar eventos en secuencia, verificar si el primero ya hizo el trabajo del segundo
+
+El reducer puede tener casos que **absorben el estado completo**: en vez de tocar un campo, arman un
+estado nuevo desde cero (`estadoInicial(...)`) y despues vuelven a poner lo que hay que conservar. Si
+se despacha un segundo evento "por las dudas" (por ejemplo un `LIMPIAR` despues de un `PEDIDO_OK`),
+ese segundo evento **pisa lo conservado** y rompe justo lo que se queria guardar.
+
+Caso real (`PEDIDO_OK` + `LIMPIAR`):
+
+```ts
+case 'PEDIDO_OK':
+  return { ...estadoInicial(...), fase: 'enviado', cliente: estado.cliente,
+           tipo: estado.tipo, modoPago: estado.modoPago,
+           pedido: { linkToken: evento.linkToken, numero: evento.numero } }
+
+case 'LIMPIAR':
+  return { ...estadoInicial(...), cliente: estado.cliente }   // <- pedido queda en null
+```
+
+`PEDIDO_OK` ya vacia el carrito y conserva a proposito `cliente`, `tipo`, `modoPago` y `pedido`
+(este ultimo es el que permite volver al seguimiento despues de reabrir la app). Un `LIMPIAR`
+adicional borra `pedido.linkToken` y se pierde el rastro del pedido: el bug aparece recien al
+recargar, no en la pantalla que acabamos de ver.
+
+Como detectarlo: leer el `case` del primero y fijarse si devuelve `estadoInicial(...)` o un objeto
+armado desde cero. Si es asi, la lista de campos que conserva **es la lista de lo que no hay que
+tocar despues**. La secuencia correcta, en general, es despachar **un solo evento** y que el reducer
+decida que conservar.
+
+Corolario: los comentarios del reducer que dicen "guarda dura" o "no se envia dos veces" suelen
+indicar que el estado ya esta protegido; antes de agregar una guarda o un evento extra en el
+llamador, conviene verificar que no este ya resuelto adentro.
+

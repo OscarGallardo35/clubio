@@ -19,6 +19,7 @@ import {
 } from '../lib/modificadores-cache.ts'
 import type { EstadoModificadores } from '../lib/modificadores-cache.ts'
 import { ordenarCategorias } from '../lib/ordenar-categorias.ts'
+import { modificadoresParaApi } from '../lib/modificadores-seleccion.ts'
 import { alternarSeleccion, armarItemProvisional, elegidosDesde, gruposObligatoriosFaltantes, recortarNotas } from '../lib/modificadores-seleccion.ts'
 import { precioUnitario, validarModificadores } from '../lib/carrito-maquina.ts'
 // Modulo PURO del package (por eso se puede importar desde node sin arrastrar React).
@@ -244,5 +245,22 @@ igual('si TODAS traen orden numerico, manda el backend',
   ordenarCategorias([{ categoria: 'Z', orden: 1, items: [1] }, { categoria: 'A', orden: 0, items: [1] }]).map((c) => c.categoria), ['A', 'Z'])
 igual('con orden parcial NO lo usa: cae al criterio por nombre',
   ordenarCategorias([{ categoria: 'Z', orden: 1, items: [1] }, cat('A', 1)]).map((c) => c.categoria), ['A', 'Z'])
+
+// --- 8. Conversion a la forma de la API ---------------------------------------
+console.log('\n== conversion a la API ==')
+const interna = [
+  { grupoId: 'g2', grupoNombre: 'Salsas obligatorias', opciones: [{ id: 'o5', nombre: 'BBQ', precioExtra: 200 }] },
+  { grupoId: 'g1', grupoNombre: 'Aderezos', opciones: [{ id: 'o1', nombre: 'Ketchup', precioExtra: 0 }, { id: 'o3', nombre: 'Mayo', precioExtra: 100 }] },
+]
+const internaCopia = JSON.stringify(interna)
+igual('UNICA + MULTIPLE se convierten a opcionIds', modificadoresParaApi(interna as never),
+  [{ grupoId: 'g2', opcionIds: ['o5'] }, { grupoId: 'g1', opcionIds: ['o1', 'o3'] }])
+igual('un grupo sin opciones no aparece en la salida',
+  modificadoresParaApi([{ grupoId: 'g9', grupoNombre: 'X', opciones: [] }] as never), [])
+igual('sin modificadores devuelve vacio', modificadoresParaApi([]), [])
+igual('no muta la forma interna', JSON.stringify(interna), internaCopia)
+igual('las notas de 200+ se recortan al construir el item',
+  armarItemProvisional({ id: ITEM, nombre: 'H', precio: 100 }, {}, 'y'.repeat(240), []).notas.length, 200)
+chk('y el texto recortado es el de los primeros 200', armarItemProvisional({ id: ITEM, nombre: 'H', precio: 100 }, {}, 'z'.repeat(240), []).notas === 'z'.repeat(200))
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) { console.log(fallas.map((f) => `  - ${f}`).join('\n')); process.exit(1) }

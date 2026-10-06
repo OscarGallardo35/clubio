@@ -1633,3 +1633,28 @@ Ademas, el body del pedido usa `modificadores: [{ grupoId, opcionIds }]`, que es
 produce `modificadoresParaApi`: conviene mirar si el helper que ya existe arma la forma que el DTO
 espera antes de escribir una conversion nueva.
 
+### REGLA: los tests tambien asumen (revisar las guardas antes de culpar al codigo)
+
+Cuando una asercion de roundtrip falla, **antes de tocar el codigo hay que verificar si la funcion
+bajo test tiene guardas que cambian el comportamiento para el caso base**. Un test armado sobre el
+estado inicial puede estar probando algo que, por diseno, nunca se persiste.
+
+Caso real (notas del pedido): la asercion
+
+```
+FALLA  y sobreviven el roundtrip de localStorage  -> real=undefined  esperado="sin sal"
+```
+
+apuntaba a `deserializarCarrito`, que **devuelve `null` cuando el carrito no tiene items** (a
+proposito: un carrito vacio no se rehidrata). El test habia armado el roundtrip sobre
+`estadoInicial`, sin items, asi que la funcion devolvia `null` antes de llegar a mirar las notas. El
+codigo estaba bien; el test estaba probando un camino que no existe.
+
+Como se detecta rapido: leer la funcion bajo test y buscar salidas tempranas (`if (...) return null`,
+`return estado`, cortes por caso vacio, banderas de "sin cambios"). Si el fixture cae en una de esas
+guardas, el test no esta midiendo lo que cree.
+
+Regla practica: un fixture tiene que llegar hasta el camino que se quiere probar, no quedarse en el
+caso base. Y cuando el fixture se corrige, vale agregar la asercion que confirma que ese camino se
+recorrio (en el caso real: que los items sobrevivan junto con las notas).
+

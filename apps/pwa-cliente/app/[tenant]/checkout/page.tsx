@@ -23,7 +23,15 @@ export default function CheckoutPage() {
   const { enviar, enviando } = useCheckout()
   const linkToken = useCarritoStore((s) => s.pedido?.linkToken ?? null)
   const despachar = useCarritoStore((s) => s.despachar)
-  const { slugParaApi } = useSucursalActiva()
+  const { sucursal, slugParaApi } = useSucursalActiva()
+  const activar = useCarritoStore((s) => s.activar)
+
+  // El store usa `skipHydration`, asi que NADIE lo hidrata solo: hay que llamar a `activar`, que es
+  // lo que hace CartaDigital en el menu. Sin esto, entrar directo a /checkout (URL a mano, recarga,
+  // incognito) deja el carrito vacio de verdad y el redirect a /menu se dispara siempre.
+  React.useEffect(() => {
+    void activar(slugNegocio, sucursal?.id ?? null, sucursal?.slug ?? null)
+  }, [activar, slugNegocio, sucursal?.id, sucursal?.slug])
   // `useCarta` aca es solo para tener el refetch del cache: la carta en si la muestra /menu.
   const { refetch } = useCarta(slugNegocio, slugParaApi)
 

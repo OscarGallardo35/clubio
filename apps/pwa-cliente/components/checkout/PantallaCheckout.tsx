@@ -60,6 +60,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
 
   // Los errores NO se muestran hasta el primer intento (refinamiento 1).
   const [intentoEnviar, setIntentoEnviar] = React.useState(false)
+  /** true cuando zustand termino de leer localStorage (no es "estoy en el cliente"). */
   const [locale, setLocale] = React.useState(false)
 
   const refs = React.useRef<Record<string, HTMLElement | null>>({})
@@ -67,12 +68,17 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
     refs.current[campo] = el
   }
 
-  // El store se rehidrata en el cliente: hasta entonces no se puede decidir si esta vacio.
+  // Guard de hidratacion REAL. Antes habia un `useState(false)` que se ponia en true en el primer
+  // effect del cliente: eso solo dice "estoy en el navegador", NO que zustand haya terminado de
+  // leer localStorage. Como el store usa `skipHydration`, entre el primer render y la hidratacion
+  // el carrito se ve vacio, y el redirect se disparaba antes de tiempo.
   React.useEffect(() => {
-    setLocale(true)
+    if (useCarritoStore.persist.hasHydrated()) setLocale(true)
+    return useCarritoStore.persist.onFinishHydration(() => setLocale(true))
   }, [])
 
   React.useEffect(() => {
+    // Recien cuando la hidratacion termino se puede decidir si el carrito esta vacio de verdad.
     if (!locale) return
     if (carrito.items.length === 0) {
       toast('Tu carrito esta vacio')

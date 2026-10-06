@@ -198,9 +198,7 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
       if (evento.estado === 'RECHAZADA') {
         return { ...estado, paso: 'noSumada', motivo: 'rechazada', mensaje: evento.motivo ?? null }
       }
-      // EXPIRAR hace spread del estado, asi que hay que anular los datos del token a mano
-      // (si no, el mensaje y el link del token vencido sobreviven).
-      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null, mensajeWhatsApp: null, urlValidacion: null }
+      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null }
     }
 
     // La aprobacion GANA: vale desde cualquier paso (incluso si el contador ya
@@ -220,7 +218,9 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
     // El contador llego a cero. Nunca pisa un exito y no hace nada fuera de 'esperando'.
     case 'EXPIRAR':
       if (estado.paso !== 'esperando') return estado
-      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null }
+      // EXPIRAR hace spread del estado y NO pasa por ESTADO_INICIAL: los datos del token
+      // (mensaje y link) hay que anularlos a mano, o sobreviven al vencimiento.
+      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null, mensajeWhatsApp: null, urlValidacion: null }
 
     // Accion explicita del usuario. Es la UNICA puerta de salida de noSumada/error.
     case 'REINTENTAR': {

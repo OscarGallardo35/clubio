@@ -185,6 +185,19 @@ const raro = { tipo: 'EVENTO_QUE_NO_EXISTE' } as unknown as EventoFlujo
 const antes = en('esperando', { token: 't' })
 igual('evento desconocido no cambia nada', visitaReducir(antes, raro), antes)
 
+
+console.log('\n== el mensaje de WhatsApp en el flujo ==')
+const conSolicitud = visitaReducir(ESTADO_INICIAL, {
+  tipo: 'SOLICITADA', token: 'tok-1', expiraEn: new Date(Date.now() + 300000).toISOString(),
+  sucursalId: 'suc-1', mensajeWhatsApp: 'Hola, soy Ana. Ref: tok-1', urlValidacion: 'http://staff/validar?ref=tok-1',
+})
+igual('SOLICITADA guarda el mensaje', conSolicitud.mensajeWhatsApp, 'Hola, soy Ana. Ref: tok-1')
+igual('SOLICITADA guarda el link', conSolicitud.urlValidacion, 'http://staff/validar?ref=tok-1')
+igual('EXPIRAR los anula (spread: no pasa por ESTADO_INICIAL)',
+  [visitaReducir(conSolicitud, { tipo: 'EXPIRAR' }).mensajeWhatsApp, visitaReducir(conSolicitud, { tipo: 'EXPIRAR' }).urlValidacion], [null, null])
+igual('RESET los anula via ESTADO_INICIAL',
+  [visitaReducir(conSolicitud, { tipo: 'RESET' }).mensajeWhatsApp, visitaReducir(conSolicitud, { tipo: 'RESET' }).urlValidacion], [null, null])
+
 console.log(`\n  TOTAL: ${ok} OK, ${fallas.length} FALLA`)
 if (fallas.length) {
   console.log('  FALLARON: ' + fallas.join(' | '))

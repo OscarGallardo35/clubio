@@ -44,8 +44,11 @@ export class CartaService {
     if (!negocio) throw new NotFoundException('Negocio no encontrado');
     const negocioId = negocio.id;
 
+    // El resolver prioriza sucursalId y cae a sucursalSlug; la PWA Cliente manda
+    // slug, el staff suele mandar id.
     const sucursal = await this.resolver.resolverSucursal(negocioId, {
       sucursalId: filtros.sucursalId ?? null,
+      sucursalSlug: filtros.sucursalSlug ?? null,
     });
 
     const items = await this.prisma.itemCarta.findMany({
@@ -71,7 +74,10 @@ export class CartaService {
           nombre: it.nombre,
           descripcion: it.descripcion,
           precio: ov?.precio ?? it.precio,
-          precioBase: it.precio,
+          // Number() por consistencia: `precio` ya sale como numero y tener
+          // precioBase como string (Decimal serializado) rompe cualquier cuentita
+          // en la PWA (un .toFixed() sobre un string explota).
+          precioBase: Number(it.precio),
           tieneOverride: !!ov,
           fotoUrl: it.fotoUrl,
           etiquetas: it.etiquetas,

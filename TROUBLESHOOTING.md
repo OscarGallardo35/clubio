@@ -873,3 +873,34 @@ En este entorno bash es MSYS, pero `curl` es un ejecutable de Windows: con
 `/tmp/x.html` no encuentra nada. Para archivos que escribe un binario nativo hay
 que usar una ruta nativa (`C:/Users/...`) o `$HOME`.
 
+## `Decimal` de Prisma llega como STRING al JSON (y rompe las cuentas del front)
+
+`GET /carta` devolvia `precio` como numero pero `precioBase` como **string**:
+
+```json
+{"nombre":"Coca-Cola 500ml","precio":3000,"precioBase":"1500","tieneOverride":true}
+```
+
+Motivo: el serializer hacia `Number(item.precio)` para `precio`, pero `precioBase`
+salia del Decimal crudo, y Prisma serializa `Decimal` como string para no perder
+precision. En la PWA eso explota en cuanto se hace `.toFixed()` o una comparacion
+estricta sobre `precioBase`.
+
+Regla: **cualquier campo `Decimal` que cruce la API se convierte con `Number()`
+explicito**. Si alguna vez hace falta precision exacta de plata, se acuerda el
+campo como string a proposito y se documenta — pero no puede quedar mezclado.
+
+## En este entorno, `subprocess.run(shell=True)` desde Python usa cmd.exe, NO bash
+
+Los comandos con sintaxis de bash fallan **en silencio**:
+
+```python
+# NO corre: `${PIPESTATUS[0]}` y `tail` son de bash; cmd.exe falla y no ejecuta nada
+subprocess.run("pnpm --filter backend build 2>&1 | tail -12 ; echo EXIT=${PIPESTATUS[0]}", shell=True)
+```
+
+En un caso real esto hizo que el build NO se ejecutara, `dist/main.js` no existiera
+y un e2e arrancara un server inexistente ("NO RESPONDE") pareciendo un problema de
+la aplicacion. Para builds, tests y cualquier cosa con pipes: usar el terminal
+(que si es bash), no `subprocess.run(..., shell=True)`.
+

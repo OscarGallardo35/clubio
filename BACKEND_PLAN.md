@@ -778,3 +778,9 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   localStorage. Deberia persistir solo `slug` + `id` y refetchear el resto con TTL de 5 min
   (mismo patron que `carta-cache`).
 
+## TODO etapa 4 (post-checkout)
+
+- **TODO etapa 4 post-checkout: implementar `/tarjeta` real** (TarjetaSellos con data del cliente +
+  historial de visitas + boton de resena si `premioDesbloqueado`). Hoy `/tarjeta` es el placeholder
+  del esqueleto y la tab del BottomNav ya apunta ahi, asi que el hueco se ve.
+

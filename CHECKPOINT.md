@@ -1,248 +1,87 @@
-# CHECKPOINT — etapa 3 del QR #1 (UI del menu)
+# CHECKPOINT — PWA Cliente CERRADA · arrancando PWA Staff (Prompt #4)
 
-Sesion cortada a proposito por presupuesto de contexto. `ImagenOptimizada` ya esta hecha; lo que
-falta es el punto 2 del orden. Nada quedo a medio escribir: el arbol esta limpio.
+Actualizado: 2026-10-06. Rama `main`, local == remoto (lo unico sin commitear es `.github/`, que el
+push rechaza por scope: requiere `gh auth refresh -s workflow`).
 
-## Estado
+## Estado por app
 
-- Rama `main`, local == remoto. Ultimos commits: `1d1f9c9` (ImagenOptimizada) y `de98869`
-  (grupo obligatorio de Salsas + script idempotente `apps/backend/scripts/agregar-grupo-salsas.cjs`).
-- `/api/health` -> `{"status":"ok","db":"up","redis":"up"}`. Backend levantado desde Python con
-  `DETACHED_PROCESS` (ver TROUBLESHOOTING: el terminal devolvia `stdin is not a tty` de forma
-  intermitente cuando el comando encadenaba un `taskkill`).
-- Datos: 1 negocio (`bar-la-esquina`), 2 sucursales (`centro` principal, `norte`),
-  40 clientes (20 del seed + 20 de corridas de prueba; pendiente de limpieza pre-deploy).
-- `menuActivo: true`, `tiposPedidoHabilitados: ['MESA','TAKEAWAY','DELIVERY']`,
-  `sellosBienvenida: 1`, `permitirOverrideSucursal: true` (restaurados a sus valores originales).
-
-## Los 3 puntos del orden que quedan
-
-### 1. `ImagenOptimizada` en `@repo/ui` — HECHO (commit `1d1f9c9`)
-
-`packages/ui/src/components/imagen-optimizada.tsx`, exportada desde `index.ts` junto con
-`urlOptimizada`, `ANCHO_POR_TIPO` y `RATIO_POR_TIPO` (las tres exportadas aparte porque son
-puras y testeables). `typecheck` 0, `build` 0, `check:packages` 0.
-
-Lo que hace: `src` vacio -> placeholder con el color de marca y un icono; `src` externo -> `<img>`
-con `loading` lazy (eager si `priority`) y `onError` que cae al placeholder; Cloudinary ->
-`c_fill,w_<ancho>,q_auto:good,f_auto` con el ancho por tipo (item 600, categoria 320, logo 240,
-avatar 128) y solo si la URL no trae ya una transformacion. En dev avisa por consola si falta
-`alt`. Version simple, sin srcset ni AVIF (Prompt #5.9).
-
-Ojo al usarla: `@repo/ui` ya tenia `lucide-react` como dependencia (mi primer grep dijo que no
-porque el package.json usa comillas dobles, no simples).
-
-### 2. Punto 1 completo del plan de la etapa 3 — A MEDIAS (commit `81d7851`)
-
-**Hecho** (verificado, `check:menu` 43 aserciones OK, typecheck 0):
-
-- `lib/api.ts`: `modificadoresApi.porItem(itemId)` contra `GET /modificadores/items/:id/grupos`.
-- `lib/modificadores-cache.ts` (puro): clave por `itemId`, TTL 5 min, cache-first con
-  stale-while-revalidate, `planDeFetchMods`, fetch fallido que no pisa el cache ni renueva el
-  TTL, refetch manual e invalidacion. **`normalizarModificadores` convierte `precioExtra` a
-  number** (mas `aNumero`, que cae a 0 ante basura y `null`).
-- `scripts/check-menu.mts` + `check:menu` registrado en el `package.json` de la app. Incluye la
-  demostracion del bug (`"200" + 0 === "2000"`) y la normalizacion defensiva.
-
-**Falta** (es lo primero de la proxima sesion):
-
-- `stores/modificadoresStore.ts` (zustand en memoria) + `hooks/useModificadores.ts` (fetch por
-  itemId usando el cache; el hook es el que llama a `modificadoresApi.porItem`).
-- Las aserciones de `urlOptimizada`: no se pueden importar desde un script de node porque el
-  modulo de `@repo/ui` arrastra React + lucide (node strip-only no lo resuelve). Opciones:
-  mover `urlOptimizada` a un modulo puro del package y reexportarlo, o cubrirlo en la
-  verificacion SSR del HTML.
-- Extra propuesto y no confirmado: una asercion que pegue contra los endpoints reales y verifique
-  que los campos monetarios lleguen como `number` (alarma contra un `Decimal` sin normalizar).
-
-### 3. Verificacion completa
-
-`build` PWA (aislado con `NEXT_DIST_DIR=.next-build` si el dev server esta vivo) + `typecheck`
-+ los 8 checks + `/api/health`.
-
-## Los 8 checks que deben pasar
-
-| Check | Ultimo resultado |
+| Parte | Estado |
 |---|---|
-| `pnpm check:packages` | EXIT 0 |
-| `pnpm --filter @repo/validators check:validators` | 14 OK |
-| `pnpm --filter pwa-cliente check:maquina` | 63 OK |
-| `pnpm --filter pwa-cliente check:carrito` | 79 OK |
-| `pnpm --filter pwa-cliente check:carta` | 38 OK |
-| `pnpm --filter pwa-cliente check:upsell` | 42 OK |
-| `pnpm --filter backend test:checklist` | EXIT 0 (16/16) |
-| `pnpm --filter pwa-cliente check:flujo` | 25 OK (necesita backend y base arriba) |
+| **Backend** (NestJS 10 + Prisma + Neon + Redis) | Fases 1-8 + #3.0 **cerradas y verificadas e2e**. `/api/health` -> `{"status":"ok","db":"up","redis":"up"}` |
+| **PWA Cliente** | **CERRADA y verificada.** QR #2 (club/visitas) y QR #1 (menu -> carrito -> checkout -> seguimiento) end-to-end. `/[tenant]/tarjeta` real |
+| **PWA Staff** | solo `Dockerfile` + `package.json` + `railway.toml` (ya trae `dev: next dev -p 3002`). **Arrancando Fase 0/1** |
+| **PWA Admin** | esqueleto; sin trabajo propio todavia |
 
-`check:validators` vive en `@repo/validators`, no en la raiz. `check:carta` y `check:upsell` se
-agregaron en este tramo (la lista paso de 6 a 8). `check:flujo` falla con 500 si la base esta
-caida: no es una regresion.
+## Como se levanta y se verifica (host Windows / git-bash)
 
-## Formas reales ya verificadas (no volver a averiguarlas)
+- Backend: matar el proceso ANTES de `pnpm --filter backend build` (el `prebuild` hace `rimraf dist` y
+  tumba el server que lo esta sirviendo). Despues: levantar y verificar `/api/health`.
+  Se lanza desde Python con `DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP` (el terminal devuelve
+  `stdin is not a tty` de forma intermitente).
+- PWA Cliente: `:3001`. `next build` aislado con `NEXT_DIST_DIR=.next-build` si el dev server esta vivo.
+- PWA Staff: `:3002` (`STAFF_APP_URL=http://192.168.0.103:3002` en `.env`; el link del mensaje de
+  WhatsApp del staff apunta ahi, asi que la Staff TIENE que correr en ese puerto).
+- IP de LAN: `192.168.0.103`.
 
-**`GET /carta?sucursalSlug=`** (200, requiere `X-Tenant-Slug`):
-`{negocio, sucursal, total, categorias: [{categoria, items: [...]}]}`. Ojo: la clave de la
-categoria es **`categoria`**, no `nombre`. Cada item:
-`{id, categoria, nombre, descripcion, precio, precioBase, tieneOverride, disponible, etiquetas,
-fotoUrl, orden}` — **`fotoUrl` existe** (no hay que tocar el backend) y `precio`/`precioBase`
-llegan como **number**.
+## Los 7 checks de la PWA Cliente (todos verdes)
 
-**`GET /modificadores/items/:itemId/grupos`** (200, publico). Devuelve un OBJETO, no un array:
+`carrito` 59 · `checkout` 115 · `menu` 95 · `visita-maquina` 84 · `upsell` 49 · `carta` 38 ·
+`flujo-ws` 29. Mas `typecheck` 0 y `build` 0.
+
+`check:flujo-ws` es **integracion**: pega al backend real de `:3000` y puede dejarlo caido (no es
+determinista). Despues de correrlo, verificar `/api/health`.
+
+Correr todo: `pnpm --filter pwa-cliente typecheck` · `node apps/pwa-cliente/scripts/check-<dominio>.mts`
+· `pnpm --filter pwa-cliente build`.
+
+## Commits recientes (los ultimos 14, reales)
+
 ```
-{ itemId, itemNombre, precioBase,
-  grupos: [ { id, nombre, descripcion, tipo, obligatorio, minSelecciones, maxSelecciones,
-              opciones: [ { id, nombre, precioExtra, disponible } ] } ] }
+b9b12ef feat(tarjeta): /[tenant]/tarjeta real (TarjetaSellos + banner de premio + estados)
+973ecbc fix(club): el 401 es "falta sesion", no un rechazo del negocio
+4712ff2 docs: corregir el corolario del harness (no es determinista)
+5d62247 feat(checkout): auto-login del cliente + prellenado de nombre y telefono
+3e73297 docs: corolario del harness de flujo
+171f825 docs: regla del build del backend que mata el server que lo sirve
+fa78887 fix(whatsapp): el boton abre WhatsApp (wa.me) y el mensaje pide verificar el pedido
+699dcba fix(seguimiento): el 404 del endpoint publico tiene DOS significados
+8dcb2c6 feat(seguimiento): olvidar el pedido cuando el link da 404
+a387d5e fix(checkout): la navegacion al seguimiento sale del handler, no de un effect observador
+a339aa9 temporal: diagnosticar el crash post-400
+8b46728 feat(checkout): validar el telefono E.164 en el cliente antes del POST
+54698ee docs: regla de las variables CSS inexistentes + TODO post-MVP del numero de pedido
+aba2391 docs: regla de los tokens de color
 ```
-`tipo` es `UNICA_SELECCION` o `MULTIPLE_SELECCION`. **`precioExtra` llega como STRING**
-(`"0"`, `"200"`): es el `Decimal` de Prisma cruzando la API. Este es el caso vivo de la regla;
-normalizar en el hook.
 
-**`POST /upsell/calcular`**: body `{items:[{itemId,cantidad}], maxSugerencias?, sucursalId?,
-sucursalSlug?}`. Responde `{sugerencias: [{reglaId, mensaje, motivo, item:{id,nombre,precio}}],
-motivo}`. Con `Cafe expreso` devuelve 1 sugerencia real del seed (flan casero); con carrito
-vacio, `{sugerencias: [], motivo: "sin reglas o carrito vacio"}`. `item.precio` llega como
-**number**.
+## Decisiones de la PWA Staff (confirmadas por el usuario)
 
-**Seed**: la Hamburguesa clasica tiene 2 grupos: `Aderezos` (MULTIPLE, obligatorio false, max 4)
-y **`Salsas obligatorias`** (UNICA, obligatorio true, min/max 1, opciones Salsa de la casa 0 /
-BBQ 200 / Sin salsa 0). El resto de los items con grupos (Milanesa, Bife) tienen UNICA no
-obligatorio.
+1. Se agrega `GET /auth/empleado/me` al backend (simetrico a `/auth/cliente/me`). **Bloqueante**:
+   hoy el login solo devuelve la cookie y no hay forma de resolver la sesion.
+2. **Sin `[tenant]` en la URL**: el negocio y la sucursal salen del token, no del path.
+3. **Sucursal fija por token** (MVP). Cambio = re-login. TODO post-MVP: selector con header
+   `X-Sucursal-Activa`.
+4. Orden: **Fase 0** (backend `/me` + los 3 componentes de `@repo/ui`) -> **Fase 1** (esqueleto:
+   login PIN + guard + nav de 4 tabs) -> Fase 2 Visitas (cierra el QR #2 end-to-end).
 
-**`ImagenOptimizada` NO existe** en `@repo/ui` (por eso hay que construirla). `bottom-sheet.tsx`
-si existe y es real (219 lineas, Radix Dialog + drag con framer-motion y `useReducedMotion`).
-Los componentes sin implementar se generan con `components/_stub.tsx` y avisan por consola en
-dev: al usar uno, confirmar que sea real.
+## Deuda tecnica anotada (no bloqueante)
 
-## Reglas y hallazgos documentados en este tramo (ya en TROUBLESHOOTING.md)
+- **Stubs exportados y sin implementar** en `@repo/ui`: `radio-group`, `checkbox`, `textarea`. El
+  import compila y el fallo aparece en runtime. Se implementan en la Fase 0 (los necesita la Staff).
+- `endpoints` de `@repo/api-client` **no tiene**: `auth.meEmpleado`, `pedidos.list/estado/tomar/
+  cancelar/historial/estadisticas`, `visitas.misAprobaciones/historial`, `turnos.*`, `checkin.*`,
+  `clientes.*`, `empleados.*`, `estadisticas.*`, `push.suscribirEmpleado`, `sucursales.configuracion`.
+  Se agregan a medida que cada fase los necesita.
+- `seed.ts` esta desincronizado (TODO pre-deploy). Limpiar los clientes de prueba antes de la demo
+  (incluye `Oscar Gabriel` con telefono real y `Prueba Diagnostico` +5493585700001).
+- Regenerar los 6 secretos JWT para produccion. Rotar la contrasena de Neon (quedo expuesta en el
+  historial de la sesion, ya rotada >=2 veces).
+- Placeholders `Tu nombre` / `UNLICENSED` en `apps/backend/package.json`.
+- `brandingStore` persiste campos mutables: deberia persistir solo slug+id y refetchear con TTL.
+- TODO post-MVP: `numero` real del pedido (distinto de `numeroAtendiente`).
+- TODO pre-PWA-Admin: reemplazar los inputs nativos del `ModalModificadores` por los de `@repo/ui`.
+- TODO post-etapa 4: `ErrorCarrito.codigo` -> union real.
 
-- Verificar el CSS **servido**, no el HTML (el nombre de la clase esta en el markup aunque la
-  regla no exista); las clases arbitrarias de Tailwind pueden no emitirse nunca.
-- Verificar con un **valor distinto del que el codigo hardcodea**, o la verificacion es vacua;
-  y capturar el valor original **antes** de mutarlo.
-- Cuando hay banderas que deciden comportamiento, **el orden de los chequeos importa**; la
-  politica en un solo lugar y el plan como traduccion.
-- Un evento no puede usar el mismo campo como **discriminante y payload**.
-- Los **`Decimal` de Prisma cruzan la API como string**; normalizar en el hook, no en cada
-  consumidor.
-- `git commit -F` para mensajes con comillas o caracteres especiales.
-- Los e2e de sucursales se corren con `pnpm --filter backend test:e2e:s3|s4` (inyectan el `.env`).
+## Credenciales (NUNCA commitear)
 
-## Pendientes anotados (no bloquean la etapa 3)
-
-- **Pre-deploy**: sincronizar `seed.ts` con los grupos agregados por scripts (salsas
-  obligatorias); limpiar o marcar los clientes de prueba; regenerar los 6 secretos JWT y los
-  placeholders del `package.json` del backend.
-- `e2e_s4.cjs` borra TODOS los overrides de la sucursal norte, no solo los suyos.
-- Validators: migrar de listas `as const` a `z.nativeEnum` cuando se hagan Project References.
-- `check:validators` todavia no cruza formas de campos, solo enums.
-
-## BUG del WhatsApp de la visita (en curso — commit `9361d3a` y el de visita-service)
-
-Sintoma: el mensaje que abre WhatsApp salia generico.
-
-Causas (las dos, confirmadas leyendo el codigo):
-
-1. **Backend** — HECHO (`9361d3a`): el mensaje era "Hola, soy X. Quiero sumar mi visita. Ref: TOKEN"
-   (sin negocio y sin link). Ahora es "Hola, soy X. Quiero sumar mi visita en NEGOCIO. Ref: TOKEN.
-   Validar aqui: URL", con `STAFF_APP_URL` del `.env` y el nombre del negocio en una consulta
-   puntual. **Verificado contra el backend real** (`POST /visitas/solicitar` 201): el mensaje trae
-   nombre + negocio + Ref + URL, y la URL sale de `STAFF_APP_URL`.
-2. **Frontend** — HECHO a medias:
-   - `lib/visita-service.ts`: **HECHO**. `SolicitudOk` (y `SolicitudFallida`) declaran
-     `mensajeWhatsApp` y `urlValidacion`, y el return los copia de la respuesta. Antes se
-     descartaban: el tipo `SolicitarVisitaRespuesta` de `types/api.ts` YA los declaraba, el
-     descarte estaba en el service.
-   - **FALTA (3 ediciones chicas, es lo primero del proximo turno):**
-     a. `stores/visitaStore.ts`: agregar `mensajeWhatsApp` y `urlValidacion` al estado y al
-        `partialize` (hoy persiste solo `{token, expiraEn, sucursalId}`).
-     b. `hooks/useVisitaQr.ts`: al `solicitar` exitoso, guardar esos dos campos en el store; su
-        `return` hoy expone `{flujo, ws, registrar, textoMotivo, puedeReintentar, esFinal,
-        solicitar, reintentar, reiniciar}` y **no** el resultado de la solicitud.
-     c. `components/flujo/FlujoVisita.tsx:88`: reemplazar el hardcodeo
-        `mensajeWhatsApp={`Hola, quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}`}`
-        por el del backend con ese fallback. `PasoEspera.tsx` ya esta bien: recibe la prop y arma
-        el `wa.me`, no hay que tocarlo.
-3. **Falta tambien**: la asercion en `check:flujo` de que el mensaje incluye el token (para que
-   no vuelva a quedar hardcodeado) y la verificacion manual en incognito (navegador; no puedo
-   manejarlo desde aca).
-
-Bug del backend original (contexto): `POST /visitas/solicitar` -> 201 con
-`urlValidacion: "<STAFF_APP_URL>/validar?ref=<token>"`.
-
-## Bug del WhatsApp: estado al 47737df
-
-**Arreglado de punta a punta en el flujo normal.** Lo que falta son dos cosas.
-
-Hecho y verificado:
-
-- `ada43db` — `visita-maquina.ts`: `EstadoFlujo` con `mensajeWhatsApp`/`urlValidacion`,
-  `ESTADO_INICIAL` en null, el evento `SOLICITADA` con los dos opcionales, y **`EXPIRAR` los
-  anula explicitamente** (hace spread, no pasa por ESTADO_INICIAL). `check:maquina` 63 OK.
-- `47737df` — `useVisitaQr` los pasa en el `despachar` de SOLICITADA y los expone como accesores
-  directos; `FlujoVisita.tsx:88` usa `visita.mensajeWhatsApp ?? fallback` (era el hardcodeo que
-  causaba el mensaje generico). `typecheck` 0.
-- Antes: `9361d3a` (backend arma el mensaje completo) y `c837463` (`SolicitudOk` ya no los
-  descarta).
-
-**FALTA 1 — la persistencia (`visitaStore.ts`).** Sin esto el mensaje se pierde al recargar la
-pagina y la pantalla muestra el fallback. Son 4 lugares (los anclajes de mi ultimo intento no
-matchearon por indentacion y no escribi nada, el archivo esta intacto):
-
-1. El estado, junto a `token`/`expiraEn`/`sucursalId` (mismo nivel de indentacion que ellos):
-   `mensajeWhatsApp: null,` y `urlValidacion: null,`.
-2. El espejo en `despachar`, que hoy es
-   `return { flujo, token: evento.token, expiraEn: evento.expiraEn, sucursalId: evento.sucursalId }`:
-   agregar `mensajeWhatsApp: evento.mensajeWhatsApp ?? null` y `urlValidacion: evento.urlValidacion ?? null`.
-3. `hidratar`: hoy hace `const { token, expiraEn, sucursalId, flujo } = get()` y re-despacha
-   `{ tipo: 'SOLICITADA', token, expiraEn, sucursalId }`. Hay que sumar los dos campos a las dos
-   partes, o el mensaje no vuelve al flujo al reabrir.
-4. `partialize`: hoy `({ token: s.token, expiraEn: s.expiraEn, sucursalId: s.sucursalId })`; sumar
-   los dos.
-
-**FALTA 2 — las aserciones.**
-
-- `check:maquina`: `SOLICITADA` con los dos campos -> `EXPIRAR` -> quedan en null (es la trampa
-  del spread, la que justifica el caso explicito).
-- `check:flujo`: que el `mensajeWhatsApp` del backend matchee `/Ref:\s*\S+/` y que
-  `urlValidacion` matchee `/validar\?ref=/`.
-
-**Falta tambien** la verificacion manual en incognito (navegador: no puedo manejarlo desde aca).
-
-## BUG del WhatsApp: CERRADO de punta a punta
-
-Cerrado en los cuatro caminos, con asercion que lo cubre:
-
-| Camino | Commit | Verificacion |
-|---|---|---|
-| Backend arma el mensaje completo (negocio + Ref + URL con STAFF_APP_URL) | `9361d3a` | `POST /visitas/solicitar` 201, verificado en vivo |
-| `SolicitudOk` ya no descarta los campos | `c837463` | typecheck |
-| El flujo los guarda (`SOLICITADA`) y los limpia (`EXPIRAR` / `RESET`) | `ada43db` + `a1219f0` | `check:maquina` 67 OK |
-| La PWA los muestra (`FlujoVisita` dejo de hardcodear) | `47737df` | typecheck |
-| Sobreviven al refresh (store: los 6 lugares) | `6ee8940` | typecheck |
-| Aserciones contra el backend real | `bc6de66` | `check:flujo` 29 OK |
-
-Ojo con `a1219f0`: el primer intento (`ada43db`) parcheo el caso EQUIVOCADO porque el `return`
-se repite en varios `case`; lo cazo la asercion del roundtrip. Quedo documentado en
-TROUBLESHOOTING como regla.
-
-## Estado al dia
-
-- Rama `main`, local == remoto, ultimo commit `bc6de66`. Arbol limpio (solo `.github/` sin
-  trackear, pendiente del scope `workflow`).
-- **Los 9 checks en verde**: check:packages 0, check:validators 14 OK, check:maquina 67 OK,
-  check:carrito 79 OK, check:carta 38 OK, check:upsell 42 OK, check:menu 51 OK, test:checklist 0,
-  check:flujo 29 OK. Build backend 0, build PWA 0 (aislado con NEXT_DIST_DIR), typecheck 0.
-  `/api/health` -> db up, redis up.
-- **Proximo paso: etapa 3 del QR #1 (UI del menu)**, con el plan ya aprobado. El punto 1 del plan
-  (`modificadoresApi` + cache + store + hook + `check:menu`) esta HECHO; sigue la UI:
-  1. `CategoriaTabs` + `ItemCartaCard` + `CartaDigital` (sin modal, agregar directo los items sin
-     grupos). Decisiones ya tomadas: categorias = FILTRO (sin tabs si hay 1 categoria o <5 items),
-     foto = `ImagenOptimizada` (ya existe en `@repo/ui`) con placeholder por marca,
-     `aspectRatio` 4/3, `priority` en las 3 primeras.
-  2. `ModalModificadores` con `BottomSheet` (precio en vivo, validacion con `validarModificadores`,
-     notas ≤200).
-  3. `CarritoSheet` + `BadgeCarrito` (safe-area, oculto con el sheet abierto) + `useUpsell`.
-  4. `GatingBanner` + `BottomNav` (3 tabs).
-  5. `/dev/carrito` con simuladores + verificacion SSR.
-- Pendiente de la verificacion manual: incognito -> registrar -> sumar visita -> "Abrir WhatsApp"
-  (el mensaje debe traer nombre + Ref + URL) y abrir el link para ver la pantalla de staff.
-
+`.env`, `.env.secrets` y `apikeybdneon.txt` **no se commitean** (`.env.secrets` esta en `.gitignore`
+linea 9). `.env.example` SI se commitea. Todo push pasa por el check anti-secretos.

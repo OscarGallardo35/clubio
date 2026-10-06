@@ -798,3 +798,9 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   reintentos. Con el guard, la primera llamada rompe en desarrollo y el bug no llega al celular.
   Requiere tocar `packages/api-client` (avisar antes).
 
+## TODO post-etapa 4 (menores)
+
+- **`ErrorCarrito.codigo` es `string` con el union en un comentario.** Pasarlo a union real
+  (`'RATE_LIMIT' | 'VALIDACION' | 'SUCURSAL_CERRADA' | 'CARTA_VENCIDA' | 'RED' | 'DESCONOCIDO'`) para
+  que el compilador valide. Toca consumidores, por eso va aparte.
+

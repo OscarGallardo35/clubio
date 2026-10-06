@@ -1280,3 +1280,12 @@ Detalles que importan:
   `check:maquina`, con Node 24 (los scripts `.mts` corren sin flag). Para que "si falla el
   PR no se mergea" hay que marcarlo como required en la proteccion de la rama.
 
+### No correr `next build` con el `next dev` levantado en el mismo directorio
+
+Comparten `.next`. El build reescribe el manifiesto y el dev server queda con las rutas
+estaticas rotas, con un sintoma enganoso: unas responden 200 y otras 500
+(visto: `/offline` -> 500 mientras `/bar-la-esquina/club` seguia 200).
+
+Para el build de verificacion: parar el dev server antes, o usar otro `distDir`.
+Si el dev server quedo raro, `rm -rf .next` y levantarlo de nuevo.
+

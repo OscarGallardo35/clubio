@@ -8,7 +8,7 @@
 
 import type { CrearPedidoBody } from '@/types/api'
 import type { EstadoCarrito } from './carrito-maquina'
-import { modificadoresParaApi } from './modificadores-seleccion'
+import { modificadoresParaApi } from './modificadores-seleccion.ts'
 
 export type EstadoPedido =
   | 'PENDIENTE'

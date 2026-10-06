@@ -352,6 +352,71 @@ export class VisitasService {
     return { success: true };
   }
 
+  /**
+   * GET /visitas/pendientes (staff): la cola de solicitudes VIVAS.
+   *
+   * Es la fuente de verdad de la lista del staff; el WS `visita:solicitada` solo
+   * adelanta el aviso. Existe porque `mis-aprobaciones` NO es esto: aquel devuelve
+   * lo que el empleado YA aprobo hoy.
+   *
+   * OJO con el schema: el campo es `usado: Boolean` (no hay `usadoEn`).
+   *
+   * Alcance:
+   * - con `accesoMultiSucursal` ve las de todo el negocio;
+   * - si no, SOLO las de su sucursal;
+   * - las legacy (sucursalId null) quedan afuera en los dos casos: no se sabe de
+   *   que sucursal son, asi que no se pueden atender desde ninguna.
+   * Mismo criterio que `exigirAccesoSucursal`, para que la lista no muestre algo
+   * que despues la aprobacion va a rechazar con 403.
+   */
+  async pendientes(negocioId: string, empleadoId: string) {
+    const emp = await this.prisma.empleado.findFirst({
+      where: { id: empleadoId },
+      select: { sucursalId: true, accesoMultiSucursal: true },
+    });
+    if (!emp) throw new ForbiddenException('Empleado no valido');
+
+    const where: Prisma.TokenValidacionWhereInput = {
+      negocioId,
+      usado: false,
+      expiraEn: { gt: new Date() },
+    };
+    where.sucursalId = emp.accesoMultiSucursal
+      ? { not: null }
+      : (emp.sucursalId ?? '__sin_sucursal__');
+
+    const filas = await this.prisma.tokenValidacion.findMany({
+      where,
+      orderBy: { creadoEn: 'asc' },
+      take: 100,
+      select: {
+        token: true,
+        expiraEn: true,
+        creadoEn: true,
+        cliente: { select: { id: true, nombre: true, telefono: true } },
+        sucursal: { select: { id: true, nombre: true, slug: true } },
+      },
+    });
+
+    // `segundosRestantes` se calcula en el backend: si lo calculara cada cliente,
+    // dos dispositivos con relojes distintos mostrarian vencimientos distintos.
+    const ahora = Date.now();
+    return {
+      data: filas.map((f) => ({
+        token: f.token,
+        expiraEn: f.expiraEn,
+        segundosRestantes: Math.max(0, Math.round((f.expiraEn.getTime() - ahora) / 1000)),
+        cliente: {
+          id: f.cliente.id,
+          nombre: f.cliente.nombre,
+          telefonoEnmascarado: enmascararTelefono(f.cliente.telefono),
+        },
+        sucursal: f.sucursal,
+      })),
+      total: filas.length,
+    };
+  }
+
   /** GET /visitas/historial (dueño/encargado). */
   async historial(negocioId: string, filtros: HistorialVisitasDto) {
     const { page, pageSize, skip, take } = getPagination(filtros);

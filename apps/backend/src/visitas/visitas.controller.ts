@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Ip, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { RolEmpleado } from '@prisma/client';
 import { VisitasService } from './visitas.service';
 import type { ClienteCtx, EmpleadoCtx } from './visitas.service';
@@ -93,6 +94,20 @@ export class VisitasController {
   @Get('mis-aprobaciones')
   misAprobaciones(@CurrentEmpleado() emp: EmpleadoAuth) {
     return this.visitas.misAprobaciones(emp.negocioId, emp.id);
+  }
+
+  /**
+   * Cola de solicitudes vivas. La PWA Staff la refresca cada 30s y al reconectar
+   * el WS; no depende del WS para no perder pedidos si el socket se cae.
+   *
+   * 60/min por IP: es un sondeo, no una accion humana.
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Get('pendientes')
+  pendientes(@CurrentEmpleado() emp: EmpleadoAuth) {
+    return this.visitas.pendientes(emp.negocioId, emp.id);
   }
 
   @UseGuards(StaffGuard, TenantGuard, RolesGuard)

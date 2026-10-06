@@ -5,7 +5,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { COOKIE_CLIENTE, leerCookie } from '../common/utils/cookie.util';
+import { COOKIE_CLIENTE, COOKIE_EMPLEADO, leerCookie } from '../common/utils/cookie.util';
 
 /**
  * WebSocket de visitas (namespace /visitas).
@@ -47,6 +47,13 @@ export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect 
     if (typeof q === 'string') return q;
     const h = socket.handshake.headers?.authorization ?? '';
     if (h.startsWith('Bearer ')) return h.slice(7);
+    // Cookies HttpOnly. La de EMPLEADO va primero: es la de la PWA Staff, y sin
+    // esto el socket del staff solo autenticaba con el token en memoria (que se
+    // pierde al recargar), asi que un F5 dejaba de recibir `visita:solicitada`.
+    // Un token de cliente nunca pasa por el canal de staff: WsJwtGuard valida el
+    // claim `tipo`.
+    const deEmpleado = leerCookie(socket.handshake.headers?.cookie, COOKIE_EMPLEADO);
+    if (deEmpleado) return deEmpleado;
     // A1 (#3.0): cookie HttpOnly de la PWA Cliente.
     return leerCookie(socket.handshake.headers?.cookie, COOKIE_CLIENTE);
   }

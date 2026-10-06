@@ -2117,6 +2117,21 @@ empleado **cookie primero**. En el cliente funciona porque sus cookies son HttpO
 manda `Authorization` en los fetches normales; aun asi, el orden distinto es una diferencia real que no
 deberia sorprender a nadie que lea las dos.
 
+### REGLA: el build del backend puede salir exit 0 y dejar un `dist` PARCIAL
+
+Sintoma: `pnpm --filter backend build` dice **exit 0** y al levantar salta
+`Error: Cannot find module '.../apps/backend/dist/main.js'` (MODULE_NOT_FOUND).
+
+Causa real (medida, no teorica): `dist` EXISTE pero le falta `main.js`: el build incremental
+(`tsconfig.tsbuildinfo`) emitio solo los archivos que creyo cambiados sobre un outDir que `nest build`
+borro al empezar (`deleteOutDir: true`). Caso observado: `dist` con 20 archivos (los de lo que se acababa
+de editar) y ni `main.js` ni `app.module.js`.
+
+Chequeo que no es el exit code: `ls apps/backend/dist/main.js`. Si falta, **volver a buildear** (el
+`prebuild` hace `rimraf dist tsconfig.tsbuildinfo` y la segunda corrida emite todo). Se suma a la regla
+del rebuild: matar el proceso, buildear, **verificar que el artefacto exista**, levantar, verificar
+`/api/health`.
+
 ### REGLA: el build del backend puede salir exit 0 y NO emitir `dist` (dist vacio)
 
 Sintoma: `pnpm --filter backend build` dice **exit 0**, y al levantar salta
@@ -2169,3 +2184,18 @@ typecheck avisaba "Parameter 'v' implicitly has an 'any' type" en `onOpenChange=
 del stub son `Record<string, unknown>`) y en runtime el modal **no se abria, sin error**. Donde hacía
 falta un modal se uso `<BottomSheet>` (ese si esta implementado). Antes de usar un componente de
 `@repo/ui`, mirar si sale de `crearStub`.
+
+### REGLA (verbatim): verificar que X de @repo/ui sea real antes de importarlo
+
+"6 stubs exportados en @repo/ui: dialog, alert-dialog, accordion, select, sheet, dropdown-menu (+ los que
+usen _stub). Compilan e importan sin error, fallan en runtime, sin warning. Regla: antes de importar X de
+@repo/ui, verificar que X sea real."
+
+Como verificarlo de un saque:
+
+    grep -l crearStub packages/ui/src/components/*.tsx
+
+Ahi estan TODOS. Hoy: accordion, alert-dialog, avatar, data-table, dialog, dropdown-menu, popover,
+radio-group(*), select, sheet, tooltip. (*) radio-group ya se implemento: si sigue en la lista, la copia
+del log quedo vieja — manda el grep.
+

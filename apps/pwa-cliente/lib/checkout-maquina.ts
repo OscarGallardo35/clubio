@@ -108,3 +108,31 @@ export function armarBody(estado: EstadoCarrito): CrearPedidoBody {
   if (estado.sucursalSlug) body.sucursalSlug = estado.sucursalSlug
   return body
 }
+
+/**
+ * Convierte lo que sea que haya lanzado el cliente de API en `{ status, mensaje }`.
+ *
+ * Dos cosas que no son obvias y por eso viven aca, con su asercion:
+ * - Si la request ni salio (sin red, DNS, servidor caido), NO hay `ApiError`: se sintetiza
+ *   status 0, que es el unico caso que el hook reintenta.
+ * - El `message` del backend puede venir como ARRAY (class-validator devuelve
+ *   `{"message":["property x should not exist"]}`), asi que hay que unirlo en vez de mostrarlo
+ *   crudo (saldria "[object Object]").
+ */
+export function normalizarError(e: unknown): { status: number; mensaje: string } {
+  const conStatus =
+    e && typeof e === 'object' && 'status' in e && typeof (e as { status?: unknown }).status === 'number'
+  if (!conStatus) {
+    return { status: 0, mensaje: e instanceof Error ? e.message : '' }
+  }
+  const status = (e as { status: number }).status
+  const data = (e as { data?: unknown }).data
+  let mensaje = ''
+  if (data && typeof data === 'object' && 'message' in data) {
+    const m = (data as { message?: unknown }).message
+    if (Array.isArray(m)) mensaje = m.filter((x): x is string => typeof x === 'string').join(' ')
+    else if (typeof m === 'string') mensaje = m
+  }
+  if (!mensaje && e instanceof Error) mensaje = e.message
+  return { status, mensaje }
+}

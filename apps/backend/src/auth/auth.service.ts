@@ -490,4 +490,44 @@ export class AuthService {
     await this.prisma.sesionDueno.deleteMany({ where: { empleadoId } });
     return { ok: true };
   }
+
+  /**
+   * Sesion de STAFF (PWA Staff): quien soy, en que negocio y en que sucursal.
+   *
+   * Simetrico a `meCliente`. El guard ya revalido el token contra la DB y dejo
+   * `req.user` con tipo/rol/sucursal, asi que aca solo se completa lo que el
+   * token no trae (el nombre y el slug de la sucursal).
+   *
+   * `tipo` sale en MAYUSCULAS ('DUENO' | 'EMPLEADO') porque es el vocabulario de
+   * las PWAs; adentro del backend el claim viaja en minusculas.
+   */
+  async meEmpleado(user: {
+    id: string;
+    nombre: string;
+    rol: string;
+    negocioId: string;
+    negocioSlug: string;
+    sucursalId: string | null;
+    accesoMultiSucursal: boolean;
+    tipo: string;
+  }) {
+    const sucursal = user.sucursalId
+      ? await this.prisma.sucursal.findUnique({
+          where: { id: user.sucursalId },
+          select: { id: true, nombre: true, slug: true, esPrincipal: true, direccion: true, telefono: true },
+        })
+      : null;
+
+    return {
+      tipo: user.tipo === 'dueno' ? 'DUENO' : 'EMPLEADO',
+      empleado: {
+        id: user.id,
+        nombre: user.nombre,
+        rol: user.rol,
+        accesoMultiSucursal: user.accesoMultiSucursal,
+        sucursal,
+      },
+      sucursal,
+    };
+  }
 }

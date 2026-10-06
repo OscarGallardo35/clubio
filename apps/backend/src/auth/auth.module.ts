@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthEmpleadoController } from './auth-empleado.controller';
 import { AuthDuenoController } from './auth-dueno.controller';
 import { AuthClienteController } from './auth-cliente.controller';
+import { NegociosModule } from '../negocios/negocios.module';
 import { JwtEmpleadoStrategy } from './strategies/jwt-empleado.strategy';
 import { JwtDuenoStrategy } from './strategies/jwt-dueno.strategy';
 import { JwtClienteStrategy } from './strategies/jwt-cliente.strategy';
@@ -16,7 +17,7 @@ import { JwtClienteStrategy } from './strategies/jwt-cliente.strategy';
  * por eso JwtModule se registra vacio.
  */
 @Module({
-  imports: [PassportModule, JwtModule.register({})],
+  imports: [PassportModule, JwtModule.register({}), NegociosModule],
   controllers: [AuthEmpleadoController, AuthDuenoController, AuthClienteController],
   providers: [AuthService, JwtEmpleadoStrategy, JwtDuenoStrategy, JwtClienteStrategy],
   exports: [AuthService],

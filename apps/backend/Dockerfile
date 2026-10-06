@@ -6,6 +6,15 @@ WORKDIR /app
 # ============ Dependencies ============
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# El .npmrc de la raiz (si existe) tiene que viajar junto al lockfile: el install de la imagen
+# tiene que leer las mismas settings que el install local. Y ademas se le agrega el linker
+# hoisted: con el linker por defecto (symlinks) `apps/backend/node_modules` queda lleno de
+# links relativos al store de la raiz (`node_modules/.pnpm`), que el stage runner NO copia ->
+# el contenedor arrancaba con "Cannot find module '@nestjs/core'".
+COPY .npmrc* ./
+# Ojo: el .npmrc de la raiz trae `node-linker=isolated` explicito. No alcanza con appendear
+# (depende de cual gana): reemplazo la linea y, si no existiera, la agrego.
+RUN sed -i 's/^node-linker=.*/node-linker=hoisted/' .npmrc && grep -q '^node-linker=hoisted' .npmrc || echo 'node-linker=hoisted' >> .npmrc
 COPY apps/backend/package.json apps/backend/
 COPY packages/config/package.json packages/config/
 COPY packages/types/package.json packages/types/

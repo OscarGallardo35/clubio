@@ -68,8 +68,10 @@ export const upsellApi = {
     sucursalId?: string
     sucursalSlug?: string
   }) =>
+    // OJO: la ruta SIEMPRE sale de `endpoints` (que incluye el prefijo /api). Escribirla a mano
+    // es como se colo el bug: el POST iba a /upsell/calcular (sin /api) -> 404 en loop.
     api.post<{ sugerencias: SugerenciaUpsell[]; motivo?: string | null; upsellActivo?: boolean }>(
-      '/upsell/calcular',
+      endpoints.upsell.calcular,
       body,
     ),
 }

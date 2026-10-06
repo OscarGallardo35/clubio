@@ -127,3 +127,13 @@ export interface VisitaSolicitadaWs {
   expiraEn: string
   emitidoEn: string
 }
+
+/** Item de `GET /visitas/pendientes` (la cola de solicitudes vivas). */
+export interface VisitaPendiente {
+  token: string
+  expiraEn: string
+  /** Calculado en el BACKEND, para que dos dispositivos no muestren vencimientos distintos. */
+  segundosRestantes: number
+  cliente: { id: string; nombre: string; telefonoEnmascarado: string }
+  sucursal: { id: string; nombre: string; slug: string } | null
+}

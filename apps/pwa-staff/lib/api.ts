@@ -5,6 +5,7 @@ import type {
   RespuestaAprobacion,
   RespuestaRechazo,
   VisitaAprobada,
+  VisitaPendiente,
   VisitaValidable,
 } from '@/types/api';
 
@@ -48,6 +49,10 @@ export const visitasApi = {
    */
   misAprobaciones: () =>
     api.get<{ data: VisitaAprobada[]; total: number; desde: string }>(endpoints.visitas.misAprobaciones),
+
+  /** La cola de solicitudes vivas: la fuente de verdad de la lista del staff. */
+  pendientes: () =>
+    api.get<{ data: VisitaPendiente[]; total: number }>(endpoints.visitas.pendientes),
 
   historial: (filtros: { page?: string; pageSize?: string } = {}) => {
     const qs = new URLSearchParams(

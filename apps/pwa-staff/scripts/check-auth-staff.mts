@@ -160,14 +160,21 @@ chk('logout manda el clear de empleado_token', /empleado_token=;/.test(out.setCo
 //     Es la unica forma de saber que el flujo entero sigue en pie (y de que el
 //     link del WhatsApp, /validar?ref=, tenga una pantalla detras).
 // ---------------------------------------------------------------------------
-const sufijo = String(Date.now()).slice(-6);
+// El telefono de cada cliente de prueba tiene que ser UNICO: si se repite, el
+// backend devuelve el cliente que ya existe, y si ese cliente ya tiene una visita
+// APROBADA hoy, la regla anti-fraude le bloquea la solicitud nueva (eso es
+// comportamiento correcto del producto, no un fallo del harness). Con
+// `Math.random()` habia colisiones reales entre c1 y c3.
+let contadorClientes = 0;
 
 async function clienteNuevo(nombre: string) {
+  contadorClientes += 1;
+  const telefono = `+5493585${String(contadorClientes).padStart(2, '0')}${String(Date.now()).slice(-5)}`;
   const reg = await call('/auth/cliente/registrar', {
     method: 'POST',
-    body: JSON.stringify({ negocioSlug: SLUG, nombre, telefono: `+5493585${sufijo}${Math.floor(Math.random() * 10)}` }),
+    body: JSON.stringify({ negocioSlug: SLUG, nombre, telefono }),
   });
-  return { cookie: reg.setCookie.split(';')[0], status: reg.status };
+  return { cookie: reg.setCookie ? reg.setCookie.split(';')[0] : '', status: reg.status, telefono };
 }
 
 const c1 = await clienteNuevo('E2E Loop Aprobacion');
@@ -215,6 +222,89 @@ chk('un token inexistente -> 404 (no 500)', inv.status === 404, `status ${inv.st
 // `mis-aprobaciones` NO es la cola de pendientes: devuelve lo que YO aprobe hoy.
 const ma = await call('/visitas/mis-aprobaciones', { cookie: cookieEmpleado });
 chk('mis-aprobaciones devuelve {data,total,desde} y NO una cola de pendientes', ma.status === 200 && Array.isArray(ma.body?.data) && typeof ma.body?.total === 'number' && ma.body?.desde !== undefined);
+
+
+// ---------------------------------------------------------------------------
+// 14) GET /visitas/pendientes: la cola real del staff.
+//     Es la unica forma de saber que la lista no depende del WS ni de un F5.
+// ---------------------------------------------------------------------------
+const p0 = await call('/visitas/pendientes', { cookie: cookieEmpleado });
+chk('GET /visitas/pendientes -> 200 con {data,total}', p0.status === 200 && Array.isArray(p0.body?.data) && typeof p0.body?.total === 'number', `status ${p0.status}`);
+
+const c3 = await clienteNuevo('E2E Pendientes');
+const sol3 = await call('/visitas/solicitar', { method: 'POST', cookie: c3.cookie, body: JSON.stringify({ sucursalSlug: 'centro' }) });
+const token3: string | undefined = sol3.body?.token;
+chk('el cliente pide una visita nueva', sol3.status === 201 && typeof token3 === 'string', `status ${sol3.status} body ${JSON.stringify(sol3.body).slice(0, 90)}`);
+
+if (token3) {
+  const p1 = await call('/visitas/pendientes', { cookie: cookieEmpleado });
+  const item = (p1.body?.data ?? []).find((x: { token: string }) => x.token === token3);
+  chk('la solicitud APARECE en /pendientes', Boolean(item), `total ${p1.body?.total}`);
+  if (item) {
+    chk('el item trae el cliente con el telefono ENMASCARADO', Boolean(item.cliente?.nombre) && String(item.cliente?.telefonoEnmascarado ?? '').includes('*'));
+    chk('el item trae la sucursal y el nombre', item.sucursal?.slug === 'centro' && Boolean(item.sucursal?.nombre));
+    chk('el item trae segundosRestantes calculado en el backend (<= 300)', typeof item.segundosRestantes === 'number' && item.segundosRestantes > 0 && item.segundosRestantes <= 300, String(item.segundosRestantes));
+  }
+
+  await call(`/visitas/aprobar/${token3}`, { method: 'POST', cookie: cookieEmpleado, body: JSON.stringify({ origen: 'check_auth_staff' }) });
+  const p2 = await call('/visitas/pendientes', { cookie: cookieEmpleado });
+  chk('tras aprobar, la solicitud DESAPARECE de /pendientes', !(p2.body?.data ?? []).some((x: { token: string }) => x.token === token3));
+}
+
+// Alcance por sucursal: Pedro (MESERO, PIN 3333) es de otra sucursal y NO tiene
+// accesoMultiSucursal, asi que no debe ver las solicitudes de esta.
+const loginPedro = await call('/auth/empleado/login', { method: 'POST', body: JSON.stringify({ negocioSlug: SLUG, pin: '3333' }) });
+const cookiePedro = loginPedro.setCookie ? loginPedro.setCookie.split(';')[0] : '';
+if (cookiePedro) {
+  const mePedro = await call('/auth/empleado/me', { cookie: cookiePedro });
+  const suyo = mePedro.body?.sucursal?.slug;
+  const multi = mePedro.body?.empleado?.accesoMultiSucursal;
+  if (!multi && suyo && suyo !== 'centro') {
+    const c4 = await clienteNuevo('E2E Alcance');
+    const sol4 = await call('/visitas/solicitar', { method: 'POST', cookie: c4.cookie, body: JSON.stringify({ sucursalSlug: 'centro' }) });
+    const tok4: string | undefined = sol4.body?.token;
+    const pPedro = await call('/visitas/pendientes', { cookie: cookiePedro });
+    chk(
+      'un empleado de OTRA sucursal no ve las solicitudes de centro',
+      !(pPedro.body?.data ?? []).some((x: { token: string }) => x.token === tok4),
+      `pedro=${suyo} multi=${multi} total=${pPedro.body?.total}`,
+    );
+    if (tok4) await call(`/visitas/rechazar/${tok4}`, { method: 'POST', cookie: cookieEmpleado, body: JSON.stringify({ motivo: 'limpieza del harness' }) });
+  } else {
+    console.log(`  (nota: el alcance por sucursal no se pudo probar: Pedro es de ${suyo} con multi=${multi})`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 15) El socket del staff se autentica SOLO con la cookie (sin auth.token).
+//     Es lo que hace que un F5 en /visitas siga recibiendo `visita:solicitada`.
+// ---------------------------------------------------------------------------
+const { io } = await import('socket.io-client');
+const WS_URL = process.env.WS_URL ?? 'http://localhost:3000';
+const ws = await new Promise<{ ok: boolean; detalle: string }>((resolve) => {
+  const sock = io(`${WS_URL}/visitas`, {
+    transports: ['websocket'],
+    withCredentials: true,
+    reconnection: false,
+    extraHeaders: { cookie: cookieEmpleado },
+  });
+  const listo = setTimeout(() => {
+    sock.disconnect();
+    resolve({ ok: false, detalle: 'sin respuesta en 10s' });
+  }, 10_000);
+  sock.on('conectado', (d: { tipo?: string; salas?: string[] }) => {
+    clearTimeout(listo);
+    sock.disconnect();
+    resolve({ ok: true, detalle: `${d?.tipo} en ${(d?.salas ?? []).length} salas` });
+  });
+  sock.on('connect_error', (e: Error) => {
+    clearTimeout(listo);
+    sock.disconnect();
+    resolve({ ok: false, detalle: e.message });
+  });
+});
+chk('el socket del staff conecta con la COOKIE (sin token en memoria)', ws.ok, ws.detalle);
+console.log(`  (socket: ${ws.detalle})`);
 
 console.log('  (nota: el caso "token vencido" no se cubre: requiere firmar con JWT_EMPLEADO_SECRET real)');
 

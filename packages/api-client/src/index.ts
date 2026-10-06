@@ -212,6 +212,7 @@ export const endpoints = {
     rechazar: (token: string) => `/api/visitas/rechazar/${token}`,
     miTarjeta: '/api/visitas/mi-tarjeta',
     miHistorial: '/api/visitas/mi-historial',
+    pendientes: '/api/visitas/pendientes',
     misAprobaciones: '/api/visitas/mis-aprobaciones',
     historial: '/api/visitas/historial',
   },

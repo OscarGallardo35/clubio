@@ -1522,3 +1522,33 @@ Detalle util: `check-carta.mts` **no toca el backend** (es el check del cache, "
 Si hace falta la URL real de la carta, esta en `lib/carta-cache.ts` y en `types/api.ts`, no en el
 check.
 
+### REGLA: los tipos defensivos del backend se normalizan en UN solo lugar
+
+Patron general (vale mas que cualquiera de los casos sueltos): **los tipos defensivos del backend**
+(campos opcionales que "siempre vienen", `Decimal` serializado como string) **chocan con los tipos
+estrictos de los consumidores**. El lugar para resolverlo es **UNO: la frontera** (el hook, el
+cache, o un tipo permisivo como `GrupoValidable`). Nunca en cada consumidor: se olvida uno y el bug
+vuelve, o peor, el typecheck lo caza recien cuando ya esta escrito en tres lugares.
+
+Cuando aparece un tipo defensivo nuevo del backend, la pregunta es siempre la misma:
+
+> "Cual es el punto unico donde normalizo esto?"
+
+Casos ya resueltos con este criterio:
+
+- **`precioExtra` (Decimal -> string)**: se normaliza con `Number()` al entrar al cache
+  (`modificadores-cache.ts`). Si se normalizara en el modal o en el carrito, quedarian dos copias
+  de la verdad y una se olvidaria.
+- **`maxSelecciones`/`minSelecciones` opcionales**: el backend los declara opcionales aunque los
+  manda siempre. Se resuelve con el tipo `GrupoValidable` y los defaults en el validador
+  (`min = minSelecciones ?? (obligatorio ? 1 : 0)`, `max = maxSelecciones ?? Infinity`). Aflojar el
+  parametro sirvio ademas para que `GrupoModificador` (el estricto del carrito) siga siendo
+  asignable: nadie tuvo que cambiar una linea.
+- **`mensajeWhatsApp`/`urlValidacion`**: viajan dentro del evento `SOLICITADA` del reducer, no como
+  estado suelto del store. Asi el reset (EXPIRAR/RESET) sale gratis y no hay que acordarse de
+  limpiarlos en cada camino.
+
+Contraejemplo (lo que NO se hace): normalizar el `precioExtra` dentro del modal "porque ahi se
+usa", o rellenar los min/max al entrar a cada consumidor. Duplica el criterio y garantiza que la
+proxima ruta lo olvide.
+

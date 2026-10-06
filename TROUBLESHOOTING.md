@@ -1343,3 +1343,21 @@ otro rol** (`admin_role` en vez de `neondb_owner`): credenciales viejas en el `.
 arregla actualizando `DATABASE_URL` (host con `-pooler`) y `DIRECT_URL` (el mismo host sin
 `-pooler`) y reiniciando el backend.
 
+### En una maquina de estados, el payload no puede llamarse como el discriminante
+
+```ts
+// MAL: `evento.tipo` pasa a valer 'DELIVERY', ningun case coincide y cae al default.
+| { tipo: 'SET_TIPO'; tipo: TipoPedido }
+// BIEN:
+| { tipo: 'SET_TIPO'; nuevoTipo: TipoPedido }
+```
+
+Sintoma: la transicion "no hace nada" y no hay error de runtime. Lo cazo `check:carrito`
+(el switch caia al `default` y el tipo quedaba en null, lo que a su vez frenaba el envio).
+
+### Los opcionales que reciben un valor posiblemente `undefined` lo declaran
+
+El repo compila con `exactOptionalPropertyTypes`. Escribir `imagenUrl?: string` y asignarle
+un `string | undefined` es error TS2375/TS2322. Va `imagenUrl?: string | undefined`
+(es la convencion de `@repo/ui`; vale para todo el repo, no solo para las props de React).
+

@@ -329,6 +329,42 @@ console.log('\n== notas del pedido ==')
   igual('sin notas el checkout sigue valido', Object.keys(validarCheckout(vacioConItems)), [])
   chk('y con notas tambien (no es obligatorio)', Object.keys(validarCheckout({ ...vacioConItems, notasPedido: '' })).length === 0)
 }
+
+// --- PEDIDO_OK: los 4 campos del pedido en curso ------------------------------
+console.log('\n== PEDIDO_OK ==')
+{
+  const base = { ...estadoInicial('bar-la-esquina', 's1', 'centro'),
+    items: [{ clave: 'a', itemId: 'i', nombre: 'H', precioBase: 100, cantidad: 2, notas: '', modificadores: [] }],
+    fase: 'checkout' as const, tipo: 'TAKEAWAY' as const, modoPago: 'EFECTIVO' as const,
+    cliente: { nombre: 'Ana', telefono: '1155512345' } }
+  const ok = reducerCarrito(base, { tipo: 'PEDIDO_OK', linkToken: 'tok', numero: 7,
+    urlCorta: 'https://wa.me/5491155512345', mensajeWhatsApp: 'Hola, mi pedido' })
+  igual('vacia el carrito (no hace falta un LIMPIAR despues)', ok.items.length, 0)
+  igual('conserva cliente, tipo y modoPago', [ok.cliente.nombre, ok.tipo, ok.modoPago], ['Ana', 'TAKEAWAY', 'EFECTIVO'])
+  igual('guarda los 4 campos del pedido',
+    [ok.pedido?.linkToken, ok.pedido?.numero, ok.pedido?.urlCorta, ok.pedido?.mensajeWhatsApp],
+    ['tok', 7, 'https://wa.me/5491155512345', 'Hola, mi pedido'])
+  const persistido = recortarParaPersistir(ok)
+  igual('los 4 se persisten',
+    [persistido.pedido?.linkToken, persistido.pedido?.numero, persistido.pedido?.urlCorta, persistido.pedido?.mensajeWhatsApp],
+    ['tok', 7, 'https://wa.me/5491155512345', 'Hola, mi pedido'])
+  // La vuelta necesita items: deserializarCarrito devuelve null si el carrito esta vacio.
+  const crudo = JSON.stringify({ ...persistido, items: base.items })
+  const vuelta = deserializarCarrito(crudo, 'bar-la-esquina')
+  igual('y vuelven del localStorage', [vuelta?.pedido?.urlCorta, vuelta?.pedido?.mensajeWhatsApp],
+    ['https://wa.me/5491155512345', 'Hola, mi pedido'])
+  // Un pedidoViejo sin los campos nuevos no rompe: quedan opcionales.
+  const viejo = deserializarCarrito(JSON.stringify({ ...persistido, items: base.items,
+    pedido: { linkToken: 'tok-viejo' } }), 'x')
+  igual('un pedido viejo sin urlCorta no rompe', viejo?.pedido?.urlCorta, undefined)
+  chk('y conserva su linkToken', viejo?.pedido?.linkToken === 'tok-viejo')
+  // PEDIDO_ERROR vuelve a checkout y clasifica.
+  const err = reducerCarrito(base, { tipo: 'PEDIDO_ERROR', status: 429, mensaje: 'Demasiados pedidos' })
+  igual('PEDIDO_ERROR vuelve a checkout con el error clasificado', [err.fase, err.error?.codigo], ['checkout', 'RATE_LIMIT'])
+  const err410 = reducerCarrito(base, { tipo: 'PEDIDO_ERROR', status: 410, mensaje: 'La carta cambio' })
+  igual('y el 410 es CARTA_VENCIDA', err410.error?.codigo, 'CARTA_VENCIDA')
+  igual('REINTENTAR limpia el error', reducerCarrito(err, { tipo: 'REINTENTAR' }).error, null)
+}
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) {
   console.log(fallas.map((f) => `  - ${f}`).join('\n'))

@@ -26,6 +26,7 @@ import { normalizarError, timeline } from '@/lib/checkout-maquina'
 import type { EstadoPedido } from '@/lib/checkout-maquina'
 import { crearSocketPedidos } from '@/lib/socket'
 import { useClienteStore } from '@/stores/clienteStore'
+import { useCarritoStore } from '@/stores/carritoStore'
 import { useBranding } from '@/hooks/useBranding'
 import type { PedidoPublico } from '@/types/api'
 
@@ -38,8 +39,6 @@ type Fallo = 'no-encontrado' | 'vencido' | 'otro'
 export interface SeguimientoProps {
   linkToken: string
   slugNegocio: string
-  /** Solo disponible en la pantalla de confirmacion, recien hecho el pedido. */
-  whatsapp?: { url: string; mensaje: string } | undefined
 }
 
 /** El 410 aca es "link vencido", no "carta vencida". */
@@ -49,8 +48,9 @@ function clasificarFallo(status: number): Fallo {
   return 'otro'
 }
 
-export function Seguimiento({ linkToken, slugNegocio, whatsapp }: SeguimientoProps) {
+export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   const token = useClienteStore((s) => s.token)
+  const pedidoGuardado = useCarritoStore((s) => s.pedido)
   const { negocio, resenasDisponibles } = useBranding()
 
   const [pedido, setPedido] = React.useState<PedidoPublico | null>(null)
@@ -151,6 +151,14 @@ export function Seguimiento({ linkToken, slugNegocio, whatsapp }: SeguimientoPro
   if (fallo === 'otro' || !pedido) {
     return <Aviso titulo="No pudimos mostrar tu pedido" detalle="Proba de nuevo en un rato." slugNegocio={slugNegocio} />
   }
+
+  // El WhatsApp sale del store, y SOLO si el pedido guardado es el de este linkToken (si no,
+  // abrir otro link mostraria el mensaje de un pedido ajeno). Un pedido viejo no lo tiene: ahi no
+  // se muestra el boton.
+  const whatsapp =
+    pedidoGuardado && pedidoGuardado.linkToken === linkToken && pedidoGuardado.urlCorta && pedidoGuardado.mensajeWhatsApp
+      ? { url: pedidoGuardado.urlCorta, mensaje: pedidoGuardado.mensajeWhatsApp }
+      : undefined
 
   const pasos = timeline(pedido.estado as EstadoPedido)
   const cancelado = pedido.estado === 'CANCELADO' || pedido.estado === 'RECHAZADO'

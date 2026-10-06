@@ -62,7 +62,14 @@ export function useCheckout(): UsoCheckout {
     try {
       const r = await crearConReintento(armarBody(estado))
       // SOLO PEDIDO_OK. Ver el comentario del encabezado.
-      despachar({ tipo: 'PEDIDO_OK', linkToken: r.linkToken })
+      despachar({
+        tipo: 'PEDIDO_OK',
+        linkToken: r.linkToken,
+        // Vienen de la respuesta del POST y no del GET publico: se guardan para que el boton de
+        // WhatsApp siga estando despues de recargar.
+        urlCorta: r.urlCorta,
+        mensajeWhatsApp: r.mensajeWhatsApp,
+      })
     } catch (e) {
       const { status, mensaje } = normalizarError(e)
       despachar({ tipo: 'PEDIDO_ERROR', status, mensaje })

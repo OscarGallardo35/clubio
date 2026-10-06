@@ -113,7 +113,7 @@ export interface EstadoCarrito {
   upsell: SugerenciaUpsell | null
   error: ErrorCarrito | null
   /** Respuesta de POST /pedidos (el linkToken es con el que se sigue el pedido). */
-  pedido: { linkToken: string; numero?: number | undefined } | null
+  pedido: PedidoEnCurso | null
   /** Aviso no bloqueante (ej: se reinicio el carrito al cambiar de sucursal). */
   aviso: string | null
   /** Notas generales del pedido (una sola, no por item). Persiste. */
@@ -143,7 +143,7 @@ export type EventoCarrito =
   | { tipo: 'UPSELL_OK'; sugerencia: SugerenciaUpsell | null }
   | { tipo: 'UPSELL_ERROR' }
   | { tipo: 'ENVIAR' }
-  | { tipo: 'PEDIDO_OK'; linkToken: string; numero?: number }
+  | { tipo: 'PEDIDO_OK'; linkToken: string; numero?: number; urlCorta?: string; mensajeWhatsApp?: string }
   | { tipo: 'PEDIDO_ERROR'; status: number; mensaje: string }
   | { tipo: 'REINTENTAR' }
   | { tipo: 'DESCARTAR_AVISO' }
@@ -433,7 +433,12 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
         cliente: estado.cliente,
         tipo: estado.tipo,
         modoPago: estado.modoPago,
-        pedido: { linkToken: evento.linkToken, numero: evento.numero },
+        pedido: {
+          linkToken: evento.linkToken,
+          ...(evento.numero !== undefined ? { numero: evento.numero } : {}),
+          ...(evento.urlCorta ? { urlCorta: evento.urlCorta } : {}),
+          ...(evento.mensajeWhatsApp ? { mensajeWhatsApp: evento.mensajeWhatsApp } : {}),
+        },
       }
 
     case 'PEDIDO_ERROR':
@@ -466,6 +471,18 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
  * Lo que se guarda en localStorage. Deliberadamente NO entra todo el estado:
  * `error`, `upsell` y `upsellCargando` son de la sesion, no del carrito.
  */
+/**
+ * Lo que se conserva del ultimo pedido. `urlCorta` y `mensajeWhatsApp` vienen de la RESPUESTA del
+ * POST (no del GET publico, que no los tiene), asi que si no se guardan aca el boton de WhatsApp
+ * desaparece al recargar. Son opcionales: un pedido viejo guardado antes de esto no los tiene.
+ */
+export interface PedidoEnCurso {
+  linkToken: string
+  numero?: number | undefined
+  urlCorta?: string | undefined
+  mensajeWhatsApp?: string | undefined
+}
+
 export interface CarritoPersistido {
   negocioSlug: string
   sucursalId: string | null
@@ -477,7 +494,7 @@ export interface CarritoPersistido {
   modoPago: ModoPago | null
   cliente: DatosCliente
   /** Con el linkToken se puede seguir el pedido despues de reabrir. */
-  pedido: { linkToken: string; numero?: number | undefined } | null
+  pedido: PedidoEnCurso | null
   /** Notas generales del pedido (se persisten con el resto del formulario). */
   notasPedido?: string | undefined
 }
@@ -526,7 +543,15 @@ export function deserializarCarrito(crudo: unknown, negocioSlug: string): Carrit
       ...(d.cliente?.direccion ? { direccion: d.cliente.direccion } : {}),
       ...(d.cliente?.mesa ? { mesa: d.cliente.mesa } : {}),
     },
-    pedido: d.pedido && typeof d.pedido.linkToken === 'string' ? { linkToken: d.pedido.linkToken, ...(d.pedido.numero ? { numero: d.pedido.numero } : {}) } : null,
+    pedido:
+      d.pedido && typeof d.pedido.linkToken === 'string'
+        ? {
+            linkToken: d.pedido.linkToken,
+            ...(d.pedido.numero ? { numero: d.pedido.numero } : {}),
+            ...(typeof d.pedido.urlCorta === 'string' ? { urlCorta: d.pedido.urlCorta } : {}),
+            ...(typeof d.pedido.mensajeWhatsApp === 'string' ? { mensajeWhatsApp: d.pedido.mensajeWhatsApp } : {}),
+          }
+        : null,
     notasPedido: typeof d.notasPedido === 'string' ? d.notasPedido.slice(0, 500) : '',
   }
 }

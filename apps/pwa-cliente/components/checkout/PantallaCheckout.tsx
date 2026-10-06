@@ -28,6 +28,11 @@ export interface PantallaCheckoutProps {
   onEnviar?: ((body: CrearPedidoBody) => void) | undefined
   /** Para el redirect cuando el carrito esta vacio. */
   slugNegocio: string
+  /**
+   * Solo para CARTA_VENCIDA (410): refetchea la carta, limpia el carrito y vuelve al menu. Vive en
+   * la pagina porque necesita el cache de la carta, que esta en useCarta.
+   */
+  onRecargarCarta?: (() => void) | undefined
   enviando?: boolean | undefined
 }
 
@@ -46,7 +51,7 @@ const PAGOS: { valor: ModoPago; etiqueta: string }[] = [
 /** Error de un campo, o undefined. */
 type Fallas = ReturnType<typeof validarCheckout>
 
-export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false }: PantallaCheckoutProps) {
+export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRecargarCarta }: PantallaCheckoutProps) {
   const router = useRouter()
   const { negocio } = useBranding()
   const carrito = useCarritoStore()
@@ -280,15 +285,28 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false }: Pa
       {carrito.error ? (
         <div role="alert" className="flex flex-col gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
           <p>{carrito.error.mensaje}</p>
-          {/* REINTENTAR solo limpia el error: sirve cuando la causa fue transitoria. */}
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-12 border-destructive/40 text-destructive"
-            onClick={() => despachar({ tipo: 'REINTENTAR' })}
-          >
-            Reintentar
-          </Button>
+          {carrito.error.codigo === 'CARTA_VENCIDA' ? (
+            // El 410 no se arregla reintentando: la carta cambio y hay que traer la nueva.
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-12 border-destructive/40 text-destructive"
+              onClick={() => onRecargarCarta?.()}
+              disabled={!onRecargarCarta}
+            >
+              Recargar carta
+            </Button>
+          ) : (
+            /* REINTENTAR solo limpia el error: sirve cuando la causa fue transitoria (red). */
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-12 border-destructive/40 text-destructive"
+              onClick={() => despachar({ tipo: 'REINTENTAR' })}
+            >
+              Reintentar
+            </Button>
+          )}
         </div>
       ) : null}
 

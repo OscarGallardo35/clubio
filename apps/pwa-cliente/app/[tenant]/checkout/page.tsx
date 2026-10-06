@@ -11,7 +11,10 @@ import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { PantallaCheckout } from '@/components/checkout/PantallaCheckout'
 import { useCheckout } from '@/hooks/useCheckout'
+import { toast } from '@repo/ui'
 import { useCarritoStore } from '@/stores/carritoStore'
+import { useCarta } from '@/hooks/useCarta'
+import { useSucursalActiva } from '@/hooks/useSucursalActiva'
 
 export default function CheckoutPage() {
   const params = useParams<{ tenant?: string }>()
@@ -19,6 +22,17 @@ export default function CheckoutPage() {
   const slugNegocio = params?.tenant ?? ''
   const { enviar, enviando } = useCheckout()
   const linkToken = useCarritoStore((s) => s.pedido?.linkToken ?? null)
+  const despachar = useCarritoStore((s) => s.despachar)
+  const { slugParaApi } = useSucursalActiva()
+  // `useCarta` aca es solo para tener el refetch del cache: la carta en si la muestra /menu.
+  const { refetch } = useCarta(slugNegocio, slugParaApi)
+
+  const recargarCarta = React.useCallback(() => {
+    refetch()                                    // invalida cache y trae la carta nueva
+    despachar({ tipo: 'LIMPIAR' })               // los precios pueden haber cambiado
+    toast('La carta cambió. Revisá los precios y armá tu pedido de nuevo.')
+    router.push(`/${slugNegocio}/menu`)
+  }, [refetch, despachar, router, slugNegocio])
 
   // PEDIDO_OK dejó el linkToken en el store: se navega al seguimiento. El checkout NO despacha
   // LIMPIAR (PEDIDO_OK ya vació el carrito y conserva el linkToken).
@@ -29,6 +43,11 @@ export default function CheckoutPage() {
   return (
     // El error y el `enviando` los lee el propio componente del store; aca solo se le da el
     // disparador, que es el hook.
-    <PantallaCheckout slugNegocio={slugNegocio} enviando={enviando} onEnviar={() => void enviar()} />
+    <PantallaCheckout
+      slugNegocio={slugNegocio}
+      enviando={enviando}
+      onEnviar={() => void enviar()}
+      onRecargarCarta={recargarCarta}
+    />
   )
 }

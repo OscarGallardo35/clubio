@@ -1552,3 +1552,28 @@ Contraejemplo (lo que NO se hace): normalizar el `precioExtra` dentro del modal 
 usa", o rellenar los min/max al entrar a cada consumidor. Duplica el criterio y garantiza que la
 proxima ruta lo olvide.
 
+### REGLA: los literales que vienen de un mensaje se verifican en el codigo, no se pegan directo
+
+Cuando se copia un literal (un string de union, un slug, la key de un enum, un nombre de campo)
+desde un mensaje, un ticket o una captura, **NO pegarlo directo: verificar el valor real en el
+codigo primero**. El que escribe el pedido esta recordando de memoria.
+
+Lo peligroso es la asimetria de la red de seguridad:
+
+- Si el literal es un **miembro de un union** (o un enum con tipo), el typecheck lo caza: da
+  "no hay solapamiento entre los tipos" y no llega a produccion.
+- Si el literal es una **key de un objeto**, un **string suelto** o el **valor de comparacion**
+  de un dato que viene de la API, el typecheck **no dice nada**: compila, y el bug es silencioso
+  (la condicion nunca es verdadera, el mapa nunca encuentra la clave).
+
+Casos reales de este proyecto:
+
+- `'esperarHoras'` (como venia en el pedido) vs **`'esperaHoras'`** (el valor real del union
+  `MotivoNoSumada`). Lo cazo el typecheck, por ser union.
+- `'Recurrente'` (como venia en el pedido) vs **`'REGULAR'`** (el valor real del enum en
+  `@repo/validators`), en el fix de validadores. Este caso NO tenia red: se habria compilado igual.
+
+Regla practica: antes de escribir un literal, hacer un `grep` del valor aproximado y copiar el
+string **desde el codigo**, no desde el mensaje. Si hay que elegir entre "lo que dice el pedido" y
+"lo que dice el codigo", gana el codigo, y se avisa que el pedido decia otra cosa.
+

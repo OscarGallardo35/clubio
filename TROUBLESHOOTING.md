@@ -1774,3 +1774,26 @@ Regla practica: en las rutas publicas, `select` explicito (lista blanca) y nunca
 Si la respuesta se arma con spread, cualquier columna futura se filtra sola, y el bug no lo caza
 ningun test: la respuesta sigue siendo valida, solo que con mas campos.
 
+### REGLA (actualiza la del exit code): un build en verde no prueba que el artefacto exista
+
+El **exit code como fuente de verdad sirve para detectar fallos del comando, pero NO prueba que el
+output exista**. Cuando algo depende de un artefacto (`dist/main.js`, `.next/standalone`, un binario
+compilado), hay que verificar **el artefacto**, no solo el exit code.
+
+Caso real: `pnpm --filter backend build` devolvio **exit 0**, y despues el backend no arrancaba:
+
+```
+Error: Cannot find module '...\apps\backend\dist\main.js'
+```
+
+El codigo de salida decia OK y `dist/` no existia. Un `nest build` posterior lo regenero y el
+backend levanto normal.
+
+Regla practica: despues de un build que produce un artefacto, chequear su existencia antes de
+depender de el (`Test-Path dist/main.js`, `ls apps/backend/dist/main.js`). Aplica a todo lo que se
+levanta desde un artefacto: backend (`dist/main.js`) y PWA en modo standalone.
+
+Corolario util para las verificaciones: cuando un arranque falla, mirar **primero el log del
+proceso** (ahi estaba el "Cannot find module" completo) antes de suponer que el problema es la red o
+la base.
+

@@ -757,4 +757,8 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   visitas asociadas.
 - [ ] Regenerar los 6 secretos JWT y los placeholders `Tu nombre` / `UNLICENSED` del
   `apps/backend/package.json`.
+- [ ] `e2e_s4.cjs` borra TODOS los overrides de la sucursal norte
+  (`itemCartaSucursal.deleteMany({where:{sucursalId: norte.id}})`), no solo los que crea el
+  test. Cuando el e2e crezca, marcar los suyos (por id o por un prefijo) para no arrastrar los
+  del seed.
 

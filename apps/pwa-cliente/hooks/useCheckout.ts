@@ -20,7 +20,8 @@ import type { ErrorCarrito } from '@/lib/carrito-maquina'
 import type { CrearPedidoBody, PedidoCreadoRespuesta } from '@/types/api'
 
 export interface UsoCheckout {
-  enviar: () => Promise<void>
+  /** Devuelve el `linkToken` del pedido creado, o `null` si no se mando (guard, validacion, error). */
+  enviar: () => Promise<string | null>
   enviando: boolean
   error: ErrorCarrito | null
   limpiarError: () => void
@@ -52,12 +53,20 @@ export function useCheckout(): UsoCheckout {
   const fase = useCarritoStore((s) => s.fase)
   const error = useCarritoStore((s) => s.error)
 
-  const enviar = useCallback(async () => {
+  /**
+   * Manda el pedido. Devuelve el `linkToken` si salio bien y `null` si no (error, guard, validacion):
+   * el que navega al seguimiento es el QUE LLAMA, en el handler de la accion. Antes la pagina tenia
+   * un effect que observaba `pedido.linkToken` y eso la eyectaba al tracking de un pedido VIEJO
+   * (el linkToken se persiste a proposito, y al rehidratar volvia a aparecer).
+   * El hook sigue despachando PEDIDO_OK para que el linkToken quede persistido y el banner "Ver
+   * estado de tu pedido" siga funcionando.
+   */
+  const enviar = useCallback(async (): Promise<string | null> => {
     const estado = useCarritoStore.getState()
     // Guard anti-doble-tap. OJO: este es el UNICO lugar que mueve la fase a 'enviando' (el
     // componente no la adelanta), asi que llegar aca con 'enviando' significa un segundo toque.
-    if (estado.fase === 'enviando' || estado.fase === 'enviado') return
-    if (Object.keys(validarCheckout(estado)).length > 0) return
+    if (estado.fase === 'enviando' || estado.fase === 'enviado') return null
+    if (Object.keys(validarCheckout(estado)).length > 0) return null
 
     despachar({ tipo: 'ENVIAR' })
     try {
@@ -72,6 +81,7 @@ export function useCheckout(): UsoCheckout {
         urlCorta: r.urlCorta,
         mensajeWhatsApp: r.mensajeWhatsApp,
       })
+      return r.linkToken
     } catch (e) {
       // No es un log temporal: un error de envio no puede quedar silencioso (el estado se quedaria
       // atrapado en 'enviando' sin que nadie se entere).
@@ -82,6 +92,7 @@ export function useCheckout(): UsoCheckout {
       // status no es el que parece.
       console.log('[checkout] pre-despacho:', { status, mensaje, crudo: e })
       despachar({ tipo: 'PEDIDO_ERROR', status, mensaje })
+      return null
     }
   }, [despachar])
 

@@ -1901,3 +1901,20 @@ asi que "completado" y "pendiente" se veian identicos).
 `hsl()`. Y verificar el CSS SERVIDO (no el HTML): es la unica forma de ver un estilo que el navegador
 descarto sin decir nada.
 
+### REGLA: la navegacion no sale de estado persistido
+
+"La navegación no debe depender de estado persistido. Un effect que observa un campo en localStorage
+puede disparar en cualquier momento (al hidratar, al resolver la sucursal), incluido en medio de otra
+acción del usuario. La navegación sale del handler de la acción que la motiva, no de un observador."
+
+Caso real: `/checkout` tenia un effect que observaba `pedido.linkToken` y hacia `router.replace` al
+seguimiento. Como `PEDIDO_OK` persiste ese linkToken a proposito (para el banner "Ver estado de tu
+pedido") y `rehidratar` lo restaura, el effect disparaba al hidratar — que en esa pagina ocurre
+cuando se resuelve la sucursal, o sea DESPUES de que el usuario empezo a llenar el formulario. El
+resultado: cualquiera que volviera a `/checkout` despues de haber pedido una vez era eyectado al
+seguimiento del pedido VIEJO, aunque estuviera armando un pedido nuevo, y en medio del envio se
+perdia el mensaje de error en pantalla (la pagina se iba).
+
+El fix no fue "mirar mejor el estado" sino mover la navegacion al handler del envio: el hook devuelve
+el `linkToken` y el que llama navega. Sin observador no hay disparo espurio.
+

@@ -21,7 +21,6 @@ export default function CheckoutPage() {
   const router = useRouter()
   const slugNegocio = params?.tenant ?? ''
   const { enviar, enviando } = useCheckout()
-  const linkToken = useCarritoStore((s) => s.pedido?.linkToken ?? null)
   const despachar = useCarritoStore((s) => s.despachar)
   const { sucursal, slugParaApi } = useSucursalActiva()
   const activar = useCarritoStore((s) => s.activar)
@@ -42,19 +41,18 @@ export default function CheckoutPage() {
     router.push(`/${slugNegocio}/menu`)
   }, [refetch, despachar, router, slugNegocio])
 
-  // PEDIDO_OK dejó el linkToken en el store: se navega al seguimiento. El checkout NO despacha
-  // LIMPIAR (PEDIDO_OK ya vació el carrito y conserva el linkToken).
-  React.useEffect(() => {
-    if (linkToken) router.replace(`/${slugNegocio}/pedido/${linkToken}`)
-  }, [linkToken, router, slugNegocio])
-
   return (
     // El error y el `enviando` los lee el propio componente del store; aca solo se le da el
     // disparador, que es el hook.
     <PantallaCheckout
       slugNegocio={slugNegocio}
       enviando={enviando}
-      onEnviar={() => void enviar()}
+      onEnviar={async () => {
+        // La navegacion sale del handler que la motiva, no de observar estado persistido: si sale de
+        // un effect, el linkToken de un pedido viejo (que sobrevive en localStorage) redirige solo.
+        const t = await enviar()
+        if (t) router.replace(`/${slugNegocio}/pedido/${t}`)
+      }}
       onRecargarCarta={recargarCarta}
       sucursalId={sucursal?.id ?? null}
     />

@@ -1502,3 +1502,23 @@ staging/produccion el equivalente es el dominio publico, que ya no tiene este pr
 Nota: la PWA Staff todavia no existe (llega con el Prompt #4), asi que ese puerto va a responder
 recien ahi. Mientras tanto la aprobacion de visitas se hace por API para testing.
 
+### Los endpoints publicos de la carta exigen el header `X-Tenant-Slug`
+
+`GET /carta` (y los demas endpoints publicos del negocio) requieren el header **`X-Tenant-Slug`**.
+Sin el, el backend responde:
+
+```
+404 {"message":"Falta el tenant (X-Tenant-Slug) para servir la carta"}
+```
+
+Desde la PWA no se nota nunca, porque el `ApiClient` lo agrega solo. Aparece recien cuando se
+prueba con `curl`, y el 404 hace pensar que la ruta esta mal (no lo esta). Forma correcta:
+
+```
+curl -H "X-Tenant-Slug: bar-la-esquina" "http://localhost:3000/api/carta?sucursalSlug=centro"
+```
+
+Detalle util: `check-carta.mts` **no toca el backend** (es el check del cache, "refinamiento 4").
+Si hace falta la URL real de la carta, esta en `lib/carta-cache.ts` y en `types/api.ts`, no en el
+check.
+

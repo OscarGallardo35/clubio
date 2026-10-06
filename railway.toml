@@ -1,0 +1,14 @@
+[build]
+builder = "DOCKERFILE"
+# El Dockerfile vive en apps/backend pero su CONTEXTO es la raiz del monorepo: copia
+# pnpm-lock.yaml + los package.json de los workspaces y despues `COPY . .`. Por eso este
+# railway.toml va en la RAIZ y no adentro de apps/backend (alla la ruta seria relativa a
+# apps/backend y no encontraria el Dockerfile).
+dockerfilePath = "apps/backend/Dockerfile"
+
+[deploy]
+startCommand = "node dist/main.js"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

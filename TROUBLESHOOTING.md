@@ -1797,3 +1797,22 @@ Corolario util para las verificaciones: cuando un arranque falla, mirar **primer
 proceso** (ahi estaba el "Cannot find module" completo) antes de suponer que el problema es la red o
 la base.
 
+### REGLA: cada `check:X` mide un dominio; las aserciones se mueven, no se duplican
+
+Cada script `check:X` cubre **un dominio** (`check:carrito` el carrito, `check:menu` la carta y los
+modificadores, `check:checkout` el checkout). Si una asercion pertenece a otro dominio, **se mueve**,
+no se copia.
+
+Por que: **un check que pasa por duplicacion puede mentir**. Si la misma asercion vive en dos
+archivos y el codigo cambia, se actualiza uno solo: el otro sigue en verde midiendo el
+comportamiento viejo, y da la sensacion de que el dominio sigue cubierto cuando ya no lo esta. Con
+el archivo duplicado no hay forma de saber cual de los dos es el que manda.
+
+Caso real: al construir el checkout, las aserciones de `clasificarError`, `validarCheckout` y las
+transiciones de `PEDIDO_OK`/`PEDIDO_ERROR` quedaron dentro de `check:carrito` (porque el reducer del
+carrito vive ahi). Le corresponden a `check:checkout`: se MUEVEN, dejando `check:carrito` con lo
+suyo (items, claves, persistencia, notas).
+
+Regla practica: antes de agregar una asercion, preguntarse "¿de que dominio es esto?". Si es de otro,
+va al archivo de ese dominio aunque el codigo bajo test viva en el archivo del que estoy leyendo.
+

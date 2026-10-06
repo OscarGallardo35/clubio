@@ -1286,6 +1286,20 @@ Comparten `.next`. El build reescribe el manifiesto y el dev server queda con la
 estaticas rotas, con un sintoma enganoso: unas responden 200 y otras 500
 (visto: `/offline` -> 500 mientras `/bar-la-esquina/club` seguia 200).
 
-Para el build de verificacion: parar el dev server antes, o usar otro `distDir`.
+Para el build de verificacion: **parar el dev server antes**, o aislar el `distDir`.
 Si el dev server quedo raro, `rm -rf .next` y levantarlo de nuevo.
+
+**Ojo con `NEXT_DIST_DIR`**: NO es una variable nativa de Next. En el codigo de Next solo
+existe la interna `process.env.__NEXT_DIST_DIR` (doble guion bajo, la inyecta el build) y
+`distDir` se lee del **config**, no del entorno. Escrito asi, `NEXT_DIST_DIR=.next-build
+next build` no hace nada y pisa `.next` igual: falsa sensacion de seguridad.
+
+Por eso el `next.config.js` de la PWA lo cablea a mano (mismo criterio que `NEXT_OUTPUT`):
+
+```js
+distDir: process.env.NEXT_DIST_DIR || '.next'
+```
+
+Con eso el aislamiento si funciona (verificado con el dev server vivo: el build escribe en
+`.next-build` y las rutas del dev siguen respondiendo 200).
 

@@ -29,6 +29,15 @@ function salidaStandalone() {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  /**
+   * Aislamiento del build. `next build` y `next dev` comparten `.next`: el build
+   * pisa los artefactos del dev server y sus rutas estaticas pasan a dar 500.
+   * Next NO lee NEXT_DIST_DIR del entorno (usa la interna `__NEXT_DIST_DIR` y saca
+   * `distDir` del config), asi que se cablea aca:
+   *   NEXT_DIST_DIR=.next-build pnpm --filter pwa-cliente build
+   * Sin la variable, todo sigue igual que antes (`.next`).
+   */
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // Lo usa el Dockerfile: node apps/pwa-cliente/server.js
   output: salidaStandalone(),
   // Los packages internos se publican como TS fuente (main: src/index.ts):

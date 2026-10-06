@@ -16,3 +16,6 @@ coverage/
 /apps/*/public/sw.js
 /apps/*/public/workbox-*.js
 next-env.d.ts
+
+# dist de aislamiento del build (NEXT_DIST_DIR)
+.next-build/

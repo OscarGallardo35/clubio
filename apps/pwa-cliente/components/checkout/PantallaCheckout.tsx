@@ -34,6 +34,12 @@ export interface PantallaCheckoutProps {
    */
   onRecargarCarta?: (() => void) | undefined
   enviando?: boolean | undefined
+  /**
+   * Sucursal viva (la del provider). El redirect por carrito vacio espera a tenerla: entre que el
+   * store hidrata y que la sucursal se resuelve hay una ventana donde hasHydrated ya es true e
+   * items.length es 0, y evaluar ahi mandaba al menu con el carrito lleno.
+   */
+  sucursalId?: string | null | undefined
 }
 
 const TIPOS: { valor: TipoPedido; etiqueta: string }[] = [
@@ -51,7 +57,7 @@ const PAGOS: { valor: ModoPago; etiqueta: string }[] = [
 /** Error de un campo, o undefined. */
 type Fallas = ReturnType<typeof validarCheckout>
 
-export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRecargarCarta }: PantallaCheckoutProps) {
+export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRecargarCarta, sucursalId }: PantallaCheckoutProps) {
   const router = useRouter()
   const { negocio } = useBranding()
   const carrito = useCarritoStore()
@@ -77,29 +83,18 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
     return useCarritoStore.persist.onFinishHydration(() => setLocale(true))
   }, [])
 
+  // Se puede decidir si el carrito esta vacio recien cuando: (1) zustand termino de leer
+  // localStorage, y (2) la sucursal viva ya esta resuelta. Sin la segunda condicion, la ventana
+  // entre la hidratacion y la resolucion de sucursal (items en 0 todavia) disparaba el redirect.
+  const puedeDecidir = locale && (sucursalId ?? null) !== null
+
   React.useEffect(() => {
-    // LOG TEMPORAL - sacar despues del diagnostico
-    console.log('[checkout] eval:', {
-      hasHydrated: useCarritoStore.persist.hasHydrated(),
-      itemsLength: useCarritoStore.getState().items.length,
-      locale,
-      fase: carrito.fase,
-      sucursalId: carrito.sucursalId,
-    })
-    // Recien cuando la hidratacion termino se puede decidir si el carrito esta vacio de verdad.
-    if (!locale) return
+    if (!puedeDecidir) return
     if (carrito.items.length === 0) {
-      // LOG TEMPORAL - sacar despues del diagnostico
-      console.log('[checkout] REDIRECT disparado por:', {
-        motivo: 'items vacios con hidratacion terminada',
-        locale,
-        hasHydrated: useCarritoStore.persist.hasHydrated(),
-        sucursalIdEnEstado: carrito.sucursalId,
-      })
       toast('Tu carrito esta vacio')
       router.replace(`/${slugNegocio}/menu`)
     }
-  }, [locale, carrito.items.length, router, slugNegocio, carrito.fase, carrito.sucursalId])
+  }, [puedeDecidir, carrito.items.length, router, slugNegocio])
 
   const fallas: Fallas = validarCheckout(carrito)
   const mostrar = (campo: keyof Fallas) => (intentoEnviar ? fallas[campo] : undefined)
@@ -145,7 +140,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
 
       {/* Resumen: es lo que el cliente revisa antes de mandar. */}
       <section aria-label="Resumen del carrito" className="flex flex-col gap-2 rounded-xl border p-3">
-        {!locale ? (
+        {!puedeDecidir ? (
           <p className="text-sm text-muted-foreground">Cargando tu pedido...</p>
         ) : carrito.items.length === 0 ? (
           <p className="text-sm text-muted-foreground">No hay items en el carrito.</p>

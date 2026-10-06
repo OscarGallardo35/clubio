@@ -12,7 +12,6 @@
 import {
   cantidadTotal,
   claveDeLinea,
-  clasificarError,
   deserializarCarrito,
   estadoInicial,
   recortarParaPersistir,
@@ -21,7 +20,6 @@ import {
   reducerCarrito,
   subtotalItem,
   totalCarrito,
-  validarCheckout,
   validarModificadores,
 } from '../lib/carrito-maquina.ts'
 import type {
@@ -152,28 +150,6 @@ igual('cerrar checkout vuelve a conItems', c.fase, 'conItems')
 c = reducerCarrito(c, { tipo: 'QUITAR_ITEM', clave: c.items[0].clave })
 igual('si se vacia desde el checkout, la fase no miente', c.fase, 'vacio')
 
-// guardas del envio
-let g1 = base()
-g1 = reducerCarrito(g1, { tipo: 'AGREGAR_ITEM', item: PIZZA, cantidad: 1, modificadores: [], notas: '' })
-g1 = reducerCarrito(g1, { tipo: 'ABRIR_CHECKOUT' })
-igual('sin tipo ni datos no se envia', reducerCarrito(g1, { tipo: 'ENVIAR' }).fase, 'checkout')
-const validaciones = validarCheckout(g1)
-chk('el checkout reporta tipo, modo de pago, nombre y telefono', !!(validaciones.tipo && validaciones.modoPago && validaciones.nombre && validaciones.telefono), JSON.stringify(validaciones))
-let g2 = reducerCarrito(g1, { tipo: 'SET_TIPO', nuevoTipo: 'DELIVERY' })
-g2 = reducerCarrito(g2, { tipo: 'SET_MODO_PAGO', modoPago: 'EFECTIVO' })
-g2 = reducerCarrito(g2, { tipo: 'SET_CLIENTE', campo: 'nombre', valor: 'Ana' })
-chk('DELIVERY sin direccion no pasa', !!validarCheckout(g2).direccion)
-g2 = reducerCarrito(g2, { tipo: 'SET_CLIENTE', campo: 'telefono', valor: '+5491122334455' })
-g2 = reducerCarrito(g2, { tipo: 'SET_CLIENTE', campo: 'direccion', valor: 'Av Siempreviva 742' })
-chk('con nombre, telefono y direccion pasa', Object.keys(validarCheckout(g2)).length === 0, JSON.stringify(validarCheckout(g2)))
-igual('ENVIAR con datos validos pasa a enviando', reducerCarrito(g2, { tipo: 'ENVIAR' }).fase, 'enviando')
-const enEnvio = reducerCarrito(g2, { tipo: 'ENVIAR' })
-igual('ENVIAR dos veces no hace nada (anti doble tap)', reducerCarrito(enEnvio, { tipo: 'ENVIAR' }), enEnvio)
-const soloMesa = reducerCarrito(reducerCarrito(g1, { tipo: 'SET_TIPO', nuevoTipo: 'MESA' }), { tipo: 'SET_TIPO', nuevoTipo: 'TAKEAWAY' })
-chk('al cambiar de tipo se limpia la mesa que ya no aplica', soloMesa.cliente.mesa === undefined)
-const conDir = reducerCarrito(reducerCarrito(g1, { tipo: 'SET_TIPO', nuevoTipo: 'DELIVERY' }), { tipo: 'SET_CLIENTE', campo: 'direccion', valor: 'Av Siempreviva 742' })
-chk('pasar de DELIVERY a TAKEAWAY borra la direccion', reducerCarrito(conDir, { tipo: 'SET_TIPO', nuevoTipo: 'TAKEAWAY' }).cliente.direccion === undefined)
-
 // --- 6. Sucursal y reconciliacion -------------------------------------------
 console.log('\n== sucursal y reconciliacion ==')
 let su = base()
@@ -195,27 +171,6 @@ igual('el total refleja el precio nuevo', totalCarrito(rec2), 9500 + 1200)
 const rec3 = reducerCarrito(rec, { tipo: 'RECONCILIAR', carta: [{ ...carta[0], disponible: false }, carta[1]] })
 igual('un item que se dio de baja sale del carrito', rec3.items.length, 1)
 chk('y avisa cual salio', (rec3.aviso ?? '').includes('Pizza'), rec3.aviso ?? '(sin aviso)')
-
-// --- 7. Errores --------------------------------------------------------------
-console.log('\n== errores ==')
-igual('429 -> mensaje de espera, no tecnico', clasificarError(429, '').codigo, 'RATE_LIMIT')
-chk('429 explica que fue por muchos pedidos', clasificarError(429, '').mensaje.includes('Esperá'), clasificarError(429, '').mensaje)
-igual('400 -> validacion con el texto del backend', clasificarError(400, 'El item no existe').mensaje, 'El item no existe')
-igual('500 -> problema de red/servidor', clasificarError(500, '').codigo, 'RED')
-igual('error sin status (fetch fallo) -> RED', clasificarError(0, '').codigo, 'RED')
-const err = reducerCarrito(enEnvio, { tipo: 'PEDIDO_ERROR', status: 429, mensaje: '' })
-igual('tras un error se vuelve al checkout para poder reintentar', err.fase, 'checkout')
-igual('y el error queda en el estado', err.error?.codigo, 'RATE_LIMIT')
-chk('REINTENTAR limpia el error', reducerCarrito(err, { tipo: 'REINTENTAR' }).error === null)
-
-// --- 8. Pedido enviado ------------------------------------------------------
-console.log('\n== pedido enviado ==')
-const listo = reducerCarrito(enEnvio, { tipo: 'PEDIDO_OK', linkToken: 'tok-123' })
-igual('quedar en fase enviado', listo.fase, 'enviado')
-igual('el carrito se vacia', listo.items.length, 0)
-igual('se guarda el linkToken para el seguimiento', listo.pedido?.linkToken, 'tok-123')
-igual('los datos del cliente se conservan (para el proximo pedido)', listo.cliente.nombre, 'Ana')
-
 // --- 9. Totalidad e inmutabilidad -------------------------------------------
 console.log('\n== totalidad e inmutabilidad ==')
 const EVENTOS: EventoCarrito[] = [
@@ -302,69 +257,6 @@ const reabierto = rehidratar(recortarParaPersistir(enviado), { sucursalId: SUC, 
 igual('al reabrir se puede seguir el pedido', reabierto.pedido?.linkToken, 'tok-9')
 igual('y no queda carrito colgado', reabierto.items.length, 0)
 
-
-// --- Notas generales del pedido (SET_NOTAS_PEDIDO) ---------------------------
-console.log('\n== notas del pedido ==')
-{
-  const base = estadoInicial('bar-la-esquina', 's1', 'centro')
-  const largas = reducerCarrito(base, { tipo: 'SET_NOTAS_PEDIDO', notas: 'x'.repeat(700) })
-  igual('se truncan a 500 (el maximo del backend)', largas.notasPedido?.length, 500)
-  igual('el texto es el de los primeros 500', largas.notasPedido, 'x'.repeat(500))
-  const cortas = reducerCarrito(base, { tipo: 'SET_NOTAS_PEDIDO', notas: 'sin sal' })
-  igual('las notas cortas quedan tal cual', cortas.notasPedido, 'sin sal')
-  // Persistencia: viaja en recortarParaPersistir y vuelve por deserializarCarrito.
-  // OJO: el carrito tiene que tener items. `deserializarCarrito` devuelve null si esta vacio (a
-  // proposito: un carrito sin items no se rehidrata), asi que un roundtrip sobre el estado
-  // inicial daria undefined y el test estaria mintiendo.
-  const conItem = { ...cortas, items: [{ clave: 'a', itemId: 'i', nombre: 'H', precioBase: 100, cantidad: 1, notas: '', modificadores: [] }], fase: 'checkout' as const }
-  chk('se persisten con el resto del formulario', recortarParaPersistir(conItem).notasPedido === 'sin sal')
-  const ida = deserializarCarrito(JSON.stringify(recortarParaPersistir(conItem)), 'bar-la-esquina')
-  igual('y sobreviven el roundtrip de localStorage', ida?.notasPedido, 'sin sal')
-  igual('junto con los items (el carrito no se pierde)', ida?.items.length, 1)
-  // Si el guardado viene corrupto o de una version vieja, no explota.
-  const sucio = deserializarCarrito(JSON.stringify({ items: [{ itemId: 'i', precioBase: 1, cantidad: 1, modificadores: [] }], notasPedido: 42 }), 'x')
-  chk('un notasPedido invalido se descarta en vez de romper', (sucio?.notasPedido ?? '') === '')
-  // No es obligatorio: el checkout valida solo, y esto no agrega ni saca fallas.
-  const vacioConItems = { ...base, items: [{ clave: 'a', itemId: 'i', nombre: 'H', precioBase: 100, cantidad: 1, notas: '', modificadores: [] }], tipo: 'TAKEAWAY', modoPago: 'EFECTIVO', cliente: { nombre: 'Ana', telefono: '1155512345' } }
-  igual('sin notas el checkout sigue valido', Object.keys(validarCheckout(vacioConItems)), [])
-  chk('y con notas tambien (no es obligatorio)', Object.keys(validarCheckout({ ...vacioConItems, notasPedido: '' })).length === 0)
-}
-
-// --- PEDIDO_OK: los 4 campos del pedido en curso ------------------------------
-console.log('\n== PEDIDO_OK ==')
-{
-  const base = { ...estadoInicial('bar-la-esquina', 's1', 'centro'),
-    items: [{ clave: 'a', itemId: 'i', nombre: 'H', precioBase: 100, cantidad: 2, notas: '', modificadores: [] }],
-    fase: 'checkout' as const, tipo: 'TAKEAWAY' as const, modoPago: 'EFECTIVO' as const,
-    cliente: { nombre: 'Ana', telefono: '1155512345' } }
-  const ok = reducerCarrito(base, { tipo: 'PEDIDO_OK', linkToken: 'tok', numero: 7,
-    urlCorta: 'https://wa.me/5491155512345', mensajeWhatsApp: 'Hola, mi pedido' })
-  igual('vacia el carrito (no hace falta un LIMPIAR despues)', ok.items.length, 0)
-  igual('conserva cliente, tipo y modoPago', [ok.cliente.nombre, ok.tipo, ok.modoPago], ['Ana', 'TAKEAWAY', 'EFECTIVO'])
-  igual('guarda los 4 campos del pedido',
-    [ok.pedido?.linkToken, ok.pedido?.numero, ok.pedido?.urlCorta, ok.pedido?.mensajeWhatsApp],
-    ['tok', 7, 'https://wa.me/5491155512345', 'Hola, mi pedido'])
-  const persistido = recortarParaPersistir(ok)
-  igual('los 4 se persisten',
-    [persistido.pedido?.linkToken, persistido.pedido?.numero, persistido.pedido?.urlCorta, persistido.pedido?.mensajeWhatsApp],
-    ['tok', 7, 'https://wa.me/5491155512345', 'Hola, mi pedido'])
-  // La vuelta necesita items: deserializarCarrito devuelve null si el carrito esta vacio.
-  const crudo = JSON.stringify({ ...persistido, items: base.items })
-  const vuelta = deserializarCarrito(crudo, 'bar-la-esquina')
-  igual('y vuelven del localStorage', [vuelta?.pedido?.urlCorta, vuelta?.pedido?.mensajeWhatsApp],
-    ['https://wa.me/5491155512345', 'Hola, mi pedido'])
-  // Un pedidoViejo sin los campos nuevos no rompe: quedan opcionales.
-  const viejo = deserializarCarrito(JSON.stringify({ ...persistido, items: base.items,
-    pedido: { linkToken: 'tok-viejo' } }), 'x')
-  igual('un pedido viejo sin urlCorta no rompe', viejo?.pedido?.urlCorta, undefined)
-  chk('y conserva su linkToken', viejo?.pedido?.linkToken === 'tok-viejo')
-  // PEDIDO_ERROR vuelve a checkout y clasifica.
-  const err = reducerCarrito(base, { tipo: 'PEDIDO_ERROR', status: 429, mensaje: 'Demasiados pedidos' })
-  igual('PEDIDO_ERROR vuelve a checkout con el error clasificado', [err.fase, err.error?.codigo], ['checkout', 'RATE_LIMIT'])
-  const err410 = reducerCarrito(base, { tipo: 'PEDIDO_ERROR', status: 410, mensaje: 'La carta cambio' })
-  igual('y el 410 es CARTA_VENCIDA', err410.error?.codigo, 'CARTA_VENCIDA')
-  igual('REINTENTAR limpia el error', reducerCarrito(err, { tipo: 'REINTENTAR' }).error, null)
-}
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) {
   console.log(fallas.map((f) => `  - ${f}`).join('\n'))

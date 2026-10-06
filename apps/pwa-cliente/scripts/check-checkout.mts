@@ -189,6 +189,40 @@ igual('sin sucursal resuelta no se mandan los campos de sucursal',
 igual('un carrito vacio arma un body con items vacio (la validacion lo frena antes)',
   armarBody(estadoInicial(NEG, SUC, 'centro')).items.length, 0)
 
+
+// --- 8. Cambiar de tipo limpia lo que ya no aplica ---------------------------
+console.log('\n== cambio de tipo ==')
+let t = reducerCarrito(conCarrito(), { tipo: 'SET_TIPO', nuevoTipo: 'MESA' })
+t = reducerCarrito(t, { tipo: 'SET_CLIENTE', campo: 'mesa', valor: '7' })
+igual('la mesa queda cargada', t.cliente.mesa, '7')
+igual('al pasar a TAKEAWAY se limpia la mesa que ya no aplica',
+  reducerCarrito(t, { tipo: 'SET_TIPO', nuevoTipo: 'TAKEAWAY' }).cliente.mesa, undefined)
+let td = reducerCarrito(conCarrito(), { tipo: 'SET_TIPO', nuevoTipo: 'DELIVERY' })
+td = reducerCarrito(td, { tipo: 'SET_CLIENTE', campo: 'direccion', valor: 'Av Siempreviva 742' })
+igual('pasar de DELIVERY a TAKEAWAY borra la direccion',
+  reducerCarrito(td, { tipo: 'SET_TIPO', nuevoTipo: 'TAKEAWAY' }).cliente.direccion, undefined)
+
+// --- 9. Notas generales del pedido (SET_NOTAS_PEDIDO) ------------------------
+console.log('\n== notas del pedido ==')
+{
+  const vacio = base()
+  const largas = reducerCarrito(vacio, { tipo: 'SET_NOTAS_PEDIDO', notas: 'x'.repeat(700) })
+  igual('se truncan a 500 (el maximo del backend)', largas.notasPedido?.length, 500)
+  igual('el texto es el de los primeros 500', largas.notasPedido, 'x'.repeat(500))
+  const cortas = reducerCarrito(vacio, { tipo: 'SET_NOTAS_PEDIDO', notas: 'sin sal' })
+  igual('las notas cortas quedan tal cual', cortas.notasPedido, 'sin sal')
+  // Persistencia: viaja en recortarParaPersistir y vuelve por deserializarCarrito. OJO: el carrito
+  // tiene que tener items, porque deserializarCarrito devuelve null si esta vacio (y el test
+  // estaria probando un camino que no existe).
+  const conItem = { ...cortas, items: [{ clave: 'a', itemId: 'i', nombre: 'H', precioBase: 100, cantidad: 1, notas: '', modificadores: [] }], fase: 'checkout' as const }
+  chk('se persisten con el resto del formulario', recortarParaPersistir(conItem).notasPedido === 'sin sal')
+  const ida = deserializarCarrito(JSON.stringify(recortarParaPersistir(conItem)), NEG)
+  igual('y sobreviven el roundtrip de localStorage', ida?.notasPedido, 'sin sal')
+  igual('junto con los items (el carrito no se pierde)', ida?.items.length, 1)
+  chk('un notasPedido invalido se descarta en vez de romper',
+    (deserializarCarrito(JSON.stringify({ items: [{ itemId: 'i', precioBase: 1, cantidad: 1, modificadores: [] }], notasPedido: 42 }), 'x')?.notasPedido ?? '') === '')
+}
+
 console.log(fallas.length === 0
   ? `\nTODO OK: ${ok} aserciones OK, 0 fallas\n`
   : `\nHAY FALLAS: ${ok} aserciones OK, ${fallas.length} fallas\n${fallas.map((f) => ' - ' + f).join('\n')}\n`)

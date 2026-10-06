@@ -1816,3 +1816,29 @@ suyo (items, claves, persistencia, notas).
 Regla practica: antes de agregar una asercion, preguntarse "¿de que dominio es esto?". Si es de otro,
 va al archivo de ese dominio aunque el codigo bajo test viva en el archivo del que estoy leyendo.
 
+### REGLA: si el estado persistido puede ser de otra entidad, verificar identidad antes de mostrarlo
+
+Cuando el estado que se persiste guarda datos de **un** pedido (o una entidad), pero la pantalla se
+abre por una clave que puede apuntar a **otro** (una URL con otro id/token), hay que comparar las dos
+antes de mostrar nada. El estado sobrevive al recargado y a la navegacion, asi que puede ser de un
+pedido anterior.
+
+Caso real: el boton "Abrir WhatsApp" del seguimiento. `urlCorta` y `mensajeWhatsApp` se guardan en el
+store con el pedido en curso, pero la pantalla se abre con el `linkToken` de la URL. Sin el chequeo,
+abrir el link de OTRO pedido mostraba el mensaje del pedido propio:
+
+```ts
+const whatsapp =
+  pedidoGuardado && pedidoGuardado.linkToken === linkToken &&
+  pedidoGuardado.urlCorta && pedidoGuardado.mensajeWhatsApp
+    ? { url: pedidoGuardado.urlCorta, mensaje: pedidoGuardado.mensajeWhatsApp }
+    : undefined
+```
+
+Regla practica: cuando una pantalla mezcla "lo que hay en el store" con "lo que dice la URL", la
+regla es que **manda la URL** y el store solo aporta si coincide. Si no coinciden, se comporta como
+si no hubiera nada (no se muestra el dato, y no se ofrece la accion).
+
+Nota: los campos que NO son identificables por si mismos (un link de WhatsApp, un mensaje armado)
+son los mas peligrosos, porque mostrarlos mal no falla: muestra otra cosa, y se ve plausible.
+

@@ -51,13 +51,24 @@ export interface EstadoFlujo {
   sellos: SellosTrasAprobar | null
   /** true si el estado salio de un token guardado (no de una solicitud nueva). */
   reanudado: boolean
+  /** Mensaje pre-armado para WhatsApp que devolvio el backend (trae Ref: token y el link). */
+  mensajeWhatsApp: string | null
+  /** Link de validacion del staff para el token activo. */
+  urlValidacion: string | null
 }
 
 export type EventoFlujo =
   | { tipo: 'ABRIR_REGISTRO' }
   | { tipo: 'CERRAR_REGISTRO' }
   | { tipo: 'SOLICITAR' }
-  | { tipo: 'SOLICITADA'; token: string; expiraEn: string; sucursalId: string | null }
+  | {
+      tipo: 'SOLICITADA'
+      token: string
+      expiraEn: string
+      sucursalId: string | null
+      mensajeWhatsApp?: string | null
+      urlValidacion?: string | null
+    }
   | { tipo: 'SOLICITUD_RECHAZADA'; motivo: 'esperaHoras' | 'yaSumadaHoy' | 'otro'; faltanHoras?: number; mensaje?: string }
   | { tipo: 'ESTADO_RECIBIDO'; estado: EstadoVisitaToken; motivo?: string; sellosActuales?: number; premioDesbloqueado?: boolean }
   | { tipo: 'WS_APROBADA'; sellosActuales: number; premioDesbloqueado: boolean }
@@ -77,6 +88,8 @@ export const ESTADO_INICIAL: EstadoFlujo = {
   mensaje: null,
   sellos: null,
   reanudado: false,
+  mensajeWhatsApp: null,
+  urlValidacion: null,
 }
 
 /** Paso en el que tiene sentido pedirle al usuario que reintente. */
@@ -140,7 +153,9 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
         mensaje: null,
         faltanHoras: null,
         reanudado: false,
-      }
+      
+      mensajeWhatsApp: evento.mensajeWhatsApp ?? null,
+      urlValidacion: evento.urlValidacion ?? null,}
 
     // Un 400 del backend no es siempre un error: "espera 4 horas" y "ya sumaste
     // hoy" son estados con su propio texto, no un error rojo.
@@ -183,7 +198,9 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
       if (evento.estado === 'RECHAZADA') {
         return { ...estado, paso: 'noSumada', motivo: 'rechazada', mensaje: evento.motivo ?? null }
       }
-      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null }
+      // EXPIRAR hace spread del estado, asi que hay que anular los datos del token a mano
+      // (si no, el mensaje y el link del token vencido sobreviven).
+      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null, mensajeWhatsApp: null, urlValidacion: null }
     }
 
     // La aprobacion GANA: vale desde cualquier paso (incluso si el contador ya

@@ -1993,4 +1993,18 @@ Sobre la alternativa "usar un dist dir distinto": en el backend **no hay** uno c
 build` escribe siempre en `dist` y el prebuild lo borra; `NEXT_DIST_DIR` es del lado de la PWA (Next,
 via `distDir` en el config), no de Nest. Para evitar el kill/build/start habria que configurarle un
 `outDir` propio al backend; hoy la regla es la de los 4 pasos.
+#### Corolario: `check:flujo-ws` corre contra el backend VIVO y puede dejarlo caido
+
+`scripts/check-flujo-ws.mts` es un harness de INTEGRACION: no simula nada, le pega al backend real de
+`:3000` (por eso falla con `ECONNREFUSED` si el server no esta levantado, que es como se descubrio
+todo esto). La contracara: su teardown deja el backend caido.
+
+Evidencia (una sola corrida, sin tocar nada mas): el `~/be.log` de la corrida termina en el flujo de
+visitas del harness (`POST /api/visitas/solicitar`, `aprobar`, `rechazar`, `GET /api/visitas/estado`,
+2:00:30 p.m.) y despues **no hay una sola linea mas**: `/api/health` respondia
+`WinError 10061 (connection refused)` y hubo que levantarlo de nuevo. No se probo la causa exacta
+(matar por puerto en el teardown es la sospecha), asi que la regla practica es la del sintoma:
+
+**Despues de correr `check:flujo-ws`, verificar `/api/health`** (y si hace falta, levantar el backend)
+antes de decir que la suite quedo verde. Un `TOTAL: 29 OK` no dice nada del server que quedo atras.
 

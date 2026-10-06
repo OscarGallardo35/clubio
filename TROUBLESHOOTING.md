@@ -752,3 +752,28 @@ hay DOM. Se resuelve con una estimacion por longitud (`>180` caracteres) y un
 `ResizeObserver` que la corrige al hidratar. Sin la estimacion, el boton nunca
 aparece en el primer render.
 
+### Mediciones del DOM que afectan el render -> useLayoutEffect, no useEffect
+
+Un `useEffect` corre DESPUES del paint: si de la medicion depende lo que se ve
+(por ejemplo el boton "Ver mas" de GoogleReviews, que solo aparece si el texto
+desborda), el usuario ve el salto — se renderiza sin el boton y aparece un frame
+despues. `useLayoutEffect` corre antes del paint y el flicker desaparece.
+
+**Pero** React avisa por consola si `useLayoutEffect` corre en el servidor (no hay
+DOM). La solucion es el patron isomorfo, que mantiene el mismo orden de hooks:
+
+```ts
+const useLayoutEffectIsomorfo =
+  typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect
+```
+
+Y el estado inicial arranca con una **estimacion** valida para SSR, que la medicion
+real corrige antes del primer paint:
+
+```ts
+const [desborda, setDesborda] = React.useState(texto.length > 180)
+```
+
+Regla general: si una medicion del DOM cambia lo que se renderiza, va en
+`useLayoutEffect` (isomorfo) y con un estado inicial estimable desde el servidor.
+

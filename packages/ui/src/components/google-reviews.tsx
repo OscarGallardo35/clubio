@@ -72,22 +72,33 @@ function FilaEstrellas({ valor, tamano = 'sm' }: { valor: number; tamano?: 'sm' 
   )
 }
 
+/**
+ * useLayoutEffect corre ANTES del paint (evita el flicker de SSR -> hidratacion
+ * cuando el boton "Ver mas" aparece despues de medir), pero React avisa por
+ * consola si corre en el servidor, donde no hay DOM. Este patron isomorfo usa
+ * useEffect en el servidor y useLayoutEffect en el cliente: mismo orden de
+ * hooks, sin warning y sin flicker.
+ */
+const useLayoutEffectIsomorfo =
+  typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect
+
 function TextoResena({ texto, reducedMotion }: { texto: string; reducedMotion: boolean }) {
   const [expandido, setExpandido] = React.useState(false)
-  const [medido, setMedido] = React.useState<boolean | null>(null)
+  // Estimacion para el render de servidor: se corrige antes del primer paint.
+  const [desborda, setDesborda] = React.useState(texto.length > LARGO_ESTIMADO_OVERFLOW)
   const ref = React.useRef<HTMLParagraphElement | null>(null)
 
-  React.useEffect(() => {
+  useLayoutEffectIsomorfo(() => {
     const el = ref.current
     if (!el) return
-    const medir = () => setMedido(el.scrollHeight > el.clientHeight + 1)
+    const medir = () => setDesborda(el.scrollHeight > el.clientHeight + 1)
     medir()
     const ro = new ResizeObserver(medir)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [texto])
 
-  const hayOverflow = medido ?? texto.length > LARGO_ESTIMADO_OVERFLOW
+  const hayOverflow = desborda
 
   return (
     <div>

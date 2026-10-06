@@ -114,7 +114,8 @@ export function FlujoVisita() {
         onReintentar={visita.reintentar}
         onVerTarjeta={() => router.push(RUTAS.tarjeta)}
         onVolverMenu={() => router.push(`/${negocio?.slug ?? ''}/menu`)}
-      />
+      faltanHoras={visita.flujo.faltanHoras}
+        />
     )
   }
 

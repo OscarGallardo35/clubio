@@ -8,6 +8,8 @@ import type { MotivoNoSumada } from '@/lib/visita-maquina'
 export interface PasoNoSumadaProps {
   motivo: MotivoNoSumada | null
   texto: string | null
+  /** Horas que faltan cuando el motivo es 'esperaHoras' (lo calcula el backend). */
+  faltanHoras?: number | null | undefined
   onReintentar: () => void
   onVerTarjeta: () => void
   onVolverMenu: () => void
@@ -16,12 +18,31 @@ export interface PasoNoSumadaProps {
 /**
  * Pantallas donde la visita NO se sumo pero el flujo sigue vivo.
  *
- * Cada motivo tiene su accion: reintentar solo tiene sentido si la solicitud
- * vencio; si el limite ya se consumio, reintentar no sirve y se ofrece la tarjeta.
+ * Cada motivo tiene su copy Y su accion. Reintentar solo tiene sentido si la solicitud vencio:
+ * cuando el limite de horas o el limite diario ya se consumieron, el backend va a contestar 400
+ * otra vez, asi que ofrecer el boton es mandar al cliente contra una pared.
  */
-export function PasoNoSumada({ motivo, texto, onReintentar, onVerTarjeta, onVolverMenu }: PasoNoSumadaProps) {
+export function PasoNoSumada({ motivo, texto, faltanHoras, onReintentar, onVerTarjeta, onVolverMenu }: PasoNoSumadaProps) {
   const puedeReintentar = motivo === 'expirada'
   const esRechazo = motivo === 'rechazada'
+  const esEspera = motivo === 'esperaHoras'
+  const esYaSumada = motivo === 'yaSumadaHoy'
+
+  const titulo = esRechazo
+    ? 'No pudimos validar tu visita'
+    : esEspera
+      ? 'Todavia no podes sumar otra visita'
+      : esYaSumada
+        ? 'Ya sumaste tu visita hoy'
+        : 'No se sumo esta vez'
+
+  const detalle = esEspera
+    ? faltanHoras && faltanHoras > 0
+      ? `Podes volver en ~${faltanHoras} ${faltanHoras === 1 ? 'hora' : 'horas'}.`
+      : 'Todavia no paso el tiempo minimo entre visitas.'
+    : esYaSumada
+      ? 'Ya sumaste tu visita hoy. Nos vemos manana.'
+      : (texto ?? 'No pudimos sumar tu visita.')
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 px-4 py-12 text-center">
@@ -30,11 +51,11 @@ export function PasoNoSumada({ motivo, texto, onReintentar, onVerTarjeta, onVolv
       </div>
 
       <h1 className="text-xl font-bold text-white drop-shadow">
-        {esRechazo ? 'No pudimos validar tu visita' : 'No se sumó esta vez'}
+        {titulo}
       </h1>
 
       <p className="w-full rounded-2xl bg-white/95 px-4 py-3 text-sm shadow-xl" role="status">
-        {texto ?? 'No pudimos sumar tu visita.'}
+        {detalle}
       </p>
 
       <div className="flex w-full flex-col gap-3">

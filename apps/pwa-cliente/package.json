@@ -14,7 +14,8 @@
     "check:flujo": "node scripts/check-flujo-ws.mts",
     "check:carrito": "node scripts/check-carrito.mts",
     "check:carta": "node scripts/check-carta.mts",
-    "check:upsell": "node scripts/check-upsell.mts"
+    "check:upsell": "node scripts/check-upsell.mts",
+    "check:menu": "node scripts/check-menu.mts"
   },
   "dependencies": {
     "@repo/api-client": "workspace:*",

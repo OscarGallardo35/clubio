@@ -74,3 +74,8 @@ export const upsellApi = {
     ),
 }
 
+/** Modificadores de un item. Publico: lo mira cualquiera que abra la carta. */
+export const modificadoresApi = {
+  porItem: (itemId: string) => api.get<unknown>(`/modificadores/items/${encodeURIComponent(itemId)}/grupos`),
+}
+

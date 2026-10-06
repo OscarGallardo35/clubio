@@ -35,7 +35,11 @@ FROM base AS runner
 ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/dist ./dist
-COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/node_modules ./node_modules
+# El runner corre `node dist/main.js` desde /app, asi que la resolucion de modulos empieza
+# en /app/node_modules: hay que copiar el node_modules de la RAIZ (ahi quedan los paquetes
+# reales con node-linker=hoisted). Copiar solo apps/backend/node_modules no alcanza.
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/node_modules ./apps/backend/node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/prisma ./prisma
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/package.json ./
 USER nestjs

@@ -784,3 +784,9 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   historial de visitas + boton de resena si `premioDesbloqueado`). Hoy `/tarjeta` es el placeholder
   del esqueleto y la tab del BottomNav ya apunta ahi, asi que el hueco se ve.
 
+### TODO auditoria de `@repo/ui` (menor, no bloqueante)
+
+- Warning en consola: **"NaN is an invalid value for opacity"** en `bottom-sheet.tsx:31`. Revisar
+  cuando se audite `@repo/ui` (junto con los stubs de RadioGroup/Checkbox/Textarea). No rompe nada:
+  es un valor de opacidad que sale `NaN` en vez de un numero.
+

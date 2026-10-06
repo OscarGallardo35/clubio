@@ -78,6 +78,8 @@ export const upsellApi = {
 
 /** Modificadores de un item. Publico: lo mira cualquiera que abra la carta. */
 export const modificadoresApi = {
-  porItem: (itemId: string) => api.get<unknown>(`/modificadores/items/${encodeURIComponent(itemId)}/grupos`),
+  // Misma regla que el upsell: la ruta sale de `endpoints` (que ya trae el prefijo /api).
+  // Escrita a mano quedaba SIN /api -> 404 y el flujo caia por el camino de "sin grupos".
+  porItem: (itemId: string) => api.get<unknown>(endpoints.modificadores.gruposDeItem(encodeURIComponent(itemId))),
 }
 

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Backend NestJS para SaaS de fidelización gastronómica",
-  "author": "Tu nombre",
+  "author": "Oscar",
   "license": "UNLICENSED",
   "scripts": {
     "prebuild": "rimraf dist tsconfig.tsbuildinfo",

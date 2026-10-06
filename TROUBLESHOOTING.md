@@ -1137,3 +1137,30 @@ Si se quiere usar en la PWA, hay que agregar `dotenv-cli` a sus devDependencies 
 el binario por ruta. En los dos casos el proceso hijo ve `NODE_ENV=development` (lo toma
 del `.env`) y el shell queda limpio.
 
+### Node ejecuta TS directo, pero SOLO borra tipos: los parameter properties rompen
+
+Node v22.6+ (y v26) corre `.ts` sin compilar, y en este proyecto eso alcanza para los
+scripts de verificacion (una linea menos que mantener). Pero el modo por defecto es
+**strip-only**: borra tipos y nada mas. NO transforma:
+
+- **parameter properties**: `constructor(public status: number)` ->
+  `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` (le pasa a `ApiError` de `@repo/api-client`).
+- enums de TS y namespaces.
+
+Por eso `scripts/check-flujo-ws.mts` arma el socket con `io` de socket.io-client en
+lugar de importar `@repo/api-client` (que ademas traeria ese error desde el package).
+Los archivos propios de la PWA si se pueden importar: no usan esas construcciones.
+Si en algun momento hace falta consumir `@repo/api-client` desde node, alcanza con
+escribir `ApiError` con campos explicitos en vez de parameter properties.
+
+Para un script que ES module, el sufijo `.mts` evita el warning
+`MODULE_TYPELESS_PACKAGE_JSON` sin tocar `"type"` del package (que si romperia los
+configs CJS como postcss.config.js).
+
+### El WS del cliente: `auth.token`, y en node hace falta `transports: ['websocket']`
+
+El gateway lee `handshake.auth.token` (o la cookie HttpOnly). En un script de node no
+hay cookies, asi que la identidad va en `auth: { token }` con `Authorization: Bearer`
+para el HTTP. Ademas conviene `reconnection: false` en un harness para que el resultado
+sea deterministico.
+

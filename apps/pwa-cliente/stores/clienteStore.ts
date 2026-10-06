@@ -7,6 +7,8 @@ interface ClienteState {
   cliente: ClienteBasico | null
   tarjetas: TarjetaSucursal[]
   sumoHoy: boolean
+  /** true si la ultima aprobacion desbloqueo un premio (lo trae el WS). */
+  premioPendiente: boolean
   /** Token en MEMORIA: lo necesita el handshake del WebSocket (la cookie es HttpOnly
    *  y JS no la puede leer). Tras un reload se pierde y el WS se autentica con la
    *  cookie igual, asi que no se persiste a proposito. */
@@ -27,6 +29,7 @@ export const useClienteStore = create<ClienteState>()((set, get) => ({
   cliente: null,
   tarjetas: [],
   sumoHoy: false,
+  premioPendiente: false,
   token: null,
   cargando: false,
   autenticado: false,
@@ -45,12 +48,17 @@ export const useClienteStore = create<ClienteState>()((set, get) => ({
    * Optimista: el WS ya trae los sellos nuevos al aprobar, asi que la tarjeta se
    * actualiza sin esperar otro GET.
    */
-  actualizarSellos: (sucursalId, sellos, _premioDesbloqueado) =>
+  actualizarSellos: (sucursalId, sellos, premioDesbloqueado) =>
     set((s) => ({
       sumoHoy: true,
+      // El premio queda pendiente de canje hasta que el cliente lo muestre en el local.
+      premioPendiente: premioDesbloqueado === true ? true : s.premioPendiente,
       tarjetas: s.tarjetas.map((t) => (t.sucursalId === sucursalId ? { ...t, sellosActuales: sellos } : t)),
     })),
 
   limpiar: () =>
-    set({ cliente: null, tarjetas: [], sumoHoy: false, token: null, autenticado: false, cargando: false }),
+    set({
+      cliente: null, tarjetas: [], sumoHoy: false, premioPendiente: false,
+      token: null, autenticado: false, cargando: false,
+    }),
 }))

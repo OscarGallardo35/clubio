@@ -10,6 +10,7 @@
  */
 import {
   ESTADO_INICIAL,
+  clasificarRechazoDeSolicitud,
   PASOS,
   TIPOS_DE_EVENTO,
   esFinal,
@@ -168,7 +169,18 @@ for (const paso of PASOS) {
 }
 chk('ninguna combinacion muta el estado de entrada', mutados.length === 0, mutados.slice(0, 4).join(' | '))
 
-console.log('\n=== 13. eventos desconocidos son identidad ===')
+console.log('\n=== 13. clasificar el 400 de solicitar (mensajes reales del backend) ===')
+igual('mensaje de horas', clasificarRechazoDeSolicitud('Todavia no podes sumar otra visita: espera 4 hora(s) mas'), { motivo: 'esperaHoras', faltanHoras: 4 })
+igual('mensaje de limite diario', clasificarRechazoDeSolicitud('Alcanzaste el limite de visitas por dia'), { motivo: 'yaSumadaHoy', faltanHoras: null })
+igual('mensaje desconocido -> otro', clasificarRechazoDeSolicitud('Algo salio mal'), { motivo: 'otro', faltanHoras: null })
+igual('mensaje vacio -> otro', clasificarRechazoDeSolicitud(''), { motivo: 'otro', faltanHoras: null })
+igual('mensaje null -> otro', clasificarRechazoDeSolicitud(null), { motivo: 'otro', faltanHoras: null })
+igual('mensaje undefined -> otro', clasificarRechazoDeSolicitud(undefined), { motivo: 'otro', faltanHoras: null })
+igual('con acentos igual clasifica', clasificarRechazoDeSolicitud('Todavía no podés sumar otra visita: esperá 2 horas más'), { motivo: 'esperaHoras', faltanHoras: 2 })
+igual('1 hora en singular', clasificarRechazoDeSolicitud('Todavia no podes sumar otra visita: espera 1 hora mas'), { motivo: 'esperaHoras', faltanHoras: 1 })
+chk('el caso de horas NO cae en otro', clasificarRechazoDeSolicitud('Todavia no podes sumar otra visita: espera 4 hora(s) mas').motivo !== 'otro')
+
+console.log('\n=== 14. eventos desconocidos son identidad ===')
 const raro = { tipo: 'EVENTO_QUE_NO_EXISTE' } as unknown as EventoFlujo
 const antes = en('esperando', { token: 't' })
 igual('evento desconocido no cambia nada', visitaReducir(antes, raro), antes)

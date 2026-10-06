@@ -221,6 +221,35 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
   }
 }
 
+export interface ClasificacionRechazo {
+  motivo: 'esperaHoras' | 'yaSumadaHoy' | 'otro'
+  faltanHoras: number | null
+}
+
+/**
+ * Convierte el mensaje de un 400 de POST /visitas/solicitar en un motivo.
+ *
+ * El backend responde 400 con dos mensajes que NO son errores:
+ *   "Todavia no podes sumar otra visita: espera N hora(s) mas"
+ *   "Alcanzaste el limite de visitas por dia"
+ * Todo lo demas si es un error. Los mensajes no llevan acentos, pero se normalizan
+ * igual para no depender de eso.
+ */
+export function clasificarRechazoDeSolicitud(mensaje?: string | null): ClasificacionRechazo {
+  const m = (mensaje ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  if (m.includes('limite de visitas por dia')) return { motivo: 'yaSumadaHoy', faltanHoras: null }
+
+  const conHoras = /espera\s+(\d+)\s+hora/.exec(m)
+  if (conHoras) return { motivo: 'esperaHoras', faltanHoras: Number(conHoras[1]) }
+  if (m.includes('todavia no podes sumar otra visita')) return { motivo: 'esperaHoras', faltanHoras: null }
+
+  return { motivo: 'otro', faltanHoras: null }
+}
+
 /** Tipos de evento existentes, para el test de totalidad. */
 export const TIPOS_DE_EVENTO = [
   'ABRIR_REGISTRO', 'CERRAR_REGISTRO', 'SOLICITAR', 'SOLICITADA', 'SOLICITUD_RECHAZADA',

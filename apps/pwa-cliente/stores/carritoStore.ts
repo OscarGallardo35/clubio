@@ -1,101 +1,91 @@
 'use client'
 
+/**
+ * Carrito de la PWA Cliente: zustand + persist.
+ *
+ * Toda la logica vive en `lib/carrito-maquina.ts` (reducer puro y testeable en node).
+ * Este archivo solo la conecta con React y con localStorage.
+ *
+ * Detalles que importan:
+ * - `skipHydration: true`: sin esto zustand toca localStorage durante el render del server
+ *   y saltan los warnings de hydration mismatch (misma convencion que visitaStore).
+ * - La clave es `carrito_<negocioSlug>`: un cliente puede tener carritos abiertos en dos
+ *   negocios distintos sin que se pisen. Se cambia con `persist.setOptions` en `activar`.
+ * - `partialize`: se guarda el carrito, no el estado de la UI (error/upsell son de la
+ *   sesion). Con el `pedido` guardado, reabrir la app puede seguir el pedido por linkToken.
+ */
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { STORAGE, PREFIJO_NEGOCIO } from '@/lib/constants'
-import { precioConExtras } from '@/lib/dinero'
+import {
+  estadoInicial,
+  recortarParaPersistir,
+  reducerCarrito,
+  rehidratar,
+} from '../lib/carrito-maquina'
+import type {
+  EstadoCarrito,
+  EventoCarrito,
+  ItemCarta,
+} from '../lib/carrito-maquina'
 
-export interface OpcionElegida {
-  opcionId: string
-  nombre: string
-  precioExtra: number
-}
-
-export interface GrupoElegido {
-  grupoId: string
-  grupoNombre: string
-  opciones: OpcionElegida[]
-}
-
-export interface ItemCarrito {
-  /** Clave de linea: el mismo item con distintos modificadores son lineas distintas. */
-  lineaId: string
-  itemId: string
-  nombre: string
-  precioBase: number
-  cantidad: number
-  modificadores: GrupoElegido[]
-  notas?: string | undefined
-}
-
-interface CarritoState {
-  items: ItemCarrito[]
-  negocioSlug: string | null
-  agregar: (item: Omit<ItemCarrito, 'lineaId' | 'cantidad'>, negocioSlug: string) => void
-  cambiarCantidad: (lineaId: string, cantidad: number) => void
-  quitar: (lineaId: string) => void
+interface AccionesCarrito {
+  /** Unico punto de entrada: todo el flujo pasa por el reducer. */
+  despachar: (evento: EventoCarrito) => void
+  /**
+   * Fija el negocio activo: cambia la clave de persistencia, rehidrata y cruza lo guardado
+   * con la sucursal viva (si es otra sucursal, vacia con aviso). Idempotente.
+   */
+  activar: (
+    negocioSlug: string,
+    sucursalId: string | null,
+    sucursalSlug: string | null,
+    carta?: ItemCarta[] | undefined,
+  ) => Promise<void>
   limpiar: () => void
-  subtotal: () => number
-  cantidadTotal: () => number
 }
 
-/** Firma estable de los modificadores: dos lineas iguales se agrupan. */
-function firma(items: GrupoElegido[]): string {
-  return items
-    .map((g) => `${g.grupoId}:${g.opciones.map((o) => o.opcionId).sort().join(',')}`)
-    .sort()
-    .join('|')
-}
+export type CarritoStore = EstadoCarrito & AccionesCarrito
 
-export const useCarritoStore = create<CarritoState>()(
+const claveDe = (slug: string): string => `carrito_${slug || 'sin-negocio'}`
+
+export const useCarritoStore = create<CarritoStore>()(
   persist(
-    (set, get) => ({
-      items: [],
-      negocioSlug: null,
+    (set) => ({
+      ...estadoInicial('sin-negocio', null, null),
 
-      agregar: (item, negocioSlug) =>
-        set((s) => {
-          // El carrito es de un solo negocio: si cambia, se vacia.
-          const base = s.negocioSlug === negocioSlug ? s.items : []
-          const lineaId = `${item.itemId}#${firma(item.modificadores)}`
-          const existente = base.find((i) => i.lineaId === lineaId)
-          if (existente) {
-            return {
-              negocioSlug,
-              items: base.map((i) => (i.lineaId === lineaId ? { ...i, cantidad: i.cantidad + 1 } : i)),
-            }
-          }
-          return { negocioSlug, items: [...base, { ...item, lineaId, cantidad: 1 }] }
-        }),
+      despachar: (evento) => set((s) => reducerCarrito(s, evento)),
 
-      cambiarCantidad: (lineaId, cantidad) =>
-        set((s) => ({
-          items:
-            cantidad <= 0
-              ? s.items.filter((i) => i.lineaId !== lineaId)
-              : s.items.map((i) => (i.lineaId === lineaId ? { ...i, cantidad } : i)),
-        })),
+      activar: async (negocioSlug, sucursalId, sucursalSlug, carta) => {
+        if (useCarritoStore.persist.getOptions().name !== claveDe(negocioSlug)) {
+          useCarritoStore.persist.setOptions({ name: claveDe(negocioSlug) })
+          await useCarritoStore.persist.rehydrate()
+        }
+        set((s) =>
+          rehidratar(recortarParaPersistir({ ...s, negocioSlug }), {
+            sucursalId,
+            sucursalSlug,
+            ...(carta ? { carta } : {}),
+          }),
+        )
+      },
 
-      quitar: (lineaId) => set((s) => ({ items: s.items.filter((i) => i.lineaId !== lineaId) })),
-
-      limpiar: () => set({ items: [], negocioSlug: null }),
-
-      subtotal: () =>
-        get().items.reduce((acc, i) => {
-          const unitario = precioConExtras(
-            i.precioBase,
-            i.modificadores.flatMap((g) => g.opciones.map((o) => o.precioExtra)),
-          )
-          return acc + unitario * i.cantidad
-        }, 0),
-
-      cantidadTotal: () => get().items.reduce((acc, i) => acc + i.cantidad, 0),
+      limpiar: () => set((s) => reducerCarrito(s, { tipo: 'LIMPIAR' })),
     }),
     {
-      name: `${PREFIJO_NEGOCIO}:${STORAGE.carrito}`,
+      name: claveDe('sin-negocio'),
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      partialize: (s) => ({ items: s.items, negocioSlug: s.negocioSlug }),
+      partialize: (s) => recortarParaPersistir(s) as unknown as CarritoStore,
     },
   ),
 )
+
+/** Selector del total, para no re-renderizar por cualquier cambio. */
+export const seleccionarTotal = (s: CarritoStore): number =>
+  s.items.reduce(
+    (acc, i) =>
+      acc +
+      (i.precioBase + i.modificadores.reduce((a, m) => a + m.opciones.reduce((x, o) => x + o.precioExtra, 0), 0)) *
+        i.cantidad,
+    0,
+  )

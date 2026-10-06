@@ -427,3 +427,118 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
       return estado
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// Persistencia (lo que sobrevive a cerrar el navegador)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lo que se guarda en localStorage. Deliberadamente NO entra todo el estado:
+ * `error`, `upsell` y `upsellCargando` son de la sesion, no del carrito.
+ */
+export interface CarritoPersistido {
+  negocioSlug: string
+  sucursalId: string | null
+  sucursalSlug: string | null
+  items: ItemCarrito[]
+  /** `enviando` NO se persiste: al reabrir no sabemos si el pedido entro. */
+  fase: Exclude<FaseCarrito, 'enviando'>
+  tipo: TipoPedido | null
+  modoPago: ModoPago | null
+  cliente: DatosCliente
+  /** Con el linkToken se puede seguir el pedido despues de reabrir. */
+  pedido: { linkToken: string; numero?: number | undefined } | null
+}
+
+export function recortarParaPersistir(estado: EstadoCarrito): CarritoPersistido {
+  return {
+    negocioSlug: estado.negocioSlug,
+    sucursalId: estado.sucursalId,
+    sucursalSlug: estado.sucursalSlug,
+    items: estado.items,
+    fase: estado.fase === 'enviando' ? 'checkout' : estado.fase,
+    tipo: estado.tipo,
+    modoPago: estado.modoPago,
+    cliente: estado.cliente,
+    pedido: estado.pedido,
+  }
+}
+
+/** Deserializa sin confiar en el contenido: localStorage lo puede tocar cualquiera. */
+export function deserializarCarrito(crudo: unknown, negocioSlug: string): CarritoPersistido | null {
+  let dato: unknown = crudo
+  if (typeof crudo === 'string') {
+    try { dato = JSON.parse(crudo) } catch { return null }
+  }
+  if (!dato || typeof dato !== 'object') return null
+  const d = dato as Partial<CarritoPersistido>
+  if (!Array.isArray(d.items)) return null
+  const items = d.items.filter(
+    (i): i is ItemCarrito =>
+      !!i && typeof i === 'object' && typeof i.itemId === 'string' && typeof i.precioBase === 'number' &&
+      typeof i.cantidad === 'number' && Array.isArray(i.modificadores),
+  )
+  if (items.length === 0) return null
+  return {
+    negocioSlug: typeof d.negocioSlug === 'string' ? d.negocioSlug : negocioSlug,
+    sucursalId: d.sucursalId ?? null,
+    sucursalSlug: d.sucursalSlug ?? null,
+    items,
+    fase: d.fase === 'enviado' || d.fase === 'checkout' ? d.fase : 'conItems',
+    tipo: d.tipo ?? null,
+    modoPago: d.modoPago ?? null,
+    cliente: {
+      nombre: typeof d.cliente?.nombre === 'string' ? d.cliente.nombre : '',
+      telefono: typeof d.cliente?.telefono === 'string' ? d.cliente.telefono : '',
+      ...(d.cliente?.direccion ? { direccion: d.cliente.direccion } : {}),
+      ...(d.cliente?.mesa ? { mesa: d.cliente.mesa } : {}),
+    },
+    pedido: d.pedido && typeof d.pedido.linkToken === 'string' ? { linkToken: d.pedido.linkToken, ...(d.pedido.numero ? { numero: d.pedido.numero } : {}) } : null,
+  }
+}
+
+export interface ContextoRehidratacion {
+  /** La sucursal activa AHORA (la resuelve el layout, no el localStorage). */
+  sucursalId: string | null
+  sucursalSlug: string | null
+  /** Si viene la carta, se reconcilian precios y se dan de baja los items que ya no estan. */
+  carta?: ItemCarta[]
+}
+
+/**
+ * Rehidratacion: cruza lo guardado con la realidad de la sucursal activa.
+ *
+ * Regla (refinamiento 2): si el carrito guardado es de OTRA sucursal, se vacia con aviso,
+ * porque los precios pueden tener override por sucursal. La sucursal viva SIEMPRE manda
+ * sobre la guardada.
+ */
+export function rehidratar(persistido: CarritoPersistido, contexto: ContextoRehidratacion): EstadoCarrito {
+  // Arranca con la sucursal GUARDADA (no la viva): recien despues se la cruza, porque
+  // CAMBIAR_SUCURSAL compara contra la sucursal del estado y si ya le hubieramos puesto la
+  // nueva, su guarda de idempotencia lo tomaria como "misma sucursal" y no vaciaria nada.
+  let estado: EstadoCarrito = {
+    ...estadoInicial(persistido.negocioSlug, persistido.sucursalId, persistido.sucursalSlug),
+    ...persistido,
+    error: null,
+    upsell: null,
+    upsellCargando: false,
+    aviso: null,
+  }
+  if (contexto.sucursalId && persistido.sucursalId !== contexto.sucursalId) {
+    // CAMBIAR_SUCURSAL ya sabe vaciar y avisar: se reusa esa regla en vez de repetirla.
+    estado = reducerCarrito(estado, {
+      tipo: 'CAMBIAR_SUCURSAL',
+      sucursalId: contexto.sucursalId,
+      sucursalSlug: contexto.sucursalSlug ?? '',
+    })
+  } else {
+    estado = {
+      ...estado,
+      sucursalId: contexto.sucursalId ?? estado.sucursalId,
+      sucursalSlug: contexto.sucursalSlug ?? estado.sucursalSlug,
+    }
+  }
+  if (contexto.carta) estado = reducerCarrito(estado, { tipo: 'RECONCILIAR', carta: contexto.carta })
+  return { ...estado, fase: estado.items.length === 0 ? 'vacio' : estado.fase }
+}

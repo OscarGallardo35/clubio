@@ -13,7 +13,10 @@ import {
   cantidadTotal,
   claveDeLinea,
   clasificarError,
+  deserializarCarrito,
   estadoInicial,
+  recortarParaPersistir,
+  rehidratar,
   precioUnitario,
   reducerCarrito,
   subtotalItem,
@@ -250,6 +253,54 @@ for (const e of EVENTOS) {
 chk(`todos los eventos (${EVENTOS.length}) devuelven un estado valido y no mutan la entrada`, totalidadOk)
 const sinItems = reducerCarrito(base(), { tipo: 'AGREGAR_ITEM', item: PIZZA, cantidad: 1, modificadores: [], notas: '' })
 chk('el evento desconocido devuelve el mismo estado', reducerCarrito(sinItems, { tipo: 'CUALQUIERA' } as unknown as EventoCarrito) === sinItems)
+
+
+// --- 10. Persistencia real (refinamiento 5) ---------------------------------
+console.log('\n== persistencia ==')
+const CART_SLUG = 'bar-la-esquina'
+let q1 = base()
+q1 = reducerCarrito(q1, { tipo: 'AGREGAR_ITEM', item: CON_MODS, cantidad: 2, modificadores: [mods(GUSTO, 'gr-gusto-o2')], notas: 'sin sal' })
+q1 = reducerCarrito(q1, { tipo: 'AGREGAR_ITEM', item: PIZZA, cantidad: 1, modificadores: [], notas: '' })
+
+// 1) agregar -> serializar -> deserializar
+const guardado = JSON.stringify(recortarParaPersistir(q1))
+const vuelta = deserializarCarrito(guardado, CART_SLUG)
+chk('serializar y deserializar conserva el carrito', !!vuelta, 'devolvio null')
+igual('mismos items', vuelta?.items.length, 2)
+igual('mismas cantidades', vuelta?.items.map((i) => i.cantidad), [2, 1])
+igual('mismos modificadores', vuelta?.items[0].modificadores[0].opciones.map((o) => o.id), ['gr-gusto-o2'])
+igual('mismas notas', vuelta?.items[0].notas, 'sin sal')
+igual('mismo total tras el round trip', totalCarrito({ ...q1, ...(vuelta as object) } as never), totalCarrito(q1))
+chk('no se persiste el estado de la sesion (error/upsell)', !('error' in (vuelta as object)) && !('upsell' in (vuelta as object)))
+chk('`enviando` no se persiste: un cierre en pleno envio vuelve a checkout',
+    recortarParaPersistir(reducerCarrito(reducerCarrito(reducerCarrito(reducerCarrito(q1, { tipo: 'ABRIR_CHECKOUT' }), { tipo: 'SET_TIPO', nuevoTipo: 'TAKEAWAY' }), { tipo: 'SET_MODO_PAGO', modoPago: 'EFECTIVO' }), { tipo: 'SET_CLIENTE', campo: 'nombre', valor: 'A' })).fase !== 'enviando')
+chk('localStorage basura no rompe: devuelve null', deserializarCarrito('{no soy json', CART_SLUG) === null)
+chk('items con forma invalida se descartan', (deserializarCarrito(JSON.stringify({ items: [{ itemId: 'x' }, { itemId: 'y', precioBase: 1, cantidad: 1, modificadores: [] }] }), CART_SLUG)?.items.length ?? 0) === 1)
+
+// 2) cambiar de sucursal -> se vacia con aviso
+const OtraSuc = rehidratar(recortarParaPersistir(q1), { sucursalId: 'suc-norte', sucursalSlug: 'norte' })
+igual('carrito de otra sucursal: se vacia', OtraSuc.items.length, 0)
+chk('y avisa por que', (OtraSuc.aviso ?? '').includes('sucursal'), OtraSuc.aviso ?? '(sin aviso)')
+igual('la sucursal viva manda sobre la guardada', OtraSuc.sucursalId, 'suc-norte')
+const MismaSuc = rehidratar(recortarParaPersistir(q1), { sucursalId: SUC, sucursalSlug: 'centro' })
+igual('la misma sucursal conserva el carrito', MismaSuc.items.length, 2)
+
+// 3) cambia el precio en la carta -> se reconcilia al rehidratar
+const cartaNueva = [item('item-pizza', 'Pizza muzzarella', 9900), item('item-con-mods', 'Milanesa', 9000, [GUSTO, AGREGADOS])]
+const recP = rehidratar(recortarParaPersistir(q1), { sucursalId: SUC, sucursalSlug: 'centro', carta: cartaNueva })
+igual('toma el precio nuevo de la carta', recP.items.find((i) => i.itemId === 'item-pizza')?.precioBase, 9900)
+igual('el total se recalcula', totalCarrito(recP), totalCarrito(q1) + 1900)
+
+// 4) un item que ya no esta en la carta -> se quita con aviso
+const recP2 = rehidratar(recortarParaPersistir(q1), { sucursalId: SUC, sucursalSlug: 'centro', carta: [cartaNueva[1]] })
+igual('el item que ya no existe sale del carrito', recP2.items.length, 1)
+chk('y avisa cual salio', (recP2.aviso ?? '').includes('Pizza'), recP2.aviso ?? '(sin aviso)')
+
+// 5) el pedido enviado sobrevive (para el seguimiento por linkToken)
+const enviado = reducerCarrito(reducerCarrito(q1, { tipo: 'ABRIR_CHECKOUT' }), { tipo: 'PEDIDO_OK', linkToken: 'tok-9' })
+const reabierto = rehidratar(recortarParaPersistir(enviado), { sucursalId: SUC, sucursalSlug: 'centro' })
+igual('al reabrir se puede seguir el pedido', reabierto.pedido?.linkToken, 'tok-9')
+igual('y no queda carrito colgado', reabierto.items.length, 0)
 
 console.log(`\n${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`)
 if (fallas.length > 0) {

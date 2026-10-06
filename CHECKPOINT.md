@@ -32,16 +32,26 @@ avatar 128) y solo si la URL no trae ya una transformacion. En dev avisa por con
 Ojo al usarla: `@repo/ui` ya tenia `lucide-react` como dependencia (mi primer grep dijo que no
 porque el package.json usa comillas dobles, no simples).
 
-### 2. Punto 1 completo del plan de la etapa 3 (SIGUIENTE)
+### 2. Punto 1 completo del plan de la etapa 3 — A MEDIAS (commit `81d7851`)
 
-- `modificadoresApi` en `apps/pwa-cliente/lib/api.ts` (patron de `upsellApi`: la ruta vive en
-  la app, no en `@repo/api-client`, para no tocar el package).
-- `lib/modificadores-cache.ts` puro: cache-first con TTL, mismo patron que `lib/carta-cache.ts`
-  (`claveDeCarta`/`decidirLectura`/`planDeFetch` + reducer). **Normalizar `precioExtra` a
-  number al entrar**, no en el modal.
-- `stores/modificadoresStore.ts` (en memoria) + `hooks/useModificadores.ts`.
-- `scripts/check-menu.mts` con las aserciones del cache y de la normalizacion; registrar
-  `check:menu` en el `package.json` de la app.
+**Hecho** (verificado, `check:menu` 43 aserciones OK, typecheck 0):
+
+- `lib/api.ts`: `modificadoresApi.porItem(itemId)` contra `GET /modificadores/items/:id/grupos`.
+- `lib/modificadores-cache.ts` (puro): clave por `itemId`, TTL 5 min, cache-first con
+  stale-while-revalidate, `planDeFetchMods`, fetch fallido que no pisa el cache ni renueva el
+  TTL, refetch manual e invalidacion. **`normalizarModificadores` convierte `precioExtra` a
+  number** (mas `aNumero`, que cae a 0 ante basura y `null`).
+- `scripts/check-menu.mts` + `check:menu` registrado en el `package.json` de la app. Incluye la
+  demostracion del bug (`"200" + 0 === "2000"`) y la normalizacion defensiva.
+
+**Falta** (es lo primero de la proxima sesion):
+
+- `stores/modificadoresStore.ts` (zustand en memoria) + `hooks/useModificadores.ts` (fetch por
+  itemId usando el cache; el hook es el que llama a `modificadoresApi.porItem`).
+- Las aserciones de `urlOptimizada`: no se pueden importar desde un script de node porque el
+  modulo de `@repo/ui` arrastra React + lucide (node strip-only no lo resuelve). Opciones:
+  mover `urlOptimizada` a un modulo puro del package y reexportarlo, o cubrirlo en la
+  verificacion SSR del HTML.
 - Extra propuesto y no confirmado: una asercion que pegue contra los endpoints reales y verifique
   que los campos monetarios lleguen como `number` (alarma contra un `Decimal` sin normalizar).
 

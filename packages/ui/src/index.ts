@@ -28,6 +28,7 @@ export { DataTable } from './components/data-table'
 
 // Componentes personalizados para el SaaS
 export { TarjetaSellos } from './components/tarjeta-sellos'
+export type { TarjetaSellosProps, EstadoTarjeta, TamanoTarjeta } from './components/tarjeta-sellos'
 export { GoogleReviews } from './components/google-reviews'
 export type { GoogleReviewsProps, Resena } from './components/google-reviews'
 export { BottomSheet } from './components/bottom-sheet'

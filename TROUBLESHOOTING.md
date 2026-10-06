@@ -777,3 +777,40 @@ const [desborda, setDesborda] = React.useState(texto.length > 180)
 Regla general: si una medicion del DOM cambia lo que se renderiza, va en
 `useLayoutEffect` (isomorfo) y con un estado inicial estimable desde el servidor.
 
+## #3 — TarjetaSellos (el componente estrella)
+
+### El estado inicial de una animacion de ENTRADA no puede ser invisible
+
+La entrada con `staggerChildren` arrancaba en `scale: 0, opacity: 0`. En un render
+de servidor eso significa que el HTML sale con **los sellos invisibles** y la
+tarjeta aparece recien cuando hidrata React: si el JS tarda o falla, la pantalla
+mas importante del flujo queda en blanco.
+
+Regla: una animacion de entrada arranca en un estado **ya visible** (`scale: 0.9`)
+y solo hace el asentamiento. El `scale 0 -> 1` se reserva para el elemento NUEVO,
+que siempre se agrega desde el cliente y por lo tanto no tiene problema de SSR.
+
+### `exactOptionalPropertyTypes` tambien rompe las props de framer-motion
+
+No es solo cosa de los DTOs del backend. En los packages:
+
+```tsx
+// MAL: style={cond ? { backgroundColor: c } : undefined}   -> TS2375
+const estilo = cond ? { backgroundColor: c } : ({} as const)   // BIEN
+<motion.span style={estilo} {...(cond ? { animate: {...} } : {})} />
+```
+
+Vale para `style`, `animate` y `transition`: la prop opcional no acepta
+`undefined` explicito.
+
+### El ultimo sello es SIEMPRE el premio (Gift), no solo cuando esta completo
+
+Confusion facil: si el icono del premio se pone recien al completar, en una
+tarjeta con 3 de 10 sellos el ultimo lugar se ve como un circulo vacio mas y el
+usuario no entiende que ahi esta el regalo. Son dos cosas distintas:
+
+- `lleno` (se pinto o no) -> Stamp cuando esta lleno, Circle cuando no.
+- `esPremio` (es el ultimo lugar) -> Gift SIEMPRE.
+
+Para 10 sellos con 3 llenos: 3 Stamp + 6 Circle + 1 Gift.
+

@@ -168,3 +168,41 @@ Causas (las dos, confirmadas leyendo el codigo):
 Bug del backend original (contexto): `POST /visitas/solicitar` -> 201 con
 `urlValidacion: "<STAFF_APP_URL>/validar?ref=<token>"`.
 
+## Bug del WhatsApp: estado al 47737df
+
+**Arreglado de punta a punta en el flujo normal.** Lo que falta son dos cosas.
+
+Hecho y verificado:
+
+- `ada43db` — `visita-maquina.ts`: `EstadoFlujo` con `mensajeWhatsApp`/`urlValidacion`,
+  `ESTADO_INICIAL` en null, el evento `SOLICITADA` con los dos opcionales, y **`EXPIRAR` los
+  anula explicitamente** (hace spread, no pasa por ESTADO_INICIAL). `check:maquina` 63 OK.
+- `47737df` — `useVisitaQr` los pasa en el `despachar` de SOLICITADA y los expone como accesores
+  directos; `FlujoVisita.tsx:88` usa `visita.mensajeWhatsApp ?? fallback` (era el hardcodeo que
+  causaba el mensaje generico). `typecheck` 0.
+- Antes: `9361d3a` (backend arma el mensaje completo) y `c837463` (`SolicitudOk` ya no los
+  descarta).
+
+**FALTA 1 — la persistencia (`visitaStore.ts`).** Sin esto el mensaje se pierde al recargar la
+pagina y la pantalla muestra el fallback. Son 4 lugares (los anclajes de mi ultimo intento no
+matchearon por indentacion y no escribi nada, el archivo esta intacto):
+
+1. El estado, junto a `token`/`expiraEn`/`sucursalId` (mismo nivel de indentacion que ellos):
+   `mensajeWhatsApp: null,` y `urlValidacion: null,`.
+2. El espejo en `despachar`, que hoy es
+   `return { flujo, token: evento.token, expiraEn: evento.expiraEn, sucursalId: evento.sucursalId }`:
+   agregar `mensajeWhatsApp: evento.mensajeWhatsApp ?? null` y `urlValidacion: evento.urlValidacion ?? null`.
+3. `hidratar`: hoy hace `const { token, expiraEn, sucursalId, flujo } = get()` y re-despacha
+   `{ tipo: 'SOLICITADA', token, expiraEn, sucursalId }`. Hay que sumar los dos campos a las dos
+   partes, o el mensaje no vuelve al flujo al reabrir.
+4. `partialize`: hoy `({ token: s.token, expiraEn: s.expiraEn, sucursalId: s.sucursalId })`; sumar
+   los dos.
+
+**FALTA 2 — las aserciones.**
+
+- `check:maquina`: `SOLICITADA` con los dos campos -> `EXPIRAR` -> quedan en null (es la trampa
+  del spread, la que justifica el caso explicito).
+- `check:flujo`: que el `mensajeWhatsApp` del backend matchee `/Ref:\s*\S+/` y que
+  `urlValidacion` matchee `/validar\?ref=/`.
+
+**Falta tambien** la verificacion manual en incognito (navegador: no puedo manejarlo desde aca).

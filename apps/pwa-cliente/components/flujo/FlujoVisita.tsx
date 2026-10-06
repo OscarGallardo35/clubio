@@ -23,6 +23,7 @@ import { RUTAS } from '@/lib/constants'
  * consulta es la sesion del cliente y la visita.
  */
 export function FlujoVisita() {
+
   const router = useRouter()
   const { negocio, configuracion, cargando: cargandoBranding } = useBranding()
   const { sucursal, slugParaApi } = useSucursalActiva()
@@ -84,7 +85,7 @@ export function FlujoVisita() {
         expiraEn={visita.flujo.expiraEn}
         ws={visita.ws}
         numeroAtendiente={configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null}
-        mensajeWhatsApp={`Hola, quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}`}
+        mensajeWhatsApp={visita.mensajeWhatsApp ?? `Hola, quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}`}
         onCancelar={visita.reiniciar}
       />
     )

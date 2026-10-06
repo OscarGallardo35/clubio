@@ -28,6 +28,9 @@ export interface UseVisitaQr {
   solicitar: () => Promise<void>
   reintentar: () => Promise<void>
   reiniciar: () => void
+  /** Atajos para la UI: evitan que el consumidor conozca la forma de `flujo`. */
+  mensajeWhatsApp: string | null
+  urlValidacion: string | null
 }
 
 /**
@@ -210,7 +213,15 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
     const origen = leerParametrosQr(typeof window === 'undefined' ? '' : window.location.search).origen
     const r = await solicitarVisita(sucursalSlug, origen)
     if (r.ok) {
-      despachar({ tipo: 'SOLICITADA', token: r.token, expiraEn: r.expiraEn, sucursalId: r.sucursalId })
+      despachar({
+        tipo: 'SOLICITADA',
+        token: r.token,
+        expiraEn: r.expiraEn,
+        sucursalId: r.sucursalId,
+        // Vienen del backend y traen el Ref: token y el link de validacion.
+        mensajeWhatsApp: r.mensajeWhatsApp,
+        urlValidacion: r.urlValidacion,
+      })
       return
     }
     despachar({
@@ -263,5 +274,7 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
     solicitar,
     reintentar,
     reiniciar,
+    mensajeWhatsApp: flujo.mensajeWhatsApp,
+    urlValidacion: flujo.urlValidacion,
   }
 }

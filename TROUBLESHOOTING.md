@@ -1614,3 +1614,22 @@ TODO de deuda tecnica (ver `BACKEND_PLAN.md`): que `ApiClient.request()` **tire 
 development** si el path no empieza con `/api/`. Asi esta clase se caza en la primera llamada y no
 en el celular.
 
+#### Integracion con el backend: el DTO y el response se leen del codigo, no se recuerdan
+
+Cuando se integra con un endpoint nuevo, **los nombres de los campos del body y del response se
+leen del codigo** (el DTO del backend y el `return` del service), nunca se escriben de memoria. Es
+el mismo problema que copiar literales de un mensaje, pero con mas superficie: el typecheck no
+puede ayudar porque el cliente arma un objeto suelto.
+
+Casos reales de este proyecto (lo que se recordaba -> lo que dice el backend):
+
+- `nombre` -> **`nombreCliente`**
+- `numeroMesa` -> **`mesa`**
+- `linkWhatsApp` -> **`urlCorta`** (el `mensajeWhatsApp` lo arma el backend; el cliente solo lo
+  muestra, no lo construye)
+- `pedido:actualizado` -> **`pedido:estado-actualizado`**
+
+Ademas, el body del pedido usa `modificadores: [{ grupoId, opcionIds }]`, que es exactamente lo que
+produce `modificadoresParaApi`: conviene mirar si el helper que ya existe arma la forma que el DTO
+espera antes de escribir una conversion nueva.
+

@@ -815,3 +815,13 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   nula. **Evaluar cuando se agregue el primer negocio sin sucursales** (hoy `bar-la-esquina` tiene
   dos y resuelve siempre).
 
+## TODO post-MVP: numero de pedido real
+
+El modelo `Pedido` **no tiene** `numero`. Lo unico parecido es `numeroAtendiente`, que sale de
+`resolverNumeroAtendiente(negocioId, sucursalId)`: es el numero del *atendiente* (config del negocio
+por sucursal, `actualizar-configuracion.dto`), no un identificador de pedido, y en la demo trae un
+telefono. Por eso la pantalla de seguimiento titula "Tu pedido" y no "Pedido #X".
+
+Post-MVP: agregar `numero` a `Pedido` (correlativo por negocio o por sucursal, con su migracion) para
+poder mostrar "Pedido #N" en el seguimiento y en la comanda. **No hacerlo antes.**
+

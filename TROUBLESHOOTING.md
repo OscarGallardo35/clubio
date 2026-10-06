@@ -1444,3 +1444,26 @@ por su cuenta, se desincroniza con la politica y reaparece exactamente este bug.
 Corolario: si dos banderas pueden ser verdaderas al mismo tiempo, escribir la asercion del caso
 en el que AMBAS lo son. Es el que se olvida.
 
+### Los Decimal de Prisma cruzan la API como STRING (no como numero)
+
+Sintomas:
+- Comparaciones que fallan en silencio: `precio > 1000` con `"1500"` -> false.
+- Calculos que dan NaN: `"1500" * 2`.
+- Aritmetica silenciosamente incorrecta (concatenacion en vez de suma).
+
+**Fix: normalizar en el punto de entrada al frontend** (el hook o el cliente API), no en cada
+consumidor. Si se normaliza en cada lugar donde se usa, tarde o temprano alguien se olvida y
+vuelve el bug. En este repo: `useCarta` y `useModificadores` normalizan con `Number()` antes
+de exponer el estado, asi el reducer y la UI nunca ven un string.
+
+Estado verificado de cada endpoint (medido, no supuesto):
+
+| Endpoint | Campo | Hoy llega como |
+|---|---|---|
+| `GET /carta?sucursalSlug=` | `precio`, `precioBase` | **number** (el service ya hace `Number()`) |
+| `GET /modificadores/items/:id/grupos` | `precioExtra` | **string** (`"0"`) <-- el caso vivo |
+| `POST /upsell/calcular` | `item.precio` | **number** |
+
+O sea: la proteccion en el hook no es teorica, `precioExtra` es un string hoy y el modal de
+modificadores calcula el precio en vivo con el, asi que sin normalizar el total sale mal.
+

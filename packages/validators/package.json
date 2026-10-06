@@ -7,7 +7,8 @@
   "types": "src/index.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "check:validators": "node scripts/check-validators.mts"
   },
   "dependencies": {
     "zod": "^3.0.0"

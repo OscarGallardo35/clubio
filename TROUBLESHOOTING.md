@@ -1209,3 +1209,22 @@ curl -s -i -X OPTIONS http://localhost:3000/api/auth/cliente/registrar \
 Si `access-control-allow-origin` no es EXACTAMENTE el origen pedido, el flujo no va a
 funcionar en el celular por mas que todo el resto este bien.
 
+### En un monorepo, un package que nadie importa es codigo muerto
+
+Tres packages de este repo nacieron rotos y **nadie lo noto**, cada uno por una razon
+distinta:
+
+| package | que tenia | como se manifesto |
+|---|---|---|
+| `@repo/api-client` | 14 backticks escapados `\`` + `auth.Authorization` en el socket | no compilaba (4 errores de sintaxis) y el WS nunca habria autenticado |
+| `@repo/utils` | literales de string donde iba un enum (TS2322) + `getSubdominio` devolviendo `string \| undefined` | rompio el `tsc` del app en cuanto se importo |
+| `@repo/validators` | bloque `export {}` duplicado (TS2323/TS2484) + 9 `.uuid()` sobre IDs cuid + 6 enums que no coincidian con el schema | `tsc` del package: 68 errores; ademas el schema nunca se validaba bien |
+
+El `build` de turbo no los mira (se consumen por `transpilePackages`, o sea por fuente),
+el lint tampoco y los tests no los tocan: **solo la integracion real los expone**. Y
+"integrarlos" es un commit grande, donde el error se confunde con el trabajo nuevo.
+
+**Regla: al crear un package nuevo, agregar un smoke test que lo importe y lo compile**,
+aunque sea de una linea. Y cuando se toca un enum del schema, correr el check que lo
+vigila (`check:validators`).
+

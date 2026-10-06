@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import type * as Types from '@repo/types'
+import { cuidSchema } from './lib/cuid'
+
+export { cuidSchema }
 
 // Re-exports de tipos
 export type LoginEmpleadoInput = z.infer<typeof loginEmpleadoSchema>
@@ -23,6 +25,26 @@ export type SuscripcionPushInput = z.infer<typeof suscripcionPushSchema>
 export type CrearPedidoDeliveryInput = z.infer<typeof crearPedidoDeliverySchema>
 export type ActualizarEstadoPedidoInput = z.infer<typeof actualizarEstadoPedidoSchema>
 export type ActualizarConfiguracionInput = z.infer<typeof actualizarConfiguracionSchema>
+
+/**
+ * Valores de enums, copiados de apps/backend/prisma/schema.prisma (fuente de verdad).
+ *
+ * Por que listas y no z.nativeEnum() de @repo/types: importar el package desde aca
+ * mete sus fuentes en el programa de tsc y rompe con TS6059 (rootDir), que es el
+ * trabajo pendiente del grafo de packages. Con listas + `check:validators` la
+ * sincronizacion con el schema queda verificada por comando, no por convencion.
+ *
+ * Estas SI son columnas del schema.
+ */
+export const ETIQUETAS_CLIENTE = ['NUEVO', 'REGULAR', 'VIP', 'INACTIVO'] as const
+export const ESTADOS_PEDIDO = [
+  'PENDIENTE', 'CONFIRMADO', 'EN_PREPARACION', 'LISTO', 'ENVIADO', 'ENTREGADO', 'CANCELADO', 'RECHAZADO',
+] as const
+export const MODOS_FIDELIZACION = ['SOLO_VISITAS', 'SOLO_PUNTOS', 'HIBRIDO'] as const
+export const CANALES_CAMPANA = ['PUSH', 'WHATSAPP', 'AMBOS'] as const
+
+/** Estos NO son columnas del schema: son opciones de entrada de la app. */
+export const DESTINATARIOS_CAMPANA = ['TODOS', 'ETIQUETA', 'INDIVIDUAL'] as const
 
 // Esquemas de autenticación
 export const loginEmpleadoSchema = z.object({
@@ -60,26 +82,31 @@ export const cambiarPasswordSchema = z.object({
 })
 
 // Esquemas de visitas
+/**
+ * Espeja SolicitarVisitaDto del backend (apps/backend/src/visitas/dto).
+ * El cliente sale del JWT, no del body: aca NO va clienteId, y tipo/metodo no
+ * existen en la API.
+ */
 export const solicitarVisitaSchema = z.object({
-  clienteId: z.string().uuid('ID de cliente inválido'),
-  tipo: z.enum(['QR_CLUB', 'QR_MENU', 'MANUAL']),
-  metodo: z.enum(['QR', 'MANUAL', 'PROMOCION'])
+  sucursalId: cuidSchema.optional(),
+  sucursalSlug: z.string().max(60, 'Slug de sucursal máximo 60 caracteres').optional(),
+  origen: z.string().max(40, 'Origen máximo 40 caracteres').optional()
 })
 
 export const aprobarVisitaSchema = z.object({
-  visitaId: z.string().uuid('ID de visita inválido'),
-  empleadoId: z.string().uuid('ID de empleado inválido'),
+  visitaId: cuidSchema,
+  empleadoId: cuidSchema,
   observaciones: z.string().max(500, 'Observaciones máximo 500 caracteres').optional()
 })
 
 export const rechazarVisitaSchema = z.object({
-  visitaId: z.string().uuid('ID de visita inválido'),
-  empleadoId: z.string().uuid('ID de empleado inválido'),
+  visitaId: cuidSchema,
+  empleadoId: cuidSchema,
   motivo: z.string().min(5, 'Motivo mínimo 5 caracteres').max(200, 'Motivo máximo 200 caracteres')
 })
 
 export const regaloManualSchema = z.object({
-  clienteId: z.string().uuid('ID de cliente inválido'),
+  clienteId: cuidSchema,
   sellosOtorgados: z.number().int().min(1, 'Mínimo 1 sello').max(100, 'Máximo 100 sellos'),
   motivo: z.string().max(200, 'Motivo máximo 200 caracteres')
 })
@@ -101,7 +128,7 @@ export const crearClienteManualSchema = z.object({
 })
 
 export const filtrarClientesSchema = z.object({
-  etiqueta: z.enum(['NUEVO', 'RECURRENTE', 'VIP', 'INACTIVO']).optional(),
+  etiqueta: z.enum(ETIQUETAS_CLIENTE).optional(),
   activo: z.boolean().optional(),
   search: z.string().max(100, 'Búsqueda máximo 100 caracteres').optional(),
   page: z.number().int().min(1).optional().default(1),
@@ -128,7 +155,7 @@ export const actualizarItemCartaSchema = z.object({
 
 export const reordenarCartaSchema = z.object({
   items: z.array(z.object({
-    id: z.string().uuid('ID de item inválido'),
+    id: cuidSchema,
     orden: z.number().int().min(0)
   })).min(1, 'Debe incluir al menos un item')
 })
@@ -137,10 +164,10 @@ export const reordenarCartaSchema = z.object({
 export const enviarPromocionSchema = z.object({
   nombre: z.string().min(2, 'Nombre mínimo 2 caracteres').max(100, 'Nombre máximo 100 caracteres'),
   mensaje: z.string().min(10, 'Mensaje mínimo 10 caracteres').max(500, 'Mensaje máximo 500 caracteres'),
-  canal: z.enum(['PUSH', 'WHATSAPP', 'EMAIL', 'IN_APP']),
-  destinatarios: z.enum(['TODOS', 'ETIQUETA', 'INDIVIDUAL']),
-  filtroEtiqueta: z.enum(['NUEVO', 'RECURRENTE', 'VIP', 'INACTIVO']).optional(),
-  clienteIds: z.array(z.string().uuid('ID de cliente inválido')).optional(),
+  canal: z.enum(CANALES_CAMPANA),
+  destinatarios: z.enum(DESTINATARIOS_CAMPANA),
+  filtroEtiqueta: z.enum(ETIQUETAS_CLIENTE).optional(),
+  clienteIds: z.array(cuidSchema).optional(),
   programadaPara: z.string().datetime({ offset: true }).optional()
 })
 
@@ -155,7 +182,7 @@ export const suscripcionPushSchema = z.object({
 // Esquemas de delivery
 export const crearPedidoDeliverySchema = z.object({
   items: z.array(z.object({
-    itemId: z.string().uuid('ID de item inválido'),
+    itemId: cuidSchema,
     cantidad: z.number().int().min(1, 'Cantidad mínimo 1')
   })).min(1, 'Debe incluir al menos un item'),
   direccionEntrega: z.string().min(5, 'Dirección mínimo 5 caracteres').max(200, 'Dirección máximo 200 caracteres'),
@@ -164,13 +191,13 @@ export const crearPedidoDeliverySchema = z.object({
 })
 
 export const actualizarEstadoPedidoSchema = z.object({
-  estado: z.enum(['PENDIENTE', 'CONFIRMADO', 'EN_PREPARACION', 'LISTO', 'ENTREGADO', 'CANCELADO']),
+  estado: z.enum(ESTADOS_PEDIDO),
   estimadoMinutos: z.number().int().min(1).max(480).optional()
 })
 
 // Esquemas de configuración
 export const actualizarConfiguracionSchema = z.object({
-  modoFidelizacion: z.enum(['SELLOS', 'PUNTOS', 'VISITAS']).optional(),
+  modoFidelizacion: z.enum(MODOS_FIDELIZACION).optional(),
   sellosParaRegalo: z.number().int().min(1).max(100).optional(),
   puntosPorVisita: z.number().int().min(1).max(1000).optional(),
   visitasParaRegalo: z.number().int().min(1).max(100).optional(),
@@ -181,28 +208,3 @@ export const actualizarConfiguracionSchema = z.object({
   requiereVerificacionStaff: z.boolean().optional(),
   duracionSesionHoras: z.number().int().min(1).max(24).optional()
 })
-
-// Exportar todos los esquemas
-export {
-  loginEmpleadoSchema,
-  loginDuenoSchema,
-  verificar2FASchema,
-  registrarClienteSchema,
-  recuperarClienteSchema,
-  cambiarPasswordSchema,
-  solicitarVisitaSchema,
-  aprobarVisitaSchema,
-  rechazarVisitaSchema,
-  regaloManualSchema,
-  actualizarClienteSchema,
-  crearClienteManualSchema,
-  filtrarClientesSchema,
-  crearItemCartaSchema,
-  actualizarItemCartaSchema,
-  reordenarCartaSchema,
-  enviarPromocionSchema,
-  suscripcionPushSchema,
-  crearPedidoDeliverySchema,
-  actualizarEstadoPedidoSchema,
-  actualizarConfiguracionSchema
-}

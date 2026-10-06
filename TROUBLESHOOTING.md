@@ -731,3 +731,24 @@ renderiza nada), asi que con Portal el sheet no existe en el HTML del servidor y
 no se puede verificar con un render estatico. Como es un sheet fijo a pantalla
 completa, no hay ganancia de apilado: se renderiza en el lugar.
 
+### Escape y focus trap del BottomSheet: verificados a nivel de wiring, no en runtime
+
+El BottomSheet delega la a11y en `@radix-ui/react-dialog` (modo modal: FocusScope
++ DismissableLayer), no en codigo propio. Se verifico que la maquinaria esta
+**conectada** leyendo el HTML: el `tabindex="-1"` del contenedor lo agrega el
+FocusScope (es lo que lo hace focusable por programa) y los handlers
+`onPointerDownOutside`/`onInteractOutside` del DismissableLayer se aplican al
+elemento.
+
+**Verificacion runtime pendiente en Playwright (paso 8)**: disparar Escape y
+comprobar `document.activeElement` dentro del sheet. Un render estatico no ejecuta
+listeners, y `jsdom` daria cobertura falsa (no implementa focus real).
+
+### El boton "Ver mas" de GoogleReviews necesita medicion, no solo CSS
+
+`line-clamp-3` recorta el texto, pero saber si el boton "Ver mas" corresponde
+exige comparar `scrollHeight` con `clientHeight` — y en el render de servidor no
+hay DOM. Se resuelve con una estimacion por longitud (`>180` caracteres) y un
+`ResizeObserver` que la corrige al hidratar. Sin la estimacion, el boton nunca
+aparece en el primer render.
+

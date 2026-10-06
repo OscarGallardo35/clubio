@@ -1918,3 +1918,16 @@ perdia el mensaje de error en pantalla (la pagina se iba).
 El fix no fue "mirar mejor el estado" sino mover la navegacion al handler del envio: el hook devuelve
 el `linkToken` y el que llama navega. Sin observador no hay disparo espurio.
 
+### REGLA (ampliada): la navegacion nunca es condicional sobre estado persistido
+
+"Navegación: NUNCA condicional sobre estado persistido. Ni en effects, ni en handlers. Un botón que
+dice 'Ir a X' va a X. La decisión de qué mostrar es de la página X, no del que navega."
+
+Caso real: despues de sacar el effect observador de `/checkout`, se reviso si quedaba algun handler
+que decidiera a donde ir segun `pedido.linkToken`. Se barrieron TODOS los usos del campo y los dos
+unicos que navegan son el `<Link>` del banner (click del usuario, a donde dice) y el handler del
+checkout (que usa el token que devuelve el propio envio). El boton "Continuar al checkout" va derecho
+a `/[tenant]/checkout`, sin condicional. Verificar esto ANTES de tocar codigo ahorra el fix que no
+hace falta: la clase de bug puede estar ya resuelta y el sintoma venir de otro lado (por ejemplo, una
+pestana sin recargar, que sigue corriendo el bundle viejo aunque el dev server haya cambiado).
+

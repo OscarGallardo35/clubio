@@ -51,6 +51,7 @@ function clasificarFallo(status: number): Fallo {
 export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   const token = useClienteStore((s) => s.token)
   const pedidoGuardado = useCarritoStore((s) => s.pedido)
+  const despachar = useCarritoStore((s) => s.despachar)
   const { negocio, resenasDisponibles } = useBranding()
 
   const [pedido, setPedido] = React.useState<PedidoPublico | null>(null)
@@ -69,7 +70,14 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
     } catch (e) {
       const { status } = normalizarError(e)
       // Un error de red no borra lo que ya tenemos: se reintenta en el proximo tick.
-      if (status !== 0) setFallo(clasificarFallo(status))
+      if (status !== 0) {
+        setFallo(clasificarFallo(status))
+        // 404: este linkToken no existe. Si es el que tenemos guardado, el banner "Ver estado de tu
+        // pedido" estaria mandando al cliente a una pantalla muerta, asi que se suelta el pedido.
+        if (status === 404 && pedidoGuardado?.linkToken === linkToken) {
+          despachar({ tipo: 'OLVIDAR_PEDIDO' })
+        }
+      }
     } finally {
       setCargando(false)
     }

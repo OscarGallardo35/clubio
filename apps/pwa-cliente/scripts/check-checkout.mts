@@ -245,6 +245,26 @@ chk('rechaza vacio', validarTelefonoE164('') === false)
 chk('rechaza sin el +', validarTelefonoE164('5491112345678') === false)
 chk('rechaza letras', validarTelefonoE164('+54911abc45678') === false)
 
+
+// --- 12. Pedido viejo en el store + OLVIDAR_PEDIDO ---------------------------
+console.log('\n== pedido viejo ==')
+let conPedido = conCarrito()
+conPedido = reducerCarrito(conPedido, { tipo: 'PEDIDO_OK', linkToken: 'tok-viejo' })
+igual('PEDIDO_OK vacia los items', conPedido.items.length, 0)
+igual('PEDIDO_OK deja la fase en enviado', conPedido.fase, 'enviado')
+// Agregar un item ARRANCA un pedido nuevo: la fase NO puede quedarse en 'enviado', porque el guard
+// de ENVIAR la lee y bloquearia el envio para siempre. Por eso `items + enviado` es inalcanzable.
+const conPedidoYNuevo = reducerCarrito(conPedido, { tipo: 'AGREGAR_ITEM', item: PIZZA, cantidad: 1, modificadores: [], notas: '' })
+chk('agregar despues de pedir saca la fase de enviado', conPedidoYNuevo.fase !== 'enviado', `fase=${conPedidoYNuevo.fase}`)
+igual('y la deja en conItems', conPedidoYNuevo.fase, 'conItems')
+chk('el pedido guardado sobrevive (banner)', conPedidoYNuevo.pedido?.linkToken === 'tok-viejo')
+// OLVIDAR_PEDIDO: suelta SOLO el pedido (404 del seguimiento).
+const olvidado = reducerCarrito(conPedidoYNuevo, { tipo: 'OLVIDAR_PEDIDO' })
+igual('OLVIDAR_PEDIDO limpia el pedido', olvidado.pedido, null)
+igual('OLVIDAR_PEDIDO conserva los items', olvidado.items.length, 1)
+igual('OLVIDAR_PEDIDO conserva la fase', olvidado.fase, 'conItems')
+igual('OLVIDAR_PEDIDO es idempotente', reducerCarrito(olvidado, { tipo: 'OLVIDAR_PEDIDO' }).pedido, null)
+
 console.log(fallas.length === 0
   ? `\nTODO OK: ${ok} aserciones OK, 0 fallas\n`
   : `\nHAY FALLAS: ${ok} aserciones OK, ${fallas.length} fallas\n${fallas.map((f) => ' - ' + f).join('\n')}\n`)

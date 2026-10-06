@@ -147,6 +147,9 @@ export type EventoCarrito =
   | { tipo: 'PEDIDO_ERROR'; status: number; mensaje: string }
   | { tipo: 'REINTENTAR' }
   | { tipo: 'DESCARTAR_AVISO' }
+  // Olvida el pedido guardado. Se dispara cuando el seguimiento recibe 404: ese linkToken ya no
+  // existe, asi que el banner "Ver estado de tu pedido" no puede seguir apuntando ahi.
+  | { tipo: 'OLVIDAR_PEDIDO' }
   | { tipo: 'SET_NOTAS_PEDIDO'; notas: string }
 
 // ---------------------------------------------------------------------------
@@ -466,6 +469,12 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
     case 'REINTENTAR':
       if (estado.fase !== 'checkout') return estado
       return { ...estado, error: null }
+
+    case 'OLVIDAR_PEDIDO':
+      // Solo suelta el pedido: items, fase y datos del cliente quedan intactos (el carrito no tiene
+      // nada que ver con que el link del pedido viejo ya no exista).
+      if (!estado.pedido) return estado
+      return { ...estado, pedido: null }
 
     case 'SET_NOTAS_PEDIDO':
       // Maximo del backend para las notas del pedido (el de por item es 200).

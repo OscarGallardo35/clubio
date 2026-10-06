@@ -137,3 +137,63 @@ export interface VisitaPendiente {
   cliente: { id: string; nombre: string; telefonoEnmascarado: string }
   sucursal: { id: string; nombre: string; slug: string } | null
 }
+
+// ---------------------------------------------------------------------------
+// Pedidos (staff). Estados y transiciones REALES de
+// apps/backend/src/pedidos/helpers/transiciones-estado.ts
+// ---------------------------------------------------------------------------
+export type EstadoPedido =
+  | 'PENDIENTE' | 'CONFIRMADO' | 'EN_PREPARACION' | 'LISTO' | 'ENVIADO'
+  | 'ENTREGADO' | 'CANCELADO' | 'RECHAZADO'
+
+export type TipoPedido = 'MESA' | 'TAKEAWAY' | 'DELIVERY'
+export type ModoPagoPedido = 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA'
+
+/** Envelope unico de los listados de la API. */
+export interface Paginado<T> {
+  data: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** Un item del pedido tal como se guarda (columna Json `items`). */
+export interface ItemPedido {
+  itemId?: string
+  nombre?: string
+  cantidad?: number
+  precioUnitario?: number
+  subtotal?: number
+  notas?: string
+  modificadores?: { grupoId?: string; grupo?: string; opciones?: { id?: string; nombre?: string; precio?: number }[] }[]
+}
+
+export interface PedidoStaff {
+  id: string
+  sucursalId: string
+  clienteId: string | null
+  nombreCliente: string
+  telefono: string
+  direccion: string | null
+  origen: string | null
+  mesa: string | null
+  tipo: TipoPedido
+  modoPago: ModoPagoPedido
+  items: ItemPedido[]
+  subtotal: number
+  costoEnvio: number | null
+  total: number
+  notas: string | null
+  estado: EstadoPedido
+  motivoRechazo: string | null
+  empleadoAsignadoId: string | null
+  numeroAtendiente: string | null
+  linkToken: string | null
+  creadoEn: string
+  confirmadoEn: string | null
+  enviadoEn: string | null
+  entregadoEn: string | null
+  sucursal: { id: string; nombre: string; slug: string } | null
+  cliente?: { id: string; nombre: string } | null
+  empleadoAsignado?: { id: string; nombre: string } | null
+}

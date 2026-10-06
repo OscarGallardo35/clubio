@@ -306,6 +306,96 @@ const ws = await new Promise<{ ok: boolean; detalle: string }>((resolve) => {
 chk('el socket del staff conecta con la COOKIE (sin token en memoria)', ws.ok, ws.detalle);
 console.log(`  (socket: ${ws.detalle})`);
 
+
+// ---------------------------------------------------------------------------
+// 16) Pedidos: el staff los ve, los mueve y el cliente ve el motivo.
+//     Incluye el CONTRATO de la maquina de estados: el espejo de la UI
+//     (lib/pedidos-maquina.ts) no se cree a si mismo.
+// ---------------------------------------------------------------------------
+const ITEM_SEED = 'cmuvjy5ku002kbq7jjh4uwzph'; // Coca-Cola 500ml del seed
+const sufijoPedido = String(Date.now()).slice(-5);
+
+async function pedidoNuevo(tipo: 'TAKEAWAY' | 'DELIVERY') {
+  const r = await call('/pedidos', {
+    method: 'POST',
+    body: JSON.stringify({
+      tipo,
+      modoPago: 'EFECTIVO',
+      nombreCliente: `E2E Pedido ${sufijoPedido}`,
+      telefono: `+5493587${sufijoPedido}${tipo === 'DELIVERY' ? '1' : '2'}`,
+      ...(tipo === 'DELIVERY' ? { direccion: 'Av. Siempre Viva 742' } : {}),
+      items: [{ itemId: ITEM_SEED, cantidad: 1 }],
+    }),
+  });
+  return { status: r.status, body: r.body };
+}
+
+const np = await pedidoNuevo('TAKEAWAY');
+const pedidoId: string | undefined = np.body?.pedidoId;
+const linkToken: string | undefined = np.body?.linkToken;
+chk('el cliente crea un pedido (201)', np.status === 201 && typeof pedidoId === 'string', `status ${np.status} ${JSON.stringify(np.body).slice(0, 90)}`);
+
+if (pedidoId) {
+  const lista = await call('/pedidos', { cookie: cookieEmpleado });
+  chk('el pedido aparece en la lista del staff', lista.status === 200 && (lista.body?.data ?? []).some((p: { id: string }) => p.id === pedidoId), `status ${lista.status} total ${lista.body?.total}`);
+  chk('la lista viene paginada con {data,total,page,pageSize}', ['data', 'total', 'page', 'pageSize'].every((k) => k in (lista.body ?? {})));
+
+  const filtrado = await call('/pedidos?estado=PENDIENTE', { cookie: cookieEmpleado });
+  chk('el filtro por estado devuelve solo PENDIENTE', (filtrado.body?.data ?? []).every((p: { estado: string }) => p.estado === 'PENDIENTE'));
+
+  // CONTRATO de la maquina de estados (los casos que la UI asume):
+  const invalido = await call(`/pedidos/${pedidoId}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'CANCELADO' }) });
+  chk('PENDIENTE -> CANCELADO es 400 (el staff RECHAZA, no cancela)', invalido.status === 400, `status ${invalido.status}`);
+  const sinMotivo = await call(`/pedidos/${pedidoId}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'RECHAZADO' }) });
+  chk('RECHAZADO sin motivo (o corto) es 400', sinMotivo.status === 400, `status ${sinMotivo.status}`);
+
+  const conf = await call(`/pedidos/${pedidoId}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'CONFIRMADO' }) });
+  chk('el staff confirma el pedido', conf.status < 300 && conf.body?.estado === 'CONFIRMADO', `status ${conf.status}`);
+  const enPrep = await call(`/pedidos/${pedidoId}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'EN_PREPARACION' }) });
+  chk('CONFIRMADO -> EN_PREPARACION', enPrep.body?.estado === 'EN_PREPARACION', `status ${enPrep.status}`);
+  const listo = await call(`/pedidos/${pedidoId}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'LISTO' }) });
+  chk('EN_PREPARACION -> LISTO', listo.body?.estado === 'LISTO', `status ${listo.status}`);
+  const enviarTakeaway = await call(`/pedidos/${pedidoId}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'ENVIADO' }) });
+  chk('LISTO -> ENVIADO en TAKEAWAY es 400 (solo DELIVERY se envia)', enviarTakeaway.status === 400, `status ${enviarTakeaway.status}`);
+  const entregado = await call(`/pedidos/${pedidoId}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'ENTREGADO' }) });
+  chk('LISTO -> ENTREGADO en TAKEAWAY', entregado.body?.estado === 'ENTREGADO', `status ${entregado.status}`);
+  if (linkToken) {
+    const pub = await call(`/pedidos/publico/${linkToken}`);
+    chk('el cliente ve el pedido ENTREGADO en su link', pub.status === 200 && pub.body?.estado === 'ENTREGADO', `status ${pub.status} estado ${pub.body?.estado}`);
+  }
+}
+
+// Rechazo con motivo: el cliente TIENE que ver el texto.
+const nr = await pedidoNuevo('TAKEAWAY');
+const pedidoRechazo: string | undefined = nr.body?.pedidoId;
+const linkRechazo: string | undefined = nr.body?.linkToken;
+const MOTIVO_PEDIDO = 'Se acabo el stock de ese plato';
+if (pedidoRechazo) {
+  const rech = await call(`/pedidos/${pedidoRechazo}/estado`, { method: 'PATCH', cookie: cookieEmpleado, body: JSON.stringify({ estado: 'RECHAZADO', motivo: MOTIVO_PEDIDO }) });
+  chk('el staff rechaza con motivo (>=10)', rech.status < 300, `status ${rech.status} ${JSON.stringify(rech.body).slice(0, 80)}`);
+  if (linkRechazo) {
+    const pub2 = await call(`/pedidos/publico/${linkRechazo}`);
+    chk('el cliente ve RECHAZADO', pub2.body?.estado === 'RECHAZADO', `estado ${pub2.body?.estado}`);
+    chk('el cliente ve EL MOTIVO que escribio el staff', pub2.body?.motivoRechazo === MOTIVO_PEDIDO, `motivo=${JSON.stringify(pub2.body?.motivoRechazo)} claves=${Object.keys(pub2.body ?? {}).join(',')}`);
+  }
+}
+
+// El socket de /pedidos tambien tiene que autenticar SOLO con la cookie.
+const wsP = await new Promise<{ ok: boolean; detalle: string }>((resolve) => {
+  const sock = io(`${WS_URL}/pedidos`, {
+    transports: ['websocket'], withCredentials: true, reconnection: false,
+    extraHeaders: { cookie: cookieEmpleado },
+  });
+  const listo = setTimeout(() => { sock.disconnect(); resolve({ ok: false, detalle: 'sin respuesta en 10s' }); }, 10_000);
+  sock.on('conectado', (d: { tipo?: string; salas?: string[] }) => {
+    clearTimeout(listo); sock.disconnect();
+    resolve({ ok: true, detalle: `${d?.tipo} en ${(d?.salas ?? []).length} salas` });
+  });
+  sock.on('connect_error', (e: Error) => { clearTimeout(listo); sock.disconnect(); resolve({ ok: false, detalle: e.message }); });
+});
+chk('el socket de /pedidos conecta con la COOKIE (sin token en memoria)', wsP.ok, wsP.detalle);
+console.log(`  (socket pedidos: ${wsP.detalle})`);
+
 console.log('  (nota: el caso "token vencido" no se cubre: requiere firmar con JWT_EMPLEADO_SECRET real)');
 
 console.log(`\n  ${fallas.length === 0 ? 'TODO OK' : 'HAY FALLAS'}: ${ok} aserciones OK, ${fallas.length} fallas`);

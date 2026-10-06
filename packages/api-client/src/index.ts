@@ -231,6 +231,11 @@ export const endpoints = {
     crear: '/api/pedidos',
     publico: (linkToken: string) => `/api/pedidos/publico/${linkToken}`,
     get: (id: string) => `/api/pedidos/${id}`,
+    list: '/api/pedidos',
+    estado: (id: string) => `/api/pedidos/${id}/estado`,
+    tomar: (id: string) => `/api/pedidos/${id}/tomar`,
+    historial: '/api/pedidos/historial',
+    estadisticas: '/api/pedidos/estadisticas',
   },
   upsell: {
     calcular: '/api/upsell/calcular',

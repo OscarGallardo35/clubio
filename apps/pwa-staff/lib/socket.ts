@@ -25,3 +25,18 @@ export const EVENTOS_VISITA = {
   solicitada: 'visita:solicitada',
   conectado: 'conectado',
 } as const;
+
+/** Socket del namespace /pedidos (salas de sucursal + duenos). */
+export function crearSocketPedidos(token: string | null) {
+  return createSocket({
+    url: `${WS_URL}/pedidos`,
+    ...(token ? { auth: { token } } : {}),
+  });
+}
+
+export const EVENTOS_PEDIDO = {
+  nuevo: 'pedido:nuevo',
+  asignado: 'pedido:asignado',
+  estado: 'pedido:estado-actualizado',
+  cancelado: 'pedido:cancelado',
+} as const;

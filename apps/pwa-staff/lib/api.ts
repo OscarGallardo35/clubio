@@ -1,6 +1,9 @@
 import { ApiClient, endpoints } from '@repo/api-client';
 import type {
   EmpleadoMe,
+  EstadoPedido,
+  Paginado,
+  PedidoStaff,
   LoginEmpleadoRespuesta,
   RespuestaAprobacion,
   RespuestaRechazo,
@@ -62,4 +65,35 @@ export const visitasApi = {
       `${endpoints.visitas.historial}${qs ? `?${qs}` : ''}`,
     );
   },
+};
+
+/** Pedidos del lado staff. */
+export const pedidosApi = {
+  /**
+   * Listado de pedidos. SIN `estado` devuelve los ACTIVOS (PENDIENTE..ENVIADO):
+   * el backend filtra por ESTADOS_ACTIVOS cuando no se le pasa nada.
+   */
+  listar: (filtros: { estado?: string; tipo?: string; page?: number; pageSize?: number } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filtros)) if (v !== undefined && v !== '') qs.set(k, String(v));
+    const q = qs.toString();
+    return api.get<Paginado<PedidoStaff>>(`${endpoints.pedidos.list}${q ? `?${q}` : ''}`);
+  },
+
+  obtener: (id: string) => api.get<PedidoStaff>(endpoints.pedidos.get(id)),
+
+  /** `motivo` es obligatorio (min 10) solo cuando estado = RECHAZADO. */
+  cambiarEstado: (id: string, body: { estado: EstadoPedido; motivo?: string }) =>
+    api.patch<{ id: string; estado: EstadoPedido }>(endpoints.pedidos.estado(id), body),
+
+  /** Solo funciona con `configuracion.modoAsignacionPedidos = BROADCAST`. 409 si otro lo tomo. */
+  tomar: (id: string) => api.patch<{ ok: true; yaAsignado?: boolean }>(endpoints.pedidos.tomar(id)),
+
+  historial: (filtros: { page?: number; pageSize?: number } = {}) => {
+    const qs = new URLSearchParams(Object.entries(filtros).map(([k, v]) => [k, String(v)]));
+    const q = qs.toString();
+    return api.get<Paginado<PedidoStaff>>(`${endpoints.pedidos.historial}${q ? `?${q}` : ''}`);
+  },
+
+  estadisticas: () => api.get<Record<string, unknown>>(endpoints.pedidos.estadisticas),
 };

@@ -78,13 +78,28 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
   }, [])
 
   React.useEffect(() => {
+    // LOG TEMPORAL - sacar despues del diagnostico
+    console.log('[checkout] eval:', {
+      hasHydrated: useCarritoStore.persist.hasHydrated(),
+      itemsLength: useCarritoStore.getState().items.length,
+      locale,
+      fase: carrito.fase,
+      sucursalId: carrito.sucursalId,
+    })
     // Recien cuando la hidratacion termino se puede decidir si el carrito esta vacio de verdad.
     if (!locale) return
     if (carrito.items.length === 0) {
+      // LOG TEMPORAL - sacar despues del diagnostico
+      console.log('[checkout] REDIRECT disparado por:', {
+        motivo: 'items vacios con hidratacion terminada',
+        locale,
+        hasHydrated: useCarritoStore.persist.hasHydrated(),
+        sucursalIdEnEstado: carrito.sucursalId,
+      })
       toast('Tu carrito esta vacio')
       router.replace(`/${slugNegocio}/menu`)
     }
-  }, [locale, carrito.items.length, router, slugNegocio])
+  }, [locale, carrito.items.length, router, slugNegocio, carrito.fase, carrito.sucursalId])
 
   const fallas: Fallas = validarCheckout(carrito)
   const mostrar = (campo: keyof Fallas) => (intentoEnviar ? fallas[campo] : undefined)

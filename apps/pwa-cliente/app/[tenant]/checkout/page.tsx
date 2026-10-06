@@ -30,6 +30,8 @@ export default function CheckoutPage() {
   // lo que hace CartaDigital en el menu. Sin esto, entrar directo a /checkout (URL a mano, recarga,
   // incognito) deja el carrito vacio de verdad y el redirect a /menu se dispara siempre.
   React.useEffect(() => {
+    // LOG TEMPORAL - sacar despues del diagnostico
+    console.log('[checkout] activar con:', { slugNegocio, sucursalId: sucursal?.id ?? null, sucursalSlug: sucursal?.slug ?? null })
     void activar(slugNegocio, sucursal?.id ?? null, sucursal?.slug ?? null)
   }, [activar, slugNegocio, sucursal?.id, sucursal?.slug])
   // `useCarta` aca es solo para tener el refetch del cache: la carta en si la muestra /menu.

@@ -56,9 +56,13 @@ export const useCarritoStore = create<CarritoStore>()(
       despachar: (evento) => set((s) => reducerCarrito(s, evento)),
 
       activar: async (negocioSlug, sucursalId, sucursalSlug, carta) => {
+        // LOG TEMPORAL - sacar despues del diagnostico
+        console.log('[carrito] activar llamado con:', { negocioSlug, sucursalId, sucursalSlug, claveActual: useCarritoStore.persist.getOptions().name })
         if (useCarritoStore.persist.getOptions().name !== claveDe(negocioSlug)) {
           useCarritoStore.persist.setOptions({ name: claveDe(negocioSlug) })
+          console.log('[carrito] rehydrate disparado')
           await useCarritoStore.persist.rehydrate()
+          console.log('[carrito] post-rehydrate items:', useCarritoStore.getState().items.length)
         }
         set((s) =>
           rehidratar(recortarParaPersistir({ ...s, negocioSlug }), {

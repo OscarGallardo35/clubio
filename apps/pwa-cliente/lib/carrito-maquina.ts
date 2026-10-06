@@ -584,6 +584,10 @@ export function rehidratar(persistido: CarritoPersistido, contexto: ContextoRehi
     aviso: null,
   }
   if (contexto.sucursalId && persistido.sucursalId !== contexto.sucursalId) {
+    // LOG TEMPORAL - sacar despues del diagnostico
+    console.log('[carrito] rehidratar: sucursal DISTINTA -> CAMBIAR_SUCURSAL vacia el carrito:', {
+      guardada: persistido.sucursalId, viva: contexto.sucursalId, itemsAntes: persistido.items.length,
+    })
     // CAMBIAR_SUCURSAL ya sabe vaciar y avisar: se reusa esa regla en vez de repetirla.
     estado = reducerCarrito(estado, {
       tipo: 'CAMBIAR_SUCURSAL',

@@ -1467,3 +1467,12 @@ Estado verificado de cada endpoint (medido, no supuesto):
 O sea: la proteccion en el hook no es teorica, `precioExtra` es un string hoy y el modal de
 modificadores calcula el precio en vivo con el, asi que sin normalizar el total sale mal.
 
+### Mensajes de commit con comillas dobles: usar `git commit -F`
+
+El shell parte el comando en la primera comilla doble del mensaje y `git` toma el resto como
+pathspecs. Sintoma exacto: `error: pathspec 'X' did not match any file(s) known to git`, y el
+commit NO se hace (queda todo staged).
+
+Fix: escribir el mensaje a un archivo y commitear con `git commit -F mensaje.txt`. Aplica a
+cualquier commit con comillas, backticks, `$` o parentesis.
+

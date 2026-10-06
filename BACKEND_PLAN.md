@@ -761,4 +761,7 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   (`itemCartaSucursal.deleteMany({where:{sucursalId: norte.id}})`), no solo los que crea el
   test. Cuando el e2e crezca, marcar los suyos (por id o por un prefijo) para no arrastrar los
   del seed.
+- [ ] TODO pre-deploy: sincronizar `seed.ts` con grupos agregados por scripts
+  (salsas obligatorias). Hacer cuando se corra `pnpm db:reset` en staging antes del
+  deploy. Verificar con base limpia.
 

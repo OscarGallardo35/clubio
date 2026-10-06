@@ -42,7 +42,7 @@ COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/node_modules ./apps/backend/node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/prisma ./prisma
 COPY --from=builder --chown=nestjs:nodejs /app/apps/backend/package.json ./
-# TEMPORAL: sonda de diagnostico del deploy (se saca despues)
+# TEMPORAL: sonda de diagnostico del deploy (se retira con el fix real). Dispara re-deploy via webhook.
 RUN echo '=== SONDA /app ===' && ls -la /app | head -15 && \
     echo '=== SONDA /app/node_modules (primeros) ===' && ls /app/node_modules 2>&1 | head -15 && \
     echo '=== SONDA /app/node_modules/@nestjs ===' && ls -la /app/node_modules/@nestjs 2>&1 | head -12 && \

@@ -1691,3 +1691,48 @@ Corolario: los comentarios del reducer que dicen "guarda dura" o "no se envia do
 indicar que el estado ya esta protegido; antes de agregar una guarda o un evento extra en el
 llamador, conviene verificar que no este ya resuelto adentro.
 
+### REGLA: si dependes de un valor del cliente HTTP, verifica que el cliente lo produzca
+
+Cuando la logica se apoya en un valor especifico que deberia venir del cliente HTTP (por ejemplo
+`status 0` para "error de red"), **hay que verificar que el cliente realmente lo produzca** antes de
+escribir la condicion.
+
+Caso real (reintento del checkout): el plan decia "si el error es de red (status 0), reintentar una
+vez". Pero el `ApiClient` solo lanza `ApiError` cuando hay un `response.status` real:
+
+```ts
+throw new ApiError(response.status, data, data?.message || 'Error en la solicitud')
+```
+
+Si la request **ni sale** (sin red, DNS, servidor caido), `fetch` rechaza con un `TypeError` crudo:
+no hay `ApiError`, no hay `status`, y la condicion `status === 0` **nunca se cumple**. El reintento
+por red estaba muerto y no se notaba, porque el camino sin red es el que menos se prueba.
+
+Fix: normalizar en un solo lugar antes de clasificar (`normalizarError`): si lo lanzado no tiene
+`status`, es `0`.
+
+Regla practica: cuando una condicion depende de un valor "del sistema" (status, codigo, bandera),
+verificar quien lo produce y con que forma llega. Si nadie lo produce, la condicion es decorativa.
+
+### REGLA: el `message` de class-validator puede ser un array
+
+Nest con class-validator devuelve los errores de validacion como **array** cuando hay mas de uno:
+
+```json
+{"statusCode": 400, "message": ["property negocioSlug should not exist"], "error": "Bad Request"}
+```
+
+Mostrar eso crudo da `[object Object]` (o una lista rara) en la pantalla. Se normaliza a string
+(hay que unir con espacios) **en un solo lugar**, no en cada consumidor: si se hace en la UI, la
+proxima pantalla se olvida.
+
+En este proyecto lo hace `normalizarError` (`lib/checkout-maquina.ts`), junto con el status 0:
+
+```ts
+if (Array.isArray(m)) mensaje = m.filter((x): x is string => typeof x === 'string').join(' ')
+else if (typeof m === 'string') mensaje = m
+```
+
+Es el mismo criterio que la regla del punto unico de normalizacion: la frontera normaliza, los
+consumidores consumen.
+

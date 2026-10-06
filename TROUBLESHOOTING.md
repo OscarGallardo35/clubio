@@ -2008,3 +2008,23 @@ visitas del harness (`POST /api/visitas/solicitar`, `aprobar`, `rechazar`, `GET 
 **Despues de correr `check:flujo-ws`, verificar `/api/health`** (y si hace falta, levantar el backend)
 antes de decir que la suite quedo verde. Un `TOTAL: 29 OK` no dice nada del server que quedo atras.
 
+### REGLA: los datos del cliente se prellenan, nunca se pisan
+
+`/checkout` monta `useCliente()`, que pega a `GET /api/auth/cliente/me` al montar. Con 200, prellena
+nombre y telefono en el carrito; con 401, no toca nada (no estar logueado es un estado valido, no un
+error). El prellenado pasa por el reducer (`PRELLENAR_CLIENTE`) y **la guarda vive ahi**: solo llena
+campos VACIOS, asi que no importa en que orden lleguen la respuesta del `me` y lo que el cliente
+escribio a mano. Poner la guarda en el que despacha la habria dejado a merced del timing de cada
+camino que prellene.
+
+**Identidad del cliente: dos factores, ni uno mas.**
+1. La **cookie HttpOnly** (`cliente_token`) es la via principal: la manda el navegador sola
+   (`credentials: 'include'`) y JS no la puede leer.
+2. El **telefono** es el fallback de matching (mismo telefono = mismo cliente del negocio).
+**Device fingerprint: NO.** Es overkill para el MVP, y ademas agrega datos personales que no hacen
+falta para identificar a alguien que ya se registro.
+
+Por que `/club` parecia prellenar y `/checkout` no: `/club` (paso de registro) usa `useCliente()` para
+saludar con el nombre, pero los inputs arrancan vacios — lo que se veia lleno ahi es el autofill del
+navegador. El prellenado REAL desde la sesion no existia en ningun lado del checkout.
+

@@ -150,6 +150,12 @@ export type EventoCarrito =
   // Olvida el pedido guardado. Se dispara cuando el seguimiento recibe 404: ese linkToken ya no
   // existe, asi que el banner "Ver estado de tu pedido" no puede seguir apuntando ahi.
   | { tipo: 'OLVIDAR_PEDIDO' }
+  /**
+   * Prellena los datos del cliente desde su sesion (GET /auth/cliente/me). El eje es que NUNCA pisa
+   * lo que el usuario ya escribio: solo llena campos vacios, y esa guarda vive en el reducer para que
+   * valga en cualquier camino que prellene (no queda en manos de quien despacha).
+   */
+  | { tipo: 'PRELLENAR_CLIENTE'; datos: { nombre?: string | undefined; telefono?: string | undefined } }
   | { tipo: 'SET_NOTAS_PEDIDO'; notas: string }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +475,19 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
     case 'REINTENTAR':
       if (estado.fase !== 'checkout') return estado
       return { ...estado, error: null }
+
+    case 'PRELLENAR_CLIENTE': {
+      const nombre = evento.datos.nombre?.trim()
+      const telefono = evento.datos.telefono?.trim()
+      const cliente = { ...estado.cliente }
+      if (cliente.nombre.trim() === '' && nombre) cliente.nombre = nombre
+      if (cliente.telefono.trim() === '' && telefono) cliente.telefono = telefono
+      // Sin cambios: se devuelve el MISMO objeto para no re-renderizar al pedo.
+      if (cliente.nombre === estado.cliente.nombre && cliente.telefono === estado.cliente.telefono) {
+        return estado
+      }
+      return { ...estado, cliente }
+    }
 
     case 'OLVIDAR_PEDIDO':
       // Solo suelta el pedido: items, fase y datos del cliente quedan intactos (el carrito no tiene

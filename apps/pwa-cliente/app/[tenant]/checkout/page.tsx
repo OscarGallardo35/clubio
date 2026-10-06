@@ -15,6 +15,7 @@ import { toast } from '@repo/ui'
 import { useCarritoStore } from '@/stores/carritoStore'
 import { useCarta } from '@/hooks/useCarta'
 import { useSucursalActiva } from '@/hooks/useSucursalActiva'
+import { useCliente } from '@/hooks/useCliente'
 
 export default function CheckoutPage() {
   const params = useParams<{ tenant?: string }>()
@@ -31,6 +32,18 @@ export default function CheckoutPage() {
   React.useEffect(() => {
     void activar(slugNegocio, sucursal?.id ?? null, sucursal?.slug ?? null)
   }, [activar, slugNegocio, sucursal?.id, sucursal?.slug])
+  // Auto-login del cliente: `useCliente` pega a GET /auth/cliente/me al montar (la sesion viaja en
+  // la cookie HttpOnly). Si hay 200, se prellenan nombre y telefono; si es 401, `resuelto` queda en
+  // true con `cliente` en null y no se toca nada.
+  const { cliente: clienteSesion, resuelto: sesionResuelta } = useCliente()
+  React.useEffect(() => {
+    if (!sesionResuelta || !clienteSesion) return
+    despachar({
+      tipo: 'PRELLENAR_CLIENTE',
+      datos: { nombre: clienteSesion.nombre, telefono: clienteSesion.telefono },
+    })
+  }, [sesionResuelta, clienteSesion?.id, clienteSesion?.nombre, clienteSesion?.telefono, despachar])
+
   // `useCarta` aca es solo para tener el refetch del cache: la carta en si la muestra /menu.
   const { refetch } = useCarta(slugNegocio, slugParaApi)
 

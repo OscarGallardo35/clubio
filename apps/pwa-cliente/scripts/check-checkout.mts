@@ -293,6 +293,30 @@ chk('la base NO es la url del staff (el bug original)',
 chk('el mensaje viaja codificado y conserva el link del staff adentro',
   urlWhatsAppStaff('+5493585705745', MSG_WA)?.includes(encodeURIComponent('http://192.168.0.103:3002/pedido/tok-1')) === true)
 
+
+// --- 15. Prellenado desde la sesion del cliente -----------------------------
+console.log('\n== prellenado del cliente ==')
+const conSesion = (e: EstadoCarrito, datos: { nombre?: string; telefono?: string }) =>
+  reducerCarrito(e, { tipo: 'PRELLENAR_CLIENTE', datos })
+
+let pre = conSesion(base(), { nombre: 'Oscar Gabriel', telefono: '+5493585705745' })
+igual('prellena los dos campos vacios', [pre.cliente.nombre, pre.cliente.telefono], ['Oscar Gabriel', '+5493585705745'])
+// Lo importante: NO pisa lo que el usuario ya escribio.
+let escrito = reducerCarrito(base(), { tipo: 'SET_CLIENTE', campo: 'nombre', valor: 'Otro Nombre' })
+escrito = conSesion(escrito, { nombre: 'Oscar Gabriel', telefono: '+5493585705745' })
+igual('no pisa el nombre que ya estaba escrito', escrito.cliente.nombre, 'Otro Nombre')
+igual('pero si completa el telefono que estaba vacio', escrito.cliente.telefono, '+5493585705745')
+igual('recorta los espacios', conSesion(base(), { nombre: '  Oscar  ' }).cliente.nombre, 'Oscar')
+igual('una sesion vacia no prellena nada', conSesion(base(), { nombre: '', telefono: '' }).cliente.nombre, '')
+igual('es idempotente', conSesion(pre, { nombre: 'Oscar Gabriel' }).cliente.nombre, 'Oscar Gabriel')
+const vacio = base()
+chk('sin nada que prellenar devuelve el MISMO objeto', conSesion(vacio, { nombre: '   ' }) === vacio)
+chk('prellenar no toca los items ni la fase', (() => {
+  const antes = conCarrito()
+  const despues = conSesion(antes, { nombre: 'Oscar', telefono: '+5493585705745' })
+  return despues.items.length === antes.items.length && despues.fase === antes.fase
+})())
+
 console.log(fallas.length === 0
   ? `\nTODO OK: ${ok} aserciones OK, 0 fallas\n`
   : `\nHAY FALLAS: ${ok} aserciones OK, ${fallas.length} fallas\n${fallas.map((f) => ' - ' + f).join('\n')}\n`)

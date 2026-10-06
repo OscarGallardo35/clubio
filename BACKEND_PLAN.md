@@ -804,3 +804,14 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
   (`'RATE_LIMIT' | 'VALIDACION' | 'SUCURSAL_CERRADA' | 'CARTA_VENCIDA' | 'RED' | 'DESCONOCIDO'`) para
   que el compilador valide. Toca consumidores, por eso va aparte.
 
+## TODO checkout: riesgo residual de la guarda por sucursal
+
+- **Riesgo residual: si un negocio no tiene sucursales, `activa` queda en `null` para siempre y
+  `/checkout` muestra "Cargando..." indefinidamente.** El redirect por carrito vacio ahora espera a
+  que la sucursal viva este resuelta (`puedeDecidir = locale && sucursalId !== null`), asi que si esa
+  resolucion nunca llega, la pantalla se queda cargando en vez de mandar al menu.
+  Fix propuesto: flag `resolviendo` en `SucursalProvider` (query -> storage -> fallback ->
+  `resolviendo = false`), y que el checkout espere a `!resolviendo` en lugar de a una sucursal no
+  nula. **Evaluar cuando se agregue el primer negocio sin sucursales** (hoy `bar-la-esquina` tiene
+  dos y resuelve siempre).
+

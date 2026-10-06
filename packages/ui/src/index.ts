@@ -1,5 +1,5 @@
 // Re-exportar componentes de shadcn/ui y personalizados
-export { Button } from './components/button'
+export { Button, buttonVariants } from './components/button'
 export { Input } from './components/input'
 export { Textarea } from './components/textarea'
 export { Label } from './components/label'
@@ -17,9 +17,10 @@ export { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/tooltip'
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './components/tabs'
 export { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './components/accordion'
-export { Badge } from './components/badge'
+export { Badge, badgeVariants } from './components/badge'
 export { Avatar, AvatarFallback, AvatarImage } from './components/avatar'
 export { Progress } from './components/progress'
+export type { ProgressProps } from './components/progress'
 export { Skeleton } from './components/skeleton'
 export { Separator } from './components/separator'
 export { Toaster, toast } from './components/toaster'
@@ -29,6 +30,9 @@ export { DataTable } from './components/data-table'
 export { TarjetaSellos } from './components/tarjeta-sellos'
 export { GoogleReviews } from './components/google-reviews'
 export { BottomSheet } from './components/bottom-sheet'
+
+// Utilidades
+export { cn } from './lib/utils'
 
 // Estilos globales
 import './styles/globals.css'

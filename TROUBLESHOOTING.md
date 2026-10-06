@@ -1879,3 +1879,21 @@ Corolario: una guarda anti-doble-tap tiene que poder distinguir "ya estoy envian
 de "ya se estaba enviando antes de que yo mirara". La forma mas simple es que la transicion ocurra
 **dentro de la misma funcion** que manda la request.
 
+### REGLA: los tokens de color se leen del preset, no se inventan
+
+`var(--color-primary)` **no existe** en este proyecto: el tema define `--primary: 0 84.2% 60.2%` (un
+triplete HSL) y el preset (`@repo/config/tailwind-preset`) expone `primary: hsl(var(--primary))`. Una
+variable CSS que no existe **no rompe el build ni tira error**: el navegador descarta la declaracion y
+el elemento se pinta sin ese estilo, como si nunca hubiera estado.
+
+Caso real: 8 usos de `var(--color-primary)` en 7 archivos (timeline del seguimiento, tab activa del
+BottomNav, fondo del BadgeCarrito, acento de los radios del modal y del checkout, gradiente del
+BrandingProvider). Todos compilaban, todos pasaban el typecheck y ninguno pintaba nada. El sintoma que
+lo destapo: el timeline del pedido mostraba los 6 estados **iguales** (los puntos salian sin color,
+asi que "completado" y "pendiente" se veian identicos).
+
+Regla: para color de marca usar los tokens del preset (`bg-primary`, `text-primary`, `border-primary`,
+`accent-primary`, `text-primary-foreground`) o, si hace falta la variable cruda,
+`hsl(var(--primary))`. **Nunca** `var(--color-X)`. Y verificar el CSS SERVIDO (no el HTML), que es la
+unica forma de ver un estilo que se descarto en silencio.
+

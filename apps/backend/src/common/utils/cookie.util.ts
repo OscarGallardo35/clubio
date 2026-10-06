@@ -1,23 +1,33 @@
 import type { CookieOptions } from 'express';
 
 /**
- * Cookie de sesion del CLIENTE (A1: HttpOnly).
+ * Cookies de sesion (A1: HttpOnly).
  *
- * Decision de arquitectura (#3.0): el token del cliente viaja en una cookie
- * HttpOnly en vez de quedar en localStorage, que es accesible desde JS y por lo
- * tanto robable con un XSS. En produccion (dominios distintos, app.clubio.lat ->
- * api.clubio.lat) hace falta SameSite=None + Secure; en desarrollo, Lax sin
- * Secure para que funcione sobre http://localhost.
+ * Decision de arquitectura (#3.0): el token viaja en una cookie HttpOnly en vez
+ * de quedar en localStorage, que es accesible desde JS y por lo tanto robable con
+ * un XSS. En produccion (dominios distintos, app.clubio.lat -> api.clubio.lat)
+ * hace falta SameSite=None + Secure; en desarrollo, Lax sin Secure para que
+ * funcione sobre http://localhost.
+ *
+ * SIMETRIA DELIBERADA: la PWA Staff usa el mismo mecanismo que la PWA Cliente
+ * (`empleado_token`, mismas banderas, mismo path). Un solo patron de auth en el
+ * repo. El header Bearer queda como fallback (harness de integracion y llamadas
+ * server-to-server).
  *
  * Se puede forzar con COOKIE_SAMESITE / COOKIE_SECURE / COOKIE_DOMAIN.
  */
 export const COOKIE_CLIENTE = 'cliente_token';
 
+/** Cookie de sesion del STAFF (PWA Staff). Mismas banderas que la del cliente. */
+export const COOKIE_EMPLEADO = 'empleado_token';
+
 export function esProduccion(): boolean {
   return (process.env.NODE_ENV ?? 'development') === 'production';
 }
 
-export function opcionesCookieCliente(maxAgeSegundos: number): CookieOptions {
+/** Opciones de la cookie de sesion. Las MISMAS para cliente y staff: no hay
+ * dos politicas de cookie que puedan divergir. */
+export function opcionesCookieSesion(maxAgeSegundos: number): CookieOptions {
   const prod = esProduccion();
 
   const sameSite = (process.env.COOKIE_SAMESITE?.trim() ||
@@ -44,10 +54,17 @@ export function opcionesCookieCliente(maxAgeSegundos: number): CookieOptions {
  * Opciones para BORRAR la cookie: mismas banderas pero sin maxAge (si no,
  * el navegador puede ignorar el clear).
  */
-export function opcionesBorrarCookieCliente(): CookieOptions {
-  const { maxAge: _maxAge, ...resto } = opcionesCookieCliente(0);
+export function opcionesBorrarCookieSesion(): CookieOptions {
+  const { maxAge: _maxAge, ...resto } = opcionesCookieSesion(0);
   return resto;
 }
+
+// Alias por contexto: se llaman igual que antes (nada que renombrar en los
+// controllers) pero comparten una unica implementacion.
+export const opcionesCookieCliente = opcionesCookieSesion;
+export const opcionesCookieEmpleado = opcionesCookieSesion;
+export const opcionesBorrarCookieCliente = opcionesBorrarCookieSesion;
+export const opcionesBorrarCookieEmpleado = opcionesBorrarCookieSesion;
 
 /**
  * Lee una cookie del header crudo `Cookie: a=1; b=2`.

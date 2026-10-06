@@ -2092,3 +2092,50 @@ nuevas y se verifica el SSR real, no una simulación.
 Consecuencia: `check:ui-ssr` necesita el dev server de la PWA Cliente vivo, igual que `check:flujo-ws`
 necesita el backend.
 
+### REGLA: la sesion de Staff usa cookie HttpOnly igual que la de Cliente
+
+"Staff usa cookie HttpOnly igual que Cliente. Simetría deliberada: un solo patrón de auth en el repo. El
+Bearer queda como fallback para el harness de integración y para calls server-to-server."
+
+Caso real. El harness de la sesion de staff (`check-auth-staff.mts`) encontro que la sesion de empleado
+era **solo Bearer**: el login devolvia `accessToken` y nada mas, y `JwtEmpleadoStrategy` leia
+`ExtractJwt.fromAuthHeaderAsBearerToken()`. Dos consecuencias:
+
+1. El plan de la PWA Staff ("cookie HttpOnly + middleware que chequea presencia") no tenia nada que
+   chequear: sin cookie, el middleware no puede hacer su trabajo y el guard tiene que ser del lado del
+   cliente.
+2. El token terminaba en `localStorage`, que es exactamente lo que la cookie HttpOnly existe para evitar
+   (robable con un XSS).
+
+Fix: `COOKIE_EMPLEADO = 'empleado_token'` con **las mismas banderas** que `COOKIE_CLIENTE`
+(`opcionesCookieSesion`, una sola implementacion con alias por contexto), la estrategia lee **cookie
+primero** y el Bearer queda como fallback. No hay dos politicas de cookie que puedan divergir: si manana
+cambia SameSite/Secure, cambia para las dos.
+
+Nota de asimetria que queda anotada: la estrategia del cliente prueba **Bearer primero** y la del
+empleado **cookie primero**. En el cliente funciona porque sus cookies son HttpOnly y el navegador no
+manda `Authorization` en los fetches normales; aun asi, el orden distinto es una diferencia real que no
+deberia sorprender a nadie que lea las dos.
+
+### REGLA: el build del backend puede salir exit 0 y NO emitir `dist` (dist vacio)
+
+Sintoma: `pnpm --filter backend build` dice **exit 0**, y al levantar salta
+`Error: Cannot find module '.../apps/backend/dist/main.js'` (MODULE_NOT_FOUND). El `dist/` existe pero
+vacio, o no existe.
+
+Causa: el backend tiene `deleteOutDir: true` en `nest-cli.json` + build incremental
+(`tsconfig.tsbuildinfo`). Si el `tsbuildinfo` queda de una corrida anterior, `nest build` **borra el
+dist y despues decide que no hay nada que re-emitir**, asi que sale con exito y deja el dist vacio.
+
+Chequeo barato (no alcanza con el exit code):
+
+    ls apps/backend/dist/main.js   # tiene que existir despues de CADA build
+
+Si no existe: volver a buildear (el `prebuild` hace `rimraf dist tsconfig.tsbuildinfo`, y esa corrida si
+emite). Se suma a la regla del rebuild: **matar el proceso, buildear, verificar que el artefacto exista,
+levantar y verificar `/api/health`**.
+
+Caso real: al implementar la cookie de staff, el build dio exit 0 y el `node dist/main.js` del relanzado
+murio con MODULE_NOT_FOUND. El `dist/` no existia y el `tsconfig.tsbuildinfo` si, que es la firma exacta
+de este caso.
+

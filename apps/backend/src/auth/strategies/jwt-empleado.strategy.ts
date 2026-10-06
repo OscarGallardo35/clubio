@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { requireEnv } from '../../common/utils/env.util';
+import { COOKIE_EMPLEADO, leerCookie } from '../../common/utils/cookie.util';
 
 export interface JwtEmpleadoPayload {
   sub: string;
@@ -18,7 +19,15 @@ export interface JwtEmpleadoPayload {
 export class JwtEmpleadoStrategy extends PassportStrategy(Strategy, 'jwt-empleado') {
   constructor(private readonly prisma: PrismaService) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // La cookie HttpOnly es la via principal de la PWA Staff; el header Bearer
+      // queda como fallback para el harness de integracion y para llamadas
+      // server-to-server (el WebSocket no puede leer cookies desde JS, asi que
+      // tambien las usa).
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        (req: { headers?: { cookie?: string } }) =>
+          leerCookie(req?.headers?.cookie, COOKIE_EMPLEADO) || null,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       // Secreto PROPIO del contexto empleado (distinto de dueno/cliente).
       secretOrKey: requireEnv('JWT_EMPLEADO_SECRET', 'dev-empleado-solo-desarrollo'),

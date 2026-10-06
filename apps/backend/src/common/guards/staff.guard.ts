@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { requireEnv } from '../utils/env.util';
+import { COOKIE_EMPLEADO, leerCookie } from '../utils/cookie.util';
 
 /**
  * Guard de endpoints de GESTION del negocio.
@@ -24,8 +25,19 @@ export class StaffGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
-    const [scheme, token] = String(req.headers.authorization ?? '').split(' ');
-    if (scheme !== 'Bearer' || !token) {
+
+    // Dos vias, y el orden importa poco porque cada una se prueba contra los dos
+    // secretos:
+    //   - la cookie HttpOnly `empleado_token` (via principal de la PWA Staff)
+    //   - `Authorization: Bearer` (fallback: harness de integracion y llamadas
+    //     server-to-server; el WS tampoco puede leer cookies desde JS)
+    // El dueno no tiene cookie: sigue entrando por Bearer.
+    const tokens: string[] = [];
+    const tokenCookie = leerCookie(req.headers?.cookie, COOKIE_EMPLEADO);
+    if (tokenCookie) tokens.push(tokenCookie);
+    const [scheme, tokenHeader] = String(req.headers.authorization ?? '').split(' ');
+    if (scheme === 'Bearer' && tokenHeader) tokens.push(tokenHeader);
+    if (tokens.length === 0) {
       throw new UnauthorizedException('Falta el token de autenticacion');
     }
 
@@ -34,7 +46,8 @@ export class StaffGuard implements CanActivate {
       [requireEnv('JWT_EMPLEADO_SECRET', 'dev-empleado-solo-desarrollo'), 'empleado'],
     ];
 
-    for (const [secret, tipoEsperado] of candidatos) {
+    for (const token of tokens) {
+      for (const [secret, tipoEsperado] of candidatos) {
       try {
         const payload = this.jwt.verify(token, { secret }) as {
           sub?: string; tipo?: string; negocioSlug?: string;
@@ -65,7 +78,8 @@ export class StaffGuard implements CanActivate {
         };
         return true;
       } catch {
-        // prueba con el siguiente secreto
+        // prueba con el siguiente secreto (y despues con el siguiente token)
+      }
       }
     }
 

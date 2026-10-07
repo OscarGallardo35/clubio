@@ -30,9 +30,12 @@ RUN pnpm --filter backend build
 # si no queda ahi, el build falla AQUI, con el log a la vista, en vez de morir en runtime.
 FROM builder AS deploy
 RUN pnpm --filter backend deploy --prod /app/out \
-    && cp -RL /app/apps/backend/node_modules/.prisma /app/out/node_modules/.prisma \
-    && test -d /app/out/node_modules/.prisma/client \
-    && echo "OK: prisma client generado dentro de /app/out"
+    && SRC=$(find /app/node_modules/.prisma /app/node_modules/.pnpm -maxdepth 5 -type d -name .prisma 2>/dev/null | head -1) \
+    && echo "cliente de prisma generado en: $SRC" \
+    && test -n "$SRC" \
+    && mkdir -p /app/out/node_modules/.prisma \
+    && cp -RL "$SRC/client" /app/out/node_modules/.prisma/client \
+    && ls /app/out/node_modules/.prisma/client | head -5
 
 # ============ Runner ============
 FROM base AS runner

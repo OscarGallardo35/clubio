@@ -935,3 +935,22 @@ Impacto: SEO + first paint (el HTML inicial muestra "no hay items" y se corrige 
 **No bloqueante.** No es un bug de fetch ni falta el header del tenant: la diferencia es el
 `sucursalSlug`, que en SSR todavia no se conoce.
 
+## No es bug: el BottomSheet de modificadores SI abre (verificado en browser)
+
+El "catch de la Milanesa" (el item no se agregaba) quedo diagnosticado y **NO es un bug**. Medido en
+browser real, clickeando "Agregar Milanesa napolitana" con instrumentacion previa de red y consola:
+
+- Se dispara `GET /api/modificadores/items/<itemId>/grupos` (o sea: la card CONSULTA los grupos antes).
+- Se abre el BottomSheet: "Milanesa napolitana / Punto de coccion / Jugoso - A punto - Cocido /
+  Notas (opcional) 0/200 / Agregar al carrito ($ 6.800)".
+- Cero errores en consola y cero unhandled rejections.
+
+El grupo del item no es "Salsas obligatorias" (esa era una suposicion mia): es "Punto de coccion".
+Comportamiento correcto por diseno: item con grupos -> hoja de modificadores; item sin grupos
+(Coca-Cola) -> agregado directo.
+
+Por que la primera medicion parecio un fallo: se chequeo `[role=dialog],dialog` a los 2 s del click,
+que no matchea el sheet y encima sin margen para el fetch de grupos. Leccion para los harness de
+navegador: verificar el efecto con el selector real del componente y con el fetch ya resuelto, y no
+concluir "no paso nada" desde una unica sonda.
+

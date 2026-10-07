@@ -977,4 +977,6 @@ el contador vuelve a cero).
    Verificar si es re-render o store desincronizado. Cosmetico, no bloqueante.
 2. CRUD completo de carta en PWA Staff: falta agregar/editar/eliminar items desde la UI. Por ahora se
    edita por Prisma Studio. Prioridad post-MVP (primer cliente onboardeado).
-
+3. Timing del WS: la lista de /visitas se llena por REST (GET /visitas/pendientes -> 200) aunque el
+   rotulo diga "Reconectando". Verificar si es el fallback correcto o si el socket tarda en conectar.
+   Cosmetico, no bloqueante.

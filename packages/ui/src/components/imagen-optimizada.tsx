@@ -11,7 +11,6 @@
  * que es puro y por eso se puede testear desde node sin arrastrar React.
  */
 import * as React from 'react'
-import { ImageOff } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { RATIO_POR_TIPO, urlOptimizada } from '../lib/url-optimizada'
 import type { TipoImagenOptimizada } from '../lib/url-optimizada'
@@ -57,7 +56,14 @@ export function ImagenOptimizada({
 
   const url = src && src.trim() !== '' ? urlOptimizada(src, tipo) : null
   const ratio = aspectRatio ?? RATIO_POR_TIPO[tipo]
-  const color = placeholderColor ?? 'var(--color-primary, #E63946)'
+  // OJO con el default: `--color-primary` NO existe en el proyecto (el tema define `--primary`
+  // como triplete HSL y el preset expone `hsl(var(--primary))`). Con `var(--color-primary, #x)`
+  // el fallback hardcodeado gana SIEMPRE y el placeholder se pinta de un color que no es el de
+  // la marca. Con `hsl(var(--primary))` hereda el primario del negocio.
+  const color = placeholderColor ?? 'hsl(var(--primary))'
+  // Sin foto no es un ERROR: es lo normal. Se muestra la inicial del item en vez del icono de
+  // "imagen rota", que se lee como que algo fallo.
+  const inicial = (alt ?? '').trim().charAt(0).toUpperCase() || '?'
 
   return (
     <div
@@ -81,9 +87,16 @@ export function ImagenOptimizada({
           className="flex h-full w-full items-center justify-center"
           style={{ backgroundColor: color }}
         >
-          <span className="text-white/80" aria-hidden="true">
-            {fallbackIcon ?? <ImageOff className="size-8" />}
-          </span>
+          {fallbackIcon ? (
+            <span className="text-white/80" aria-hidden="true">{fallbackIcon}</span>
+          ) : (
+            <span
+              aria-hidden="true"
+              className="flex size-12 items-center justify-center rounded-full bg-white/20 text-xl font-semibold text-white"
+            >
+              {inicial}
+            </span>
+          )}
         </div>
       )}
     </div>

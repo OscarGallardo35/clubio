@@ -1901,6 +1901,14 @@ asi que "completado" y "pendiente" se veian identicos).
 `hsl()`. Y verificar el CSS SERVIDO (no el HTML): es la unica forma de ver un estilo que el navegador
 descarto sin decir nada.
 
+**Recurrencia (placeholder de la carta)**: `ImagenOptimizada` usaba
+`placeholderColor ?? 'var(--color-primary, #E63946)'`. Como la variable no existe, el **fallback** era
+el que ganaba siempre: cualquier consumidor que no pasara `colorMarca` pintaba el rojo hardcodeado en
+vez del primario del negocio. Es la MISMA clase de bug con disfraz, y peor: el fallback hace que nunca
+se vea "roto" (no hay un estilo faltante que llame la atencion, hay un color equivocado que parece a
+proposito). Regla: un `var(--token, fallback)` para color de marca es la trampa con disfraz — si el
+token no existe, el fallback manda en silencio. Va `hsl(var(--primary))`, sin fallback.
+
 ### REGLA: la navegacion no sale de estado persistido
 
 "La navegación no debe depender de estado persistido. Un effect que observa un campo en localStorage

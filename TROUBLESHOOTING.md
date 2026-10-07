@@ -2379,4 +2379,20 @@ Todo lo que se valido en el laboratorio local (Windows) pasaba, y en el contened
 Regla: el laboratorio local sirve para validar LOGICA (que el cliente generado exponga los enums, que
 `pnpm deploy` deje directorios reales sin symlinks), no para validar RUTAS. Los guards del Dockerfile
 tienen que buscar donde quedo la cosa (`find` + `echo` + test del resultado), no asumir una ruta.
+## Cookies en produccion cross-site
+
+- **Sintoma**: 401 en `/auth/cliente/me` con la cookie visiblemente seteada (el `Set-Cookie` sale bien).
+- **Causa tipica**: PWA y API en **dominios registrables distintos** (`up.railway.app` vs `clubio.lat`) ->
+  la cookie es de **terceros** -> el navegador la bloquea (Chrome/Safari, incognito siempre). Los
+  atributos estan bien (`SameSite=None; Secure`): el problema no es la cookie, es la topologia.
+- **Diagnostico**: comparar el **dominio registrable** (eTLD+1) de la PWA y de la API, no solo el
+  subdominio. `app.clubio.lat` -> `api.clubio.lat` es same-site; `app.clubio.lat` ->
+  `backend-production-*.up.railway.app` es cross-site.
+- **Fix**: servir la API en el mismo dominio raiz (`api.clubio.lat`) y apuntar las PWAs ahi
+  (`NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_WS_URL`, que se hornean en build: requiere rebuild).
+- **NO hacer**: agregar `Domain=.clubio.lat` si la API responde desde otro host. Una cookie no puede
+  declarar un `Domain` que no sea su propio host o un padre: el navegador la descarta entera y el login
+  deja de funcionar del todo (peor que el 401 original).
+- **Por que no pasa en dev**: en dev PWA y API comparten host (`192.168.0.103`, distinto puerto =
+  mismo site), asi que `SameSite=Lax` alcanza y nunca se ve el problema.
 

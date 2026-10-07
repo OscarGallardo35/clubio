@@ -197,7 +197,10 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   // sabe que va a terminar en 400.
   const puedeCancelar = pedido.estado === 'PENDIENTE' || pedido.estado === 'CONFIRMADO'
 
-  const cancelar = React.useCallback(async () => {
+  // OJO: NO puede ser un hook (`useCallback`): este componente tiene early returns arriba
+  // (`cargando`, `fallo`), asi que un hook aca adentro se ejecuta en unas ramas y en otras no
+  // y React explota con "#310: rendered more hooks than during the previous render".
+  const cancelar = async () => {
     setCancelando(true)
     setErrorCancelacion(null)
     try {
@@ -210,7 +213,7 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
     } finally {
       setCancelando(false)
     }
-  }, [linkToken, refetch])
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 p-4 pb-24">

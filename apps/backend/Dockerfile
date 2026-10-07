@@ -1,6 +1,12 @@
 # ============ Base ============
 FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+# openssl va en el BASE, no en el runner: `prisma generate` corre en los stages de build y elige el
+# engine segun la version de openssl que ve. Si el runner tiene openssl 3.0 y el generate no lo veia,
+# Prisma copiaba el engine de openssl-1.1.x y el runtime fallaba con
+# "could not locate the Query Engine for runtime linux-musl-openssl-3.0.x". Misma version en todos
+# los stages = mismo target.
+RUN apk add --no-cache openssl \
+    && corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 
 # ============ Dependencies ============
@@ -46,11 +52,7 @@ RUN pnpm --filter backend deploy --prod /app/out \
 # ============ Runner ============
 FROM base AS runner
 ENV NODE_ENV=production
-# openssl es obligatorio para Prisma en Alpine: sin el, el motor no arranca y la app muere
-# al conectar. El propio log del build lo avisa ("Prisma failed to detect the libssl/openssl
-# version to use... Please manually install OpenSSL").
-RUN apk add --no-cache openssl \
-    && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
 COPY --from=deploy --chown=nestjs:nodejs /app/out ./
 USER nestjs
 EXPOSE 3000

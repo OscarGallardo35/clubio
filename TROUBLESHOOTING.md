@@ -2427,4 +2427,16 @@ otras dos antes de seguir.
 estaba roto (mismo sintoma, no reportado) -> y ademas su guard server-side seguia fallando por la
 causa (3): la cookie quedaba host-only de `api.clubio.lat` y el middleware de `staff.clubio.lat` no la
 veia -> `COOKIE_DOMAIN=.clubio.lat`. Tres capas, un solo sintoma.
+## maxAge de tokens y sesiones que mueren antes
+
+- El `maxAge` de la cookie de sesion sale del `expiresIn` del JWT (`auth.service.ts`), no de una constante
+  aparte: si el token dura 12h, la cookie dura 12h.
+- **Valores en uso (verificados en produccion, no solo en local)**: staff `JWT_EMPLEADO_EXPIRES_IN=12h`,
+  cliente `JWT_CLIENTE_EXPIRES_IN=30d`, refresh `30d`. Cubren el ciclo real de uso.
+- **Regla**: el maxAge debe cubrir el ciclo de uso real. Si una sesion muere **antes**, **NO es el maxAge**:
+  revisar (a) **cookies duplicadas de una migracion de `Domain`** — la vieja host-only y la nueva con
+  `Domain=.clubio.lat` conviven, el backend lee la primera, y si el login rota la sesion la vieja quedo
+  revocada; y (b) la validacion de la sesion contra la base (`SesionEmpleado`).
+- Caso real: una sesion de staff murio a los 11 minutos con 12h configurados. Comparar produccion contra
+  local (`variables` de Railway vs `.env`) descarta el TTL en un minuto: hacerlo ANTES de tocar valores.
 

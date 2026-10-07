@@ -54,6 +54,21 @@ export default function CartaPage() {
   const features = (negocio?.features ?? {}) as Record<string, { habilitada?: boolean } | undefined>;
   const configuracion = (negocio?.configuracion ?? {}) as { menuActivo?: boolean };
 
+  /**
+   * Reemplaza un item dentro de su grupo (el estado vive agrupado).
+   *
+   * OJO: este hook va ANTES de los early returns de abajo. Estaba despues, asi que en un plan
+   * SIN el modulo de menu (o con un rol no editor) el contador de hooks cambiaba entre el primer
+   * render (features/empleado todavia cargando -> llega hasta aca) y el siguiente (ya resueltos
+   * -> return temprano) y React cortaba con #310. Lo cazo `eslint-plugin-react-hooks` al
+   * cablearlo en la PWA Staff.
+   */
+  const parchearItem = React.useCallback((id: string, cambios: Partial<ItemCarta>) => {
+    setGrupos((actual) =>
+      (actual ?? []).map((g) => ({ ...g, items: g.items.map((i) => (i.id === id ? { ...i, ...cambios } : i)) })),
+    );
+  }, []);
+
   if (negocio && features.menu?.habilitada !== true) {
     return <Aviso titulo="Tu plan no incluye carta digital" detalle="Pedile al dueno que active el modulo de menu." />;
   }
@@ -74,13 +89,6 @@ export default function CartaPage() {
     .map((g) => ({ ...g, items: q ? g.items.filter((i) => i.nombre.toLowerCase().includes(q)) : g.items }))
     .filter((g) => g.items.length > 0);
   const disponibles = lista.filter((i) => i.disponible).length;
-
-  /** Reemplaza un item dentro de su grupo (el estado vive agrupado). */
-  const parchearItem = React.useCallback((id: string, cambios: Partial<ItemCarta>) => {
-    setGrupos((actual) =>
-      (actual ?? []).map((g) => ({ ...g, items: g.items.map((i) => (i.id === id ? { ...i, ...cambios } : i)) })),
-    );
-  }, []);
 
   /** Toggle optimista con rollback: si el PATCH falla, el switch vuelve solo. */
   async function alternar(item: ItemCarta) {

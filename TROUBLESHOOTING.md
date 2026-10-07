@@ -2633,4 +2633,41 @@ Reglas:
 - Corolario para el multitenant: si RLS no esta activo, cada query nueva es una fuga potencial. Un
   `where negocioId` olvidado no lo caza ningun typecheck — hay que cubrirlo con aserciones (ver
   `test:aislamiento`).
+## Un hook despues de un early return es un hook condicional -> React #310
+
+**Un hook (`useCallback`/`useMemo`/`useEffect`) DESPUES de un early return es un hook condicional →
+React #310. El typecheck NO lo ve (`tsc` valida tipos, no el orden de ejecucion). Verificar con
+`eslint-plugin-react-hooks` (regla `rules-of-hooks`) o a mano, revisando el orden en los componentes
+con early returns.**
+
+Sintoma: la pantalla muestra "Algo salio mal" con `Minified React error #310` (en dev el mensaje
+completo es *"Rendered more hooks than during the previous render"*). Nada aparece en el server: el
+crash es del cliente.
+
+Caso real (dos veces): el boton "Cancelar pedido" del seguimiento se escribio como `useCallback` al
+final del componente, despues de los returns de `cargando`/`fallo`. En el primer render (cargando) el
+componente retornaba antes del hook y en el siguiente lo alcanzaba → el contador de hooks cambiaba →
+#310 → el seguimiento mostraba "Algo salio mal" en TODAS las cargas. Lo cazo la verificacion en el
+navegador, no el build.
+
+Y el MISMO patron estaba, sin explotar todavia, en la carta de la PWA Staff: `parchearItem` era un
+`useCallback` despues de tres early returns. Ahi solo rompia con un plan SIN el modulo de menu (o con
+un rol no editor), que son los casos donde las condiciones cambian entre el primer render y el
+siguiente.
+
+**Por que nadie lo veia**: las dos PWAs no tenian NINGUN config de ESLint. `packages/config/eslint-preset.js`
+declaraba `react-hooks/rules-of-hooks: 'error'`, pero es un flat config (ESLint 9) y el repo corre
+ESLint 8.57 legacy, asi que nunca se aplico (y el backend usa su propio `.eslintrc` sin el plugin,
+porque no tiene React). Ahora cada PWA tiene su `.eslintrc.json` con `next/core-web-vitals` + las
+reglas de react-hooks, y `next build` corre el lint: un `rules-of-hooks` rompe el deploy.
+
+Reglas:
+
+- Un componente con early returns tiene TODOS sus hooks arriba del primer `return`. Si un helper con
+  hook "necesita" ir abajo, no necesita el hook: una funcion comun alcanza (no se memoiza algo que
+  nadie usa como dependencia).
+- Con pnpm aislado, un plugin de ESLint **transitivo** no resuelve por nombre: si el config lo nombra
+  (o lo trae un `extends`), tiene que estar como devDep **directa** de la app.
+- Un lint que no corre en el build no existe: `tsc` y el navegador son los unicos que lo ven, y el
+  navegador lo ve como pantalla rota.
 

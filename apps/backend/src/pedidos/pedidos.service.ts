@@ -22,7 +22,7 @@ import { generarMensajeWhatsApp } from './helpers/generar-mensaje-whatsapp';
 import {
   ESTADOS_ACTIVOS, MENSAJE_POR_ESTADO, TITULO_POR_ESTADO, transicionValidaParaTipo,
 } from './helpers/transiciones-estado';
-import type { ItemInput, PedidoCtx } from './interfaces/pedido-item.interface';
+import type { ItemInput, ItemPedido, PedidoCtx } from './interfaces/pedido-item.interface';
 import type { CrearPedidoDto } from './dto/crear-pedido.dto';
 import type { CambiarEstadoPedidoDto } from './dto/cambiar-estado-pedido.dto';
 import type { FiltrarPedidosDto } from './dto/filtrar-pedidos.dto';
@@ -442,6 +442,48 @@ export class PedidosService {
       subtotal: Number(pedido.subtotal),
       costoEnvio: pedido.costoEnvio !== null ? Number(pedido.costoEnvio) : null,
       total: Number(pedido.total),
+      // El mensaje pre-armado NO se persiste: se rearma desde la fila para que el staff pueda
+      // reenviarselo al cliente desde el detalle. Antes el detalle lo leia del response y
+      // siempre venia `undefined` (solo lo armaba crearPedido), asi que el boton abria
+      // WhatsApp SIN texto.
+      ...(this.mensajeWhatsAppDelPedido(pedido) ?? {}),
+    };
+  }
+
+  /**
+   * Mensaje pre-armado de un pedido YA persistido (el que usa el detalle del staff).
+   *
+   * Devuelve `null` si el link no esta disponible: `construirUrlCorta` con un `linkToken`
+   * vacio produce `.../pedido/` sin token — peor que no ofrecer el boton. El scheduler borra
+   * el `linkToken` a los 7 dias de vencido, asi que el caso es real.
+   */
+  private mensajeWhatsAppDelPedido(pedido: {
+    nombreCliente: string; items: unknown; subtotal: unknown; costoEnvio: unknown;
+    total: unknown; tipo: string; mesa: string | null; modoPago: string; notas: string | null;
+    linkToken: string | null; linkExpiraEn: Date | null;
+  }): { mensajeWhatsApp: string } | null {
+    if (!pedido.linkToken || linkVencido(pedido.linkExpiraEn)) return null;
+
+    // El JSON guardado puede venir de versiones viejas: se normaliza `modificadores` porque
+    // generarMensajeWhatsApp lo recorre con `.length`.
+    const items = (Array.isArray(pedido.items) ? pedido.items : []).map((i) => {
+      const fila = i as Record<string, unknown>;
+      return { ...fila, modificadores: Array.isArray(fila.modificadores) ? fila.modificadores : [] };
+    }) as unknown as ItemPedido[];
+
+    return {
+      mensajeWhatsApp: generarMensajeWhatsApp({
+        nombreCliente: pedido.nombreCliente,
+        items,
+        subtotal: Number(pedido.subtotal),
+        costoEnvio: Number(pedido.costoEnvio ?? 0),
+        total: Number(pedido.total),
+        tipo: pedido.tipo,
+        mesa: pedido.mesa,
+        modoPago: pedido.modoPago,
+        notas: pedido.notas,
+        urlCorta: construirUrlCorta(pedido.linkToken),
+      }),
     };
   }
 

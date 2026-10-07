@@ -2579,4 +2579,20 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
   alcanza con que lo haga el flujo principal. Y ojo con la hidratacion "de refilon": hidratar
   pasando una sucursal distinta de la guardada VACIA el carrito con aviso — el contexto tiene que ser
   el real o `null`, nunca un valor inventado.
+## Un campo derivado que solo se arma en un endpoint se pierde en el otro
+
+- **Sintoma**: el boton de WhatsApp del detalle del pedido (staff) abria **sin texto**.
+- **Causa**: `mensajeWhatsApp` **no se persiste**: lo arma `crearPedido` y lo devuelve `POST /pedidos`.
+  El detalle del staff lo leia de `GET /pedidos/:id`, que devolvia la fila cruda — el campo nunca
+  venia, y `urlWhatsAppCliente(telefono, undefined)` cae al link pelado `https://wa.me/<tel>`.
+- **Fix**: el backend **rearma** el mensaje desde la fila cuando el staff pide el detalle. No se
+  guarda en la DB (el mensaje depende de datos que pueden cambiar) y el frontend no lo reconstruye:
+  la fuente de verdad queda en un solo lugar.
+- **Regla / guarda que importa**: al rearmar, `linkToken` puede estar **vacio o vencido** (el
+  scheduler lo borra a los 7 dias de vencido). En ese caso `construirUrlCorta('')` produce
+  `https://staff.clubio.lat/pedido/` **sin token** — exactamente el sintoma del "link truncado". Si
+  el link no esta vivo, mejor NO mandar el campo y que la UI no ofrezca el boton.
+- **Regla general**: un campo **derivado** (armado al vuelo, no persistido) no existe para los demas
+  endpoints. Si dos endpoints exponen la misma entidad, el derivado se rearma en cada uno — y
+  siempre con la misma guarda de "datos incompletos".
 

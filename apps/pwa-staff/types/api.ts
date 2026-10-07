@@ -204,6 +204,12 @@ export interface PedidoStaff {
   empleadoAsignadoId: string | null
   numeroAtendiente: string | null
   linkToken: string | null
+  /**
+   * Mensaje pre-armado para reenviarle al cliente por WhatsApp.
+   * OJO: el backend lo manda SOLO si el link del pedido sigue vivo (si el `linkToken` ya se
+   * limpio o vencio, no viene) — por eso es opcional y el boton se muestra solo si existe.
+   */
+  mensajeWhatsApp?: string | undefined
   creadoEn: string
   confirmadoEn: string | null
   enviadoEn: string | null

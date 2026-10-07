@@ -76,7 +76,8 @@ export default function PedidoDetallePage() {
   }
 
   const hitos = hitosDelPedido(pedido);
-  const mensajeWa = (pedido as typeof pedido & { mensajeWhatsApp?: string }).mensajeWhatsApp;
+  // Lo manda el backend solo si el link del pedido sigue vivo (si no, `undefined`).
+  const mensajeWa = pedido.mensajeWhatsApp;
   const linkWa = urlWhatsAppCliente(pedido.telefono, mensajeWa);
   const cancelado = pedido.estado === 'CANCELADO' || pedido.estado === 'RECHAZADO';
 

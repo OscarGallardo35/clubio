@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
+import { crearClienteRedis } from './redis-cliente.util';
 
 /** Cliente Redis compartido (Upstash en prod/local). */
 @Injectable()
@@ -7,16 +8,9 @@ export class RedisService implements OnModuleDestroy {
   private readonly client: Redis;
 
   constructor() {
-    this.client = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-      maxRetriesPerRequest: 3,
-      enableReadyCheck: false,
-      // Upstash requiere TLS si la URL es rediss://
-      ...(process.env.REDIS_URL?.startsWith('rediss://')
-        ? { tls: { rejectUnauthorized: false } }
-        : {}),
-    });
-    // ioredis sin listener de 'error' crashea el proceso.
-    this.client.on('error', () => undefined);
+    // Config centralizada (TLS por `rediss://`, ready-check, reintentos). El helper
+    // tambien absorbe el evento 'error': sin listener, ioredis crashea el proceso.
+    this.client = crearClienteRedis(process.env.REDIS_URL, 'app');
   }
 
   /** Incrementa y setea TTL (segundos) solo en la primera creacion. */

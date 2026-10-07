@@ -2531,4 +2531,35 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
 - **Regla**: si la hidratacion es manual y asincrona, ninguna guarda puede basarse en tiempo ni en
   `hasHydrated()` a secas — hay que esperar a que la funcion que hidrata **resuelva**. Un temporizador
   "suficientemente largo" es una carrera disfrazada.
+## Health probe con Redis: `retryStrategy: () => null` deja la conexion muerta para siempre
+
+- **Sintoma**: `/api/health` devuelve `redis:"down"` de forma **permanente**, mientras el resto de la
+  app usa Redis sin un solo error (BullMQ inicializa, `RedisService` responde, cero lineas de error en
+  los logs del deployment).
+- **Causa**: el cliente del probe se construia con `retryStrategy: () => null`. Ese valor NO significa
+  "no reintentar el request": significa **no reconectar nunca**. El README de ioredis lo dice explicito:
+
+  > When the return value isn't a number, ioredis will stop trying to reconnect, and the connection
+  > will be lost forever if the user doesn't call `redis.connect()` manually.
+
+  Tras el primer fallo de conexion (tipico: el healthcheck de Railway pega antes de que DNS/Upstash
+  esten listos) el cliente queda en status `'end'`. Como la guarda reconectaba solo con
+  `status === 'wait'`, no volvia a intentar nunca y `ping()` rechazaba con `Connection is closed.`
+  para siempre. El flag no media Redis: medía "¿salio bien el PRIMER intento del proceso?" y congelaba
+  esa respuesta.
+- **Verificacion** (ioredis 5.11.1 real, contra el Upstash real, no simulado):
+  - config exacta del probe contra el endpoint real -> `up` (status `ready`).
+  - la MISMA config pero con el primer connect fallado -> `down (Connection is closed.)` en el 1er,
+    2do y 3er check; status `end` permanente.
+  - TLS **no** era el problema: el endpoint responde `AUTH`+`PING` con y sin
+    `rejectUnauthorized` (ioredis ya activa TLS con el esquema `rediss://`).
+- **Fix**: no deshabilitar `retryStrategy` (se deja el default, que reintenta con backoff) y forzar
+  `connect()` tambien con `status === 'end' | 'close'`, no solo `'wait'`. La config de los clientes
+  vive ahora en `common/redis/redis-cliente.util.ts`: antes estaba duplicada en 3 lugares
+  (`app.module` para BullMQ, `redis.service` para el cliente compartido, `health.controller` para el
+  probe) y solo uno de los tres desactivaba el retry.
+- **Regla**: nunca deshabilitar retry en un cliente que sirve a un probe. Un probe sin reintentos no
+  reporta el estado del sistema: reporta el de su primer intento, y lo congela para siempre — que es
+  peor que no tener probe, porque ademas enmascara una caida real. Si el objetivo es "no colgarse",
+  se acota el timeout / `maxRetriesPerRequest`, nunca la reconexion.
 

@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
+import { crearClienteRedis } from '../common/redis/redis-cliente.util';
 import { Public } from '../common/decorators/public.decorator';
 
 /**
@@ -13,16 +14,10 @@ export class HealthController {
   private readonly redis: Redis;
 
   constructor(private readonly prisma: PrismaService) {
-    this.redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-      lazyConnect: true,
-      maxRetriesPerRequest: 1,
-      enableReadyCheck: false,
-      // No reintentar: si no hay Redis, se reporta 'down' y listo.
-      retryStrategy: () => null,
-    });
-    // ioredis emite 'error' sin listener -> crashea el proceso. Lo absorbemos:
-    // el estado real se reporta por el campo `redis` de este endpoint.
-    this.redis.on('error', () => undefined);
+    // `probe`: 1 reintento por request y sin conectar en el constructor (lazyConnect).
+    // NO se deshabilita `retryStrategy`: un cliente sin reintentos queda en 'end' para
+    // siempre tras el primer fallo, y este endpoint mentiria para siempre (TROUBLESHOOTING).
+    this.redis = crearClienteRedis(process.env.REDIS_URL, 'probe');
   }
 
   @Get()
@@ -49,7 +44,13 @@ export class HealthController {
 
   private async checkRedis(): Promise<'up' | 'down'> {
     try {
-      if (this.redis.status === 'wait') await this.redis.connect();
+      // 'wait' -> lazyConnect: todavia no se intento conectar.
+      // 'end' / 'close' -> la conexion se corto: hay que forzar el connect, porque
+      // ioredis no vuelve solo desde esos estados.
+      const estado = this.redis.status;
+      if (estado === 'wait' || estado === 'end' || estado === 'close') {
+        await this.redis.connect().catch(() => undefined);
+      }
       const pong = await this.redis.ping();
       return pong === 'PONG' ? 'up' : 'down';
     } catch {

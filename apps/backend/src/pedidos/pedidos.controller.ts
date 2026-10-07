@@ -80,6 +80,25 @@ export class PedidosController {
     return this.pedidos.obtenerPedidoPorLink(negocioId, linkToken);
   }
 
+  /**
+   * El cliente cancela su pedido con SOLO el linkToken (la segunda puerta, para los guest del
+   * QR #1: su pedido tiene `clienteId = null` y la puerta de la cookie les daba 401/403).
+   * El link es la credencial, igual que en el GET publico. Mismo rate limit.
+   */
+  @Public()
+  @UseGuards(TenantGuard)
+  @Throttle({
+    default: {
+      limit: Number(process.env.RATE_PEDIDOS_LINK_LIMIT ?? 30),
+      ttl: Number(process.env.RATE_PEDIDOS_LINK_TTL_MS ?? 60_000),
+    },
+  })
+  @Post('publico/:linkToken/cancelar')
+  async cancelarPublico(@Tenant() tenant: string | null, @Param('linkToken') linkToken: string) {
+    const negocioId = await this.pedidos.negocioPorSlug(tenant);
+    return this.pedidos.cancelarPedidoPorLink(negocioId, linkToken);
+  }
+
   // ==========================================================================
   // STAFF
   // ==========================================================================

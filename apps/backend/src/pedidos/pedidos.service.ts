@@ -553,10 +553,44 @@ export class PedidosService {
     if (pedido.clienteId !== clienteId) {
       throw new ForbiddenException('Ese pedido no es tuyo');
     }
-    // El CLIENTE puede cancelar desde PENDIENTE o CONFIRMADO. Ojo: la tabla de
-    // transiciones del STAFF no incluye PENDIENTE -> CANCELADO (para el staff es
-    // PENDIENTE -> CONFIRMADO | RECHAZADO), asi que no se puede reusar aca:
-    // hacerlo devolvia 400 en un caso que el prompt permite.
+    return this.cancelarYNotificar(negocioId, pedido, { clienteId, origen: 'sesion' });
+  }
+
+  /**
+   * Cancela por `linkToken`: la SEGUNDA puerta del cliente.
+   *
+   * Por que existe: `POST /pedidos` es publico y el flujo del QR #1 deja pedidos con
+   * `clienteId = null` (guest que escanea y pide sin registrarse). Con la puerta de la cookie
+   * esos pedidos eran INCANCELABLES: 401 sin sesion y 403 por el chequeo de ownership — o
+   * sea, justo el caso mas comun. Aca el `linkToken` ES la credencial, con el mismo modelo de
+   * confianza que `GET /pedidos/publico/:linkToken`.
+   */
+  async cancelarPedidoPorLink(negocioId: string, linkToken: string) {
+    const pedido = await this.prisma.pedido.findFirst({
+      where: { negocioId, linkToken },
+      select: { id: true, clienteId: true, estado: true, sucursalId: true, linkExpiraEn: true },
+    });
+    if (!pedido) throw new NotFoundException('Pedido no encontrado');
+    // Un link vencido ya no es credencial (mismo criterio que el GET publico).
+    if (linkVencido(pedido.linkExpiraEn)) {
+      throw new GoneException('Link expirado. Pedile al local que te lo reenvie.');
+    }
+    return this.cancelarYNotificar(negocioId, pedido, { clienteId: pedido.clienteId, origen: 'link' });
+  }
+
+  /**
+   * Reglas de cancelacion del cliente, compartidas por las DOS puertas (cookie y link): solo
+   * desde PENDIENTE o CONFIRMADO.
+   *
+   * Ojo: la tabla de transiciones del STAFF no incluye `PENDIENTE -> CANCELADO` (para el staff
+   * es `-> CONFIRMADO | RECHAZADO`), asi que no se puede reusar `transicionValidaParaTipo`:
+   * hacerlo devolvia 400 en un caso que el pedido permite.
+   */
+  private async cancelarYNotificar(
+    negocioId: string,
+    pedido: { id: string; estado: EstadoPedido; sucursalId: string; clienteId: string | null },
+    ctx: { clienteId: string | null; origen: 'sesion' | 'link' },
+  ) {
     if (pedido.estado !== EstadoPedido.PENDIENTE && pedido.estado !== EstadoPedido.CONFIRMADO) {
       throw new BadRequestException(
         `Ya no se puede cancelar: el pedido esta en ${pedido.estado}`,
@@ -564,21 +598,21 @@ export class PedidosService {
     }
 
     const actualizado = await this.prisma.pedido.update({
-      where: { id: pedidoId },
+      where: { id: pedido.id },
       data: { estado: EstadoPedido.CANCELADO },
     });
 
     await this.auditoria.registrar({
-      negocioId, accion: 'pedido.cancelado_por_cliente', clienteId,
-      detalle: { pedidoId, desde: pedido.estado },
+      negocioId, accion: 'pedido.cancelado_por_cliente', clienteId: ctx.clienteId,
+      detalle: { pedidoId: pedido.id, desde: pedido.estado, origen: ctx.origen },
     });
 
     this.gateway.emitirCancelado(negocioId, pedido.sucursalId, {
-      pedidoId, estado: EstadoPedido.CANCELADO,
+      pedidoId: pedido.id, estado: EstadoPedido.CANCELADO,
       actualizadoEn: actualizado.actualizadoEn.toISOString(),
     });
 
-    return { ok: true, pedidoId, estado: EstadoPedido.CANCELADO };
+    return { ok: true, pedidoId: pedido.id, estado: EstadoPedido.CANCELADO };
   }
 
   /**

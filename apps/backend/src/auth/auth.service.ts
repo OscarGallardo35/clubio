@@ -111,6 +111,10 @@ export class AuthService {
         rol: { not: 'DUENO' },
       },
       select: { id: true, nombre: true, rol: true, pinHash: true, sucursalId: true },
+      // Determinista: si dos empleados del negocio compartieran PIN (imposible por
+      // `exigirPinLibre`, pero el indice de bcrypt no lo garantiza), el match no debe
+      // depender del orden que devuelva Postgres.
+      orderBy: { creadoEn: 'asc' },
     });
 
     let match: (typeof empleados)[number] | null = null;

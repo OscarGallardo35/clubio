@@ -76,6 +76,8 @@ export class EmpleadosService {
       if (dup) throw new ConflictException('Ya existe un empleado con ese email');
     }
 
+    if (dto.pin) await this.exigirPinLibre(negocioId, dto.pin);
+
     const data: Prisma.EmpleadoCreateInput = {
       negocio: { connect: { id: negocioId } },
       sucursal: { connect: { id: sucursal.id } },
@@ -142,6 +144,7 @@ export class EmpleadosService {
 
   async resetPin(negocioId: string, id: string, pin: string, ctx: AuthCtxEmp) {
     await this.obtener(negocioId, id);
+    await this.exigirPinLibre(negocioId, pin, id);
     await this.prisma.empleado.update({
       where: { id },
       data: { pinHash: await bcrypt.hash(pin, 10) },
@@ -151,5 +154,31 @@ export class EmpleadosService {
       detalle: { empleadoId: id }, ip: ctx.ip,
     });
     return { ok: true };
+  }
+
+  /**
+   * Un PIN no puede repetirse DENTRO del negocio (excluyendo a `exceptoId`).
+   *
+   * Ojo: el `@@unique([negocioId, pinHash])` del schema NO alcanza. bcrypt usa salt
+   * aleatorio, asi que el mismo PIN produce hashes DISTINTOS y el indice nunca colisiona:
+   * dos empleados pueden quedar con el mismo PIN sin que nada lo impida.
+   *
+   * Por que importa: el login recorre los empleados del negocio y se queda con el primer
+   * `bcrypt.compare` que da true, asi que con dos PIN iguales la identidad (y el ROL) del
+   * que entra depende del orden. La unica forma de detectarlo es comparar contra cada uno.
+   */
+  private async exigirPinLibre(negocioId: string, pin: string, exceptoId?: string): Promise<void> {
+    const candidatos = await this.prisma.empleado.findMany({
+      where: {
+        negocioId, activo: true, eliminadoEn: null, pinHash: { not: null },
+        ...(exceptoId ? { id: { not: exceptoId } } : {}),
+      },
+      select: { nombre: true, pinHash: true },
+    });
+    for (const c of candidatos) {
+      if (c.pinHash && (await bcrypt.compare(pin, c.pinHash))) {
+        throw new ConflictException(`Ese PIN ya lo usa ${c.nombre} en este negocio. Elegi otro.`);
+      }
+    }
   }
 }

@@ -971,4 +971,10 @@ el contador vuelve a cero).
 - Cartel "Reconectando" del WS en disconnect transitorio
 - Service worker + push notifications
 - Iconos PWA reales
+## Backlog post-Fase 4
+
+1. UX Tabs de pedidos: al cambiar el estado de un pedido, la tab activa no se actualiza automaticamente.
+   Verificar si es re-render o store desincronizado. Cosmetico, no bloqueante.
+2. CRUD completo de carta en PWA Staff: falta agregar/editar/eliminar items desde la UI. Por ahora se
+   edita por Prisma Studio. Prioridad post-MVP (primer cliente onboardeado).
 

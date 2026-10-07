@@ -2595,4 +2595,34 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
 - **Regla general**: un campo **derivado** (armado al vuelo, no persistido) no existe para los demas
   endpoints. Si dos endpoints exponen la misma entidad, el derivado se rearma en cada uno — y
   siempre con la misma guarda de "datos incompletos".
+## Un rol con `rolbypassrls=TRUE` ignora RLS sin error ni warning
+
+**Una conexion con `rolbypassrls=TRUE` ignora RLS sin error ni warning. Verificar con
+`SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user;` antes de confiar en RLS.**
+
+Caso real: el proyecto tiene 22 tablas con RLS y `FORCE` + 44 politicas (`prisma/rls.sql`), mas
+`PrismaService.withTenant()` que setea `app.current_negocio_id`. Parecia blindado. Pero
+`DATABASE_URL` y `DIRECT_URL` usan `admin_role`, que tiene `rolbypassrls=TRUE`: las politicas nunca
+se aplican. Comprobacion (sin setear el tenant):
+
+```
+SELECT count(*) FROM "Negocio";
+-> 1          -- con RLS efectivo seria 0
+```
+
+`withTenant()` ademas tenia 0 call sites y `DATABASE_URL_ADMIN` no existe: la segunda capa de
+defensa era decorativa y el aislamiento dependia **solo** de los `where negocioId` del codigo.
+
+Reglas:
+
+- **RLS "existe" ≠ RLS "protege"**: lo que decide es el ROL de la conexion, no las politicas.
+- Para confiar en RLS hay que chequear las TRES cosas: que la tabla tenga `relrowsecurity` **y**
+  `relforcerowsecurity` (`pg_class`), que existan politicas (`pg_policies`), y que el rol de la
+  app **no** tenga `rolbypassrls`.
+- `BYPASSRLS` (y ser dueno de la tabla) se otorgan sin avisar: un `ALTER ROLE` o una migracion lo
+  cambian y el codigo queda igual. Si el aislamiento depende de RLS, tiene que haber un test que lo
+  verifique **con la credencial real de la app**, no con la del superusuario.
+- Corolario para el multitenant: si RLS no esta activo, cada query nueva es una fuga potencial. Un
+  `where negocioId` olvidado no lo caza ningun typecheck — hay que cubrirlo con aserciones (ver
+  `test:aislamiento`).
 

@@ -12,7 +12,7 @@ Ruta del código: `prompts_fideliza_v2/apps/backend/`.
 | Monorepo Turborepo + pnpm | ✅ |
 | Schema Prisma consolidado | ✅ 38 modelos + 17 enums |
 | Migración `20261005174926_init` | ✅ aplicada en Neon |
-| RLS (`prisma/rls.sql`) | ✅ 22 tablas / 44 políticas |
+| RLS (`prisma/rls.sql`) | ⚠️ **NO activo** — ver la nota de RLS más abajo |
 | Seed completo | ✅ 242 filas |
 | Repo GitHub | ✅ `OscarGallardo35/clubio` |
 | `tsc` / `prisma validate` | ✅ sin errores |
@@ -27,7 +27,29 @@ Los prompts **2.5 → 2.11 incluyen cambios de schema + migraciones**, pero nues
 `PlanFeature`, `UsoMensual`, `Sucursal`, `ConfiguracionSucursal`,
 `ItemCartaSucursal`, `TarjetaClienteSucursal` y `SuperAdmin`.
 
-Lo mismo con el RLS: ya está aplicado (22 tablas).
+Lo mismo con el RLS: las políticas **existen** en la DB (22 tablas), pero **no están activas**
+(ver la nota de RLS más abajo).
+
+### ⚠️ NOTA DE RLS — no confiar en el aislamiento por base de datos
+
+**RLS: schema + políticas existen en `prisma/rls.sql` pero NO están activas en producción
+(`admin_role` bypassea RLS, `withTenant()` no se llama). El aislamiento multi-tenant se
+garantiza SOLO por los `where` `negocioId` del código. TODO post-MVP: activar RLS de verdad
+(`app_user` + `withTenant` + `AdminPrismaService`).**
+
+Medido en la base real (no es una suposición):
+
+```
+conexion  : usuario=admin_role      row_security=on
+roles     : admin_role rolbypassrls=TRUE   |   app_user rolbypassrls=false
+tablas    : 22 con RLS y FORCE  |  politicas: 44
+SELECT count(*) FROM "Negocio" SIN setear app.current_negocio_id  ->  1   (deberia ser 0)
+```
+
+`DATABASE_URL` y `DIRECT_URL` (producción y local) usan `admin_role`; `DATABASE_URL_ADMIN` no
+existe y `withTenant()` tiene 0 call sites. O sea que la segunda capa de defensa es decorativa:
+cualquier consulta futura que se olvide del `where` filtra datos en silencio. Ver TROUBLESHOOTING
+para el chequeo rápido.
 
 **Regla de trabajo:** de los prompts 2.5 → 2.11 tomar **solo el código NestJS**.
 **NO** volver a aplicar sus bloques de schema ni sus migraciones — romperían la DB
@@ -79,7 +101,8 @@ Esqueleto de todo. Sin esto no hay nada.
 - Módulo `super-admin` mínimo.
 - Tests e2e de aislamiento.
 
-**Ya hecho:** RLS + roles PG (`app_user`, `admin_role`, `migration_role`) existen en la DB.
+**Ya hecho:** los roles PG (`app_user`, `admin_role`, `migration_role`) y las políticas de RLS
+existen en la DB — pero **RLS no está activo** (ver la nota de RLS arriba).
 **Falta:** el código NestJS que los usa.
 
 **Verificación:** test e2e de aislamiento (tenant A no ve datos de B).

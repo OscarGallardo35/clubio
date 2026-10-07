@@ -65,6 +65,11 @@ aba2391 docs: regla de los tokens de color
 
 ## Deuda tecnica anotada (no bloqueante)
 
+- ⚠️ **RLS NO está activo.** Las politicas existen (`prisma/rls.sql`, 22 tablas / 44 politicas,
+  todas con FORCE) pero la conexion usa `admin_role`, que tiene `rolbypassrls=true`, asi que las
+  ignora. `withTenant()` no se llama nunca y `DATABASE_URL_ADMIN` no existe. **El aislamiento
+  multi-tenant depende SOLO de los `where negocioId` del codigo.** TODO post-MVP: activar RLS de
+  verdad (`app_user` + `withTenant` + `AdminPrismaService`). Detalle y evidencia en `BACKEND_PLAN.md`.
 - **Stubs exportados y sin implementar** en `@repo/ui`: `radio-group`, `checkbox`, `textarea`. El
   import compila y el fallo aparece en runtime. Se implementan en la Fase 0 (los necesita la Staff).
 - `endpoints` de `@repo/api-client` **no tiene**: `auth.meEmpleado`, `pedidos.list/estado/tomar/

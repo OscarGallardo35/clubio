@@ -24,13 +24,20 @@ export default function CheckoutPage() {
   const { enviar, enviando } = useCheckout()
   const despachar = useCarritoStore((s) => s.despachar)
   const { sucursal, slugParaApi } = useSucursalActiva()
+  // La hidratacion del carrito es MANUAL (skipHydration) y asincrona: hasta que `activar` no
+  // resuelve, el store puede mostrar su estado inicial (vacio). El redirect por carrito vacio
+  // espera esta senal, no un temporizador.
+  const [carritoListo, setCarritoListo] = React.useState(false)
   const activar = useCarritoStore((s) => s.activar)
 
   // El store usa `skipHydration`, asi que NADIE lo hidrata solo: hay que llamar a `activar`, que es
   // lo que hace CartaDigital en el menu. Sin esto, entrar directo a /checkout (URL a mano, recarga,
   // incognito) deja el carrito vacio de verdad y el redirect a /menu se dispara siempre.
   React.useEffect(() => {
+    let vivo = true
     void activar(slugNegocio, sucursal?.id ?? null, sucursal?.slug ?? null)
+      .then(() => { if (vivo) setCarritoListo(true) })
+    return () => { vivo = false }
   }, [activar, slugNegocio, sucursal?.id, sucursal?.slug])
   // Auto-login del cliente: `useCliente` pega a GET /auth/cliente/me al montar (la sesion viaja en
   // la cookie HttpOnly). Si hay 200, se prellenan nombre y telefono; si es 401, `resuelto` queda en
@@ -68,6 +75,7 @@ export default function CheckoutPage() {
       }}
       onRecargarCarta={recargarCarta}
       sucursalId={sucursal?.id ?? null}
+      carritoListo={carritoListo}
     />
   )
 }

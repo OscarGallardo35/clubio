@@ -2518,4 +2518,17 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
 - Regla: `STAFF_APP_URL` = links que abre el personal (verificacion de pedido, `/validar?ref=`).
   `PUBLIC_APP_URL` + slug = links que abre el cliente (QRs de menu/club). **Verificar el destinatario
   antes de tocar la constante.**
+## Carrito vacio FALSO: hidratacion manual + guarda con temporizador
+
+- **Sintoma**: `toast('Tu carrito esta vacio')` y redirect a /menu **con el carrito lleno**.
+- **Causa**: el store usa `skipHydration`, asi que la hidratacion es **manual y asincrona**
+  (`activar()`: cambia la clave del persist y hace `await persist.rehydrate()`). La guarda que decidia
+  "carrito vacio" se apoyaba en `persist.hasHydrated()` + un **temporizador fijo** ("asentado", 1500 ms).
+  Si `activar` tarda mas que ese timer, el store todavia muestra su estado inicial (vacio) y la guarda
+  dispara el toast + el redirect.
+- **Fix**: la guarda espera la **resolucion real** de `activar` (un flag `carritoListo` desde su
+  `.then()`), no un tiempo. El temporizador queda solo como red de seguridad.
+- **Regla**: si la hidratacion es manual y asincrona, ninguna guarda puede basarse en tiempo ni en
+  `hasHydrated()` a secas — hay que esperar a que la funcion que hidrata **resuelva**. Un temporizador
+  "suficientemente largo" es una carrera disfrazada.
 

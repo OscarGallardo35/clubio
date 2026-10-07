@@ -40,6 +40,12 @@ export interface PantallaCheckoutProps {
    * items.length es 0, y evaluar ahi mandaba al menu con el carrito lleno.
    */
   sucursalId?: string | null | undefined
+  /**
+   * true cuando `activar()` ya resolvio (hidratacion manual terminada). Sin esto, el redirect por
+   * carrito vacio evaluaba el estado inicial del store (skipHydration) y mandaba al menu con el
+   * carrito lleno.
+   */
+  carritoListo?: boolean | undefined
 }
 
 const TIPOS: { valor: TipoPedido; etiqueta: string }[] = [
@@ -57,7 +63,7 @@ const PAGOS: { valor: ModoPago; etiqueta: string }[] = [
 /** Error de un campo, o undefined. */
 type Fallas = ReturnType<typeof validarCheckout>
 
-export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRecargarCarta, sucursalId }: PantallaCheckoutProps) {
+export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRecargarCarta, sucursalId, carritoListo = false }: PantallaCheckoutProps) {
   const router = useRouter()
   const { negocio } = useBranding()
   const carrito = useCarritoStore()
@@ -96,7 +102,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
     return () => clearTimeout(t)
   }, [])
 
-  const puedeDecidir = locale && asentado
+  const puedeDecidir = locale && carritoListo && asentado
 
   React.useEffect(() => {
     if (!puedeDecidir) return
@@ -104,7 +110,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
       toast('Tu carrito esta vacio')
       router.replace(`/${slugNegocio}/menu`)
     }
-  }, [puedeDecidir, locale, asentado, sucursalId, carrito.items.length, router, slugNegocio])
+  }, [puedeDecidir, locale, carritoListo, asentado, sucursalId, carrito.items.length, router, slugNegocio])
 
   const fallas: Fallas = validarCheckout(carrito)
   const mostrar = (campo: keyof Fallas) => (intentoEnviar ? fallas[campo] : undefined)

@@ -39,8 +39,9 @@ RUN pnpm --filter backend deploy --prod /app/out \
     && test -n "$PRISMA_CLI" \
     && cd /app/out \
     && node "$PRISMA_CLI" generate --schema=prisma/schema.prisma \
-    && test -d node_modules/.prisma/client \
-    && ls node_modules/.prisma/client | head -5
+    && GEN=$(find /app/out/node_modules -type d -path '*/.prisma/client' 2>/dev/null | head -1) \
+    && echo "cliente generado en: $GEN" \
+    && test -n "$GEN"
 
 # ============ Runner ============
 FROM base AS runner

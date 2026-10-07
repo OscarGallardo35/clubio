@@ -2395,4 +2395,20 @@ tienen que buscar donde quedo la cosa (`find` + `echo` + test del resultado), no
   deja de funcionar del todo (peor que el 401 original).
 - **Por que no pasa en dev**: en dev PWA y API comparten host (`192.168.0.103`, distinto puerto =
   mismo site), asi que `SameSite=Lax` alcanza y nunca se ve el problema.
+## Bug latente cross-site en multiples PWAs
+
+- **Sintoma**: 401 en UNA PWA (Cliente) y el fix se limita a esa PWA.
+- **Error**: asumir que las demas PWAs no estan afectadas.
+- **Regla**: si el problema es de **topologia** (dominios cross-site), **todas** las PWAs que apunten al
+  mismo host de API tienen el **mismo bug**. Verificar cliente + staff + admin antes de declarar
+  "una sola afectada". Caso real: el fix de `api.clubio.lat` resolvio tambien el login del staff, que
+  estaba roto en produccion por la misma razon y todavia no se habia notado.
+
+## Automatizacion de React: submit vs click
+
+- `button.click()` puede NO disparar el handler de React cuando el handler vive en el `<form onSubmit>`,
+  cuando el boton no es `type="submit"`, o cuando el synthetic event depende del submit real.
+- **Fix**: `form.requestSubmit()` dispara el submit nativo y React lo intercepta correctamente.
+- Caso real: el login de staff quedo en `/login` sin ningun request; con `requestSubmit()` salio 201 a la
+  primera. Aplicar a todo submit automatizado (checkout, login).
 

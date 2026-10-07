@@ -991,4 +991,12 @@ el contador vuelve a cero).
 - `cache_level = aggressive` + redeploys: el borde puede servir chunks viejos y en movil eso se ve como
   "no carga". Medido: tras purgar, `app.clubio.lat` paso de 4.44 s a 0.39 s (11x). Purgar la cache
   despues de cada deploy importante, o bajar el cache level a standard.
+## app.clubio.lat en DNS Only (bypass de diagnostico)
+
+El PoP de Cloudflare que atendia al operador movil del usuario devolvia 522 mientras el mismo host
+respondia 200 desde otra red. Pasar el CNAME a DNS Only (nube gris) resolvio el acceso desde el celular.
+- Railway ya aporta su propio SSL + CDN basico.
+- Se pierden cache (medido: 4.44s -> 0.39s con proxy + purge), WAF y `always_use_https` en ese host.
+- Considerar dejarlo asi post-MVP. Si Cloudflare estabiliza el enrutamiento, volver a proxied con
+  monitoreo de 522 (un 522 lo genera el edge, no el origen: si solo lo ve un operador, es su PoP).
 

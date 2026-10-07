@@ -920,3 +920,18 @@ staff.clubio.lat ya este arriba**, no despues.
 - `CORS_ORIGINS` incluye app/staff.clubio.lat + los 2 origenes `.up.railway.app` (las PWAs llaman a la
   API por la URL de Railway, no por api.clubio.lat; cambiar eso exige rebuild de las PWAs).
 
+### TODO opcional post-MVP: SSR de la carta renderiza empty state; el cliente rellena por useEffect
+
+Verificado en browser real (perfil limpio, sin cookies) contra `https://app.clubio.lat/bar-la-esquina/menu`:
+la carta se ve COMPLETA (Milanesa $6.800, Coca-Cola $1.500, 13 precios), sin el empty state.
+
+El mecanismo, medido con las requests de la propia pagina:
+- El render de servidor pide `GET /api/carta` **sin** `sucursalSlug`, y la API no puede filtrar: devuelve
+  el empty state "No hay items disponibles en esta sucursal".
+- Al hidratar, el cliente vuelve a pedir `GET /api/carta?sucursalSlug=centro` y ahi si llegan los items
+  (mas `POST /api/upsell/calcular`).
+
+Impacto: SEO + first paint (el HTML inicial muestra "no hay items" y se corrige ~1 s despues).
+**No bloqueante.** No es un bug de fetch ni falta el header del tenant: la diferencia es el
+`sucursalSlug`, que en SSR todavia no se conoce.
+

@@ -888,3 +888,35 @@ telefono. Por eso la pantalla de seguimiento titula "Tu pedido" y no "Pedido #X"
 Post-MVP: agregar `numero` a `Pedido` (correlativo por negocio o por sucursal, con su migracion) para
 poder mostrar "Pedido #N" en el seguimiento y en la comanda. **No hacerlo antes.**
 
+## TODOs de deploy (Fase 3 cerrada)
+
+### TODO Fase 4: confirmar el "No hay items disponibles" en /bar-la-esquina/menu
+
+Medido con los dominios reales: `GET /api/carta` **con** `X-Tenant-Slug: bar-la-esquina` devuelve 200
+con negocio + sucursal (centro), y **sin** el header devuelve 404 "Negocio no encontrado". Pero el HTML
+servido de `/bar-la-esquina/menu` (200, ~15 KB, con el branding correcto y sin localhost ni LAN IP)
+dice "No hay items disponibles en esta sucursal".
+
+Hipotesis: el fetch de la carta en el render de servidor no manda el header del tenant (y la app cae en
+su empty state), mientras que el de branding si. **No es del deploy** (el problema existia antes de que
+hubiera deploys). Hay que confirmarlo en el navegador, con el menu cargando en pantalla: si con la
+sucursal activa los items aparecen, es estado client-side; si no, es el SSR sin header.
+
+### TODO pre-onboarding: staff.clubio.lat tiene que estar vivo antes del primer local
+
+`STAFF_APP_URL=https://staff.clubio.lat` (verificado en Railway). Ese link es el que recibe el staff en
+el mensaje de WhatsApp cuando hay una visita para aprobar (`/validar?ref=TOKEN`). Si el dominio no
+responde, el local se queda sin poder aprobar visitas: **onboardear un local implica que
+staff.clubio.lat ya este arriba**, no despues.
+
+### Infra de produccion (referencia rapida)
+
+- Backend: `https://api.clubio.lat` → `backend-production-8ebe8.up.railway.app` (servicio `backend`).
+- Cliente: `https://app.clubio.lat` → `clubio-cliente-production.up.railway.app` (Dockerfile propio).
+- Staff:   `https://staff.clubio.lat` → `clubio-staff-production.up.railway.app` (Dockerfile propio).
+- Los 3 CNAME en Cloudflare arrancaron DNS-only para que Railway verificara la cadena (los 3 pasaron en
+  ~31-33 s, con un TXT `_railway-verify.<sub>` por dominio) y despues se pasaron a proxied (SSL del
+  zone en `full`).
+- `CORS_ORIGINS` incluye app/staff.clubio.lat + los 2 origenes `.up.railway.app` (las PWAs llaman a la
+  API por la URL de Railway, no por api.clubio.lat; cambiar eso exige rebuild de las PWAs).
+

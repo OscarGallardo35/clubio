@@ -231,6 +231,8 @@ export const endpoints = {
   pedidos: {
     crear: '/api/pedidos',
     publico: (linkToken: string) => `/api/pedidos/publico/${linkToken}`,
+    /** Cancela con SOLO el linkToken (la puerta de los guest del QR #1). */
+    cancelar: (linkToken: string) => `/api/pedidos/publico/${linkToken}/cancelar`,
     get: (id: string) => `/api/pedidos/${id}`,
     list: '/api/pedidos',
     estado: (id: string) => `/api/pedidos/${id}/estado`,

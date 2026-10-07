@@ -19,7 +19,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import type { Socket } from 'socket.io-client'
-import { buttonVariants } from '@repo/ui'
+import { Button, BottomSheet, buttonVariants } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
 import { api, pedidosApi } from '@/lib/api'
 import { ETIQUETAS_MODO_PAGO, clasificarFalloPedido, normalizarError, timeline, urlWhatsAppStaff } from '@/lib/checkout-maquina'
@@ -62,6 +62,10 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   const [fallo, setFallo] = React.useState<FalloSeguimiento | null>(null)
   const [cargando, setCargando] = React.useState(true)
   const [soloPolling, setSoloPolling] = React.useState(false)
+  // Cancelacion del cliente: la puerta del linkToken (el mismo que autentica el seguimiento).
+  const [confirmandoCancelacion, setConfirmandoCancelacion] = React.useState(false)
+  const [cancelando, setCancelando] = React.useState(false)
+  const [errorCancelacion, setErrorCancelacion] = React.useState<string | null>(null)
 
   const pedidoRef = React.useRef<PedidoPublico | null>(null)
   pedidoRef.current = pedido
@@ -189,6 +193,25 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   const cancelado = pedido.estado === 'CANCELADO' || pedido.estado === 'RECHAZADO'
   const entregado = pedido.estado === 'ENTREGADO'
 
+  // Misma regla que el backend: solo PENDIENTE o CONFIRMADO. No se ofrece un boton que ya se
+  // sabe que va a terminar en 400.
+  const puedeCancelar = pedido.estado === 'PENDIENTE' || pedido.estado === 'CONFIRMADO'
+
+  const cancelar = React.useCallback(async () => {
+    setCancelando(true)
+    setErrorCancelacion(null)
+    try {
+      await pedidosApi.cancelarPorLink(linkToken)
+      setConfirmandoCancelacion(false)
+      await refetch()
+    } catch (e) {
+      const { mensaje } = normalizarError(e)
+      setErrorCancelacion(mensaje || 'No pudimos cancelar el pedido. Proba de nuevo.')
+    } finally {
+      setCancelando(false)
+    }
+  }, [linkToken, refetch])
+
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 p-4 pb-24">
       <header className="flex flex-col gap-1">
@@ -295,6 +318,19 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
         </a>
       ) : null}
 
+      {puedeCancelar ? (
+        <Button
+          variant="outline"
+          className="min-h-12"
+          onClick={() => {
+            setErrorCancelacion(null)
+            setConfirmandoCancelacion(true)
+          }}
+        >
+          Cancelar pedido
+        </Button>
+      ) : null}
+
       {entregado || cancelado ? (
         <div className="flex flex-col gap-2">
           {entregado && resenasDisponibles ? (
@@ -311,7 +347,38 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
         <p className="text-center text-xs text-muted-foreground">
           {soloPolling ? 'Actualizando cada 5 s' : 'Actualizacion en vivo'}
         </p>
-      </div>
+
+      {/* Confirmacion: cancelar no se deshace, asi que no se dispara con un solo toque.
+          Se usa BottomSheet (el Dialog de @repo/ui sigue siendo un stub). */}
+      <BottomSheet
+        abierto={confirmandoCancelacion}
+        onCerrar={() => { if (!cancelando) setConfirmandoCancelacion(false) }}
+        titulo="Cancelar el pedido?"
+        altura="auto"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            El local va a ver el pedido como cancelado. No se puede deshacer.
+          </p>
+          {errorCancelacion ? (
+            <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {errorCancelacion}
+            </p>
+          ) : null}
+          <Button variant="default" className="min-h-12" disabled={cancelando} onClick={() => void cancelar()}>
+            {cancelando ? 'Cancelando...' : 'Si, cancelar el pedido'}
+          </Button>
+          <Button
+            variant="outline"
+            className="min-h-12"
+            disabled={cancelando}
+            onClick={() => setConfirmandoCancelacion(false)}
+          >
+            Volver
+          </Button>
+        </div>
+      </BottomSheet>
+    </div>
     )
   }
 

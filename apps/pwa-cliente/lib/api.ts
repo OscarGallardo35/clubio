@@ -86,6 +86,14 @@ export const pedidosApi = {
   crear: (body: CrearPedidoBody) => api.post<PedidoCreadoRespuesta>(endpoints.pedidos.crear, body),
   /** Publico: se entra solo con el linkToken. Es la fuente del seguimiento. */
   publico: (linkToken: string) => api.get<PedidoPublico>(endpoints.pedidos.publico(linkToken)),
+  /**
+   * Cancela con SOLO el linkToken. `PATCH /pedidos/:id/cancelar` pide sesion de cliente Y
+   * ownership (`pedido.clienteId === clienteId`), asi que un pedido hecho sin registrarse
+   * (guest del QR #1) quedaba incancelable. Aca el link ES la credencial.
+   * Solo PENDIENTE o CONFIRMADO: si ya avanzo, el backend responde 400.
+   */
+  cancelarPorLink: (linkToken: string) =>
+    api.post<{ ok: boolean; pedidoId: string; estado: string }>(endpoints.pedidos.cancelar(linkToken)),
 }
 
 /** Modificadores de un item. Publico: lo mira cualquiera que abra la carta. */

@@ -285,7 +285,7 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
                     con {i.modificadores.map((m) => m.opcionNombre).join(', ')}
                   </span>
                 ) : null}
-                {i.notas ? <span className="block text-muted-foreground">"{i.notas}"</span> : null}
+                {i.notas ? <span className="block text-muted-foreground">&quot;{i.notas}&quot;</span> : null}
               </span>
               <span className="shrink-0 tabular-nums">{formatearPrecio(i.subtotal)}</span>
             </li>

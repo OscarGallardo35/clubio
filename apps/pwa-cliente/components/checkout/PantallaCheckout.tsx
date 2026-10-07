@@ -197,7 +197,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
                         con {i.modificadores.flatMap((m) => m.opciones.map((o) => o.nombre)).join(', ')}
                       </span>
                     ) : null}
-                    {i.notas ? <span className="block text-muted-foreground">"{i.notas}"</span> : null}
+                    {i.notas ? <span className="block text-muted-foreground">&quot;{i.notas}&quot;</span> : null}
                   </span>
                   {/* El subtotal incluye los modificadores: sumando las lineas tiene que dar el total. */}
                   <span className="shrink-0 tabular-nums">{formatearPrecio(precioUnitario(i) * i.cantidad)}</span>

@@ -76,7 +76,7 @@ export function CarritoSheet({ abierto, onCerrar, onContinuar }: CarritoSheetPro
                     </p>
                     {mods ? <p className="text-sm text-muted-foreground">{mods}</p> : null}
                     {item.notas ? (
-                      <p className="text-sm text-muted-foreground">"{item.notas}"</p>
+                      <p className="text-sm text-muted-foreground">&quot;{item.notas}&quot;</p>
                     ) : null}
                   </div>
                   <span className="shrink-0 font-medium">{formatearPrecio(precioUnitario(item))}</span>

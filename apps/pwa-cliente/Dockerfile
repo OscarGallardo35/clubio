@@ -1,38 +1,36 @@
-# ============ Base ============
 FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
-WORKDIR /app
 
-# ============ Dependencies ============
 FROM base AS deps
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/pwa-cliente/package.json apps/pwa-cliente/
-COPY packages/config/package.json packages/config/
-COPY packages/types/package.json packages/types/
-COPY packages/validators/package.json packages/validators/
-COPY packages/utils/package.json packages/utils/
-COPY packages/ui/package.json packages/ui/
-COPY packages/api-client/package.json packages/api-client/
-RUN pnpm install --frozen-lockfile --prod=false
-
-# ============ Builder ============
-FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/pwa-cliente/node_modules ./apps/pwa-cliente/node_modules
-COPY . .
+WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY . .
+RUN pnpm install --frozen-lockfile
+
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app ./
+COPY . .
+ARG NEXT_PUBLIC_API_URL=https://backend-production-8ebe8.up.railway.app
+ARG NEXT_PUBLIC_WS_URL=https://backend-production-8ebe8.up.railway.app
+ARG NEXT_PUBLIC_DEFAULT_TENANT=bar-la-esquina
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_DEFAULT_TENANT=$NEXT_PUBLIC_DEFAULT_TENANT
 RUN pnpm --filter pwa-cliente build
 
-# ============ Runner ============
 FROM base AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
-COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-cliente/public ./apps/pwa-cliente/public
+ENV HOSTNAME=0.0.0.0
+# PORT no se setea a proposito: Railway inyecta el suyo. Fijarlo rompe el healthcheck
+# (misma leccion que en el backend).
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-cliente/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-cliente/.next/static ./apps/pwa-cliente/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-cliente/public ./apps/pwa-cliente/public
 USER nextjs
 EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
 CMD ["node", "apps/pwa-cliente/server.js"]

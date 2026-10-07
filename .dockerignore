@@ -1,10 +1,13 @@
-node_modules
-.next
-dist
-.turbo
+**/node_modules
+**/.next
+**/.next-build
+**/.next-verify
+**/.turbo
+**/dist
 .git
-.env
-.env.*
+# .env* solo excluye el de la raiz; los de las PWAs (.env.local con la IP de LAN) necesitan **/
+**/.env*
+!**/.env.example
 *.md
 coverage
 .DS_Store

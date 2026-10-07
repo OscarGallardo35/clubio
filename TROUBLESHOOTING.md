@@ -2470,4 +2470,17 @@ backend lee la primera (la vieja, que puede estar revocada por la rotacion de se
 aceptados, nunca los aumenta. Un celular viejo que negocie TLS 1.0 **no** falla por tener el minimo en
 1.0 — al contrario, es la configuracion mas permisiva. Si se sube (p.ej. a 1.2) el riesgo es el opuesto:
 dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
+## 522 persistente solo en moviles (con los curls desde otra red en 200)
+
+- **Sintoma**: error 522 en el celular del usuario, persistente. Los curls desde otra red (PC) dan 200.
+- **Causa**: un 522 lo genera el **edge de Cloudflare**, no el origen: significa que el PoP que atendio
+  ese request no logro alcanzar Railway a tiempo. Si afecta solo a algunos dispositivos, el sospechoso es
+  el **camino entre el operador movil y ese PoP de Cloudflare** (enrutamiento), no nuestra infra: por eso
+  el mismo host responde bien desde otra red.
+- **Diagnostico**: pasar el CNAME a **DNS Only** (nube gris, `proxied: false`) aislaba la causa sacando el
+  proxy del medio: el dispositivo va directo a Railway. Es **diagnostico, no solucion final** (se pierde
+  cache, WAF y `always_use_https` en ese host, y el TLS lo termina Railway con su propio certificado).
+- **Verificacion**: leer el registro de vuelta (`proxied: false`) y resolver el host desde la red afectada
+  para confirmar que ya no responde IPs de Cloudflare.
+- Aplica tambien a 523/524: mismo patron, distinta fase del handshake con el origen.
 

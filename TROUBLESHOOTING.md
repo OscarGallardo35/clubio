@@ -2483,4 +2483,13 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
 - **Verificacion**: leer el registro de vuelta (`proxied: false`) y resolver el host desde la red afectada
   para confirmar que ya no responde IPs de Cloudflare.
 - Aplica tambien a 523/524: mismo patron, distinta fase del handshake con el origen.
+## DNS Only en produccion: no hacer flip sin planear el cache de los clientes
+
+- **Sintoma**: tras pasar un subdominio a DNS Only, algunos dispositivos dejan de cargar (522/timeout)
+  mientras otros cargan bien.
+- **Causa**: los dispositivos que resolvieron el registro **proxied** antes del cambio siguen usando esa
+  resolucion cacheada. El registro ya no esta en Cloudflare pero el dispositivo insiste contra ese camino.
+- **Fix**: revertir a `proxied: true` + `purge_cache` (purge_everything).
+- **Regla**: no hacer flip DNS Only en produccion sin planear el cache de los clientes (TTL + el cache
+  propio de cada dispositivo). Un DNS Only es util como diagnostico acotado, no como estado estable.
 

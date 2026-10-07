@@ -29,13 +29,15 @@ RUN pnpm --filter backend build
 # (node_modules/.prisma) no viaja solo: hay que copiarlo a mano. El `test -d` es a proposito:
 # si no queda ahi, el build falla AQUI, con el log a la vista, en vez de morir en runtime.
 FROM builder AS deploy
+# El cliente de Prisma se genera DENTRO de /app/out, no se copia: el generador escribe en el
+# node_modules/.prisma del arbol donde corre, asi que sale con la ruta y el engine correctos y no
+# hay que adivinar donde lo dejo el store de pnpm (que es distinto en Linux y en Windows).
+# El CLI sale del builder (/app/node_modules/.bin/prisma), donde prisma esta como devDependency.
 RUN pnpm --filter backend deploy --prod /app/out \
-    && SRC=$(find /app/node_modules/.prisma /app/node_modules/.pnpm -maxdepth 5 -type d -name .prisma 2>/dev/null | head -1) \
-    && echo "cliente de prisma generado en: $SRC" \
-    && test -n "$SRC" \
-    && mkdir -p /app/out/node_modules/.prisma \
-    && cp -RL "$SRC/client" /app/out/node_modules/.prisma/client \
-    && ls /app/out/node_modules/.prisma/client | head -5
+    && cd /app/out \
+    && /app/node_modules/.bin/prisma generate --schema=prisma/schema.prisma \
+    && test -d node_modules/.prisma/client \
+    && ls node_modules/.prisma/client | head -5
 
 # ============ Runner ============
 FROM base AS runner

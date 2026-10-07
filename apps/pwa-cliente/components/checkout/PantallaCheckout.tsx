@@ -13,12 +13,14 @@
  * verificacion SSR que busque los items va a fallar por diseño, no por bug.
  */
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Button, toast } from '@repo/ui'
+import { Button, buttonVariants, toast } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
 import { seleccionarTotal, useCarritoStore } from '@/stores/carritoStore'
 import { useBranding } from '@/hooks/useBranding'
-import { armarBody, textoEntregado } from '@/lib/checkout-maquina'
+import { armarBody, normalizarError, textoEntregado } from '@/lib/checkout-maquina'
+import { pedidosApi } from '@/lib/api'
 import { precioUnitario, validarCheckout } from '@/lib/carrito-maquina'
 import type { DatosCliente, ModoPago, TipoPedido } from '@/lib/carrito-maquina'
 import type { CrearPedidoBody } from '@/types/api'
@@ -141,6 +143,26 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
       'aria-invalid': msj ? true : undefined,
       'aria-describedby': msj ? `err-${campo}` : undefined,
       msj,
+    }
+  }
+
+  // 409 "ya tenes un pedido activo": con el linkToken del pedido en curso se lo cancela y se
+  // limpia el error para poder reintentar. El estado es local a proposito: es efimero y no tiene
+  // que sobrevivir a un reload.
+  const [cancelandoActivo, setCancelandoActivo] = React.useState(false)
+  const cancelarActivo = async () => {
+    const linkToken = carrito.error?.pedidoActivo?.linkToken
+    if (!linkToken) return
+    setCancelandoActivo(true)
+    try {
+      await pedidosApi.cancelarPorLink(linkToken)
+      toast.success('Cancelamos tu pedido anterior')
+      despachar({ tipo: 'REINTENTAR' })
+    } catch (e) {
+      const { mensaje } = normalizarError(e)
+      toast.error(mensaje || 'No pudimos cancelar el pedido anterior')
+    } finally {
+      setCancelandoActivo(false)
     }
   }
 
@@ -321,7 +343,27 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
       {carrito.error ? (
         <div role="alert" className="flex flex-col gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
           <p>{carrito.error.mensaje}</p>
-          {carrito.error.codigo === 'CARTA_VENCIDA' ? (
+          {carrito.error.pedidoActivo ? (
+            // 409 "pedido activo": no es un error del formulario, asi que en vez de "Reintentar"
+            // (que va a volver a chocar) se ofrecen las dos salidas reales.
+            <div className="flex flex-col gap-2">
+              <Link
+                href={`/${slugNegocio}/pedido/${carrito.error.pedidoActivo.linkToken}`}
+                className={buttonVariants({ variant: 'outline', className: 'min-h-12 border-destructive/40 text-destructive' })}
+              >
+                Ver mi pedido
+              </Link>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-12 border-destructive/40 text-destructive"
+                disabled={cancelandoActivo}
+                onClick={() => void cancelarActivo()}
+              >
+                {cancelandoActivo ? 'Cancelando...' : 'Cancelar ese pedido y reintentar'}
+              </Button>
+            </div>
+          ) : carrito.error.codigo === 'CARTA_VENCIDA' ? (
             // El 410 no se arregla reintentando: la carta cambio y hay que traer la nueva.
             <Button
               type="button"

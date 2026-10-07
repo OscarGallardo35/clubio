@@ -166,7 +166,7 @@ export function armarBody(estado: EstadoCarrito): CrearPedidoBody {
  *   `{"message":["property x should not exist"]}`), asi que hay que unirlo en vez de mostrarlo
  *   crudo (saldria "[object Object]").
  */
-export function normalizarError(e: unknown): { status: number; mensaje: string } {
+export function normalizarError(e: unknown): { status: number; mensaje: string; data?: unknown } {
   const conStatus =
     e && typeof e === 'object' && 'status' in e && typeof (e as { status?: unknown }).status === 'number'
   if (!conStatus) {
@@ -181,5 +181,7 @@ export function normalizarError(e: unknown): { status: number; mensaje: string }
     else if (typeof m === 'string') mensaje = m
   }
   if (!mensaje && e instanceof Error) mensaje = e.message
-  return { status, mensaje }
+  // `data` viaja entero: hay errores (el 409 de "pedido activo") que traen campos propios que la
+  // UI necesita, y clasificarlos aparte obligaria a repetir la extraccion del payload.
+  return { status, mensaje, data }
 }

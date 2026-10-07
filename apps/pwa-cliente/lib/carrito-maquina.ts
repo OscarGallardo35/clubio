@@ -93,10 +93,15 @@ export interface SugerenciaUpsell {
 }
 
 export interface ErrorCarrito {
-  /** 'RATE_LIMIT' | 'VALIDACION' | 'SUCURSAL_CERRADA' | 'RED' | 'DESCONOCIDO' | 'CARTA_VENCIDA' */
+  /** 'RATE_LIMIT' | 'VALIDACION' | 'SUCURSAL_CERRADA' | 'RED' | 'DESCONOCIDO' | 'CARTA_VENCIDA' | 'PEDIDO_ACTIVO' */
   codigo: string
   /** Copy para el usuario (sin jerga tecnica). */
   mensaje: string
+  /**
+   * Solo con `PEDIDO_ACTIVO` (409 por "un pedido activo por cliente"): el pedido que ya esta en
+   * curso, para ofrecer "ver mi pedido" / "cancelarlo" en vez de un reintento que va a chocar.
+   */
+  pedidoActivo?: { pedidoId: string; linkToken: string } | undefined
 }
 
 export interface EstadoCarrito {
@@ -144,7 +149,7 @@ export type EventoCarrito =
   | { tipo: 'UPSELL_ERROR' }
   | { tipo: 'ENVIAR' }
   | { tipo: 'PEDIDO_OK'; linkToken: string; numero?: number; urlCorta?: string; mensajeWhatsApp?: string }
-  | { tipo: 'PEDIDO_ERROR'; status: number; mensaje: string }
+  | { tipo: 'PEDIDO_ERROR'; status: number; mensaje: string; data?: unknown }
   | { tipo: 'REINTENTAR' }
   | { tipo: 'DESCARTAR_AVISO' }
   // Olvida el pedido guardado. Se dispara cuando el seguimiento recibe 404: ese linkToken ya no
@@ -270,7 +275,22 @@ export function validarCheckout(estado: EstadoCarrito): Partial<Record<keyof Dat
 }
 
 /** Traduce un error del backend (o de red) a algo que el cliente pueda leer. */
-export function clasificarError(status: number, mensajeBackend: string): ErrorCarrito {
+export function clasificarError(status: number, mensajeBackend: string, data?: unknown): ErrorCarrito {
+  if (status === 409) {
+    // Ya hay un pedido activo de este cliente (o de este telefono). No es un error del
+    // formulario: es un ESTADO, asi que ademas del copy se le pasa el link del pedido en curso
+    // para que pueda mirarlo o cancelarlo. El backend lo manda en el payload del 409.
+    const d = (data ?? {}) as { pedidoId?: unknown; linkToken?: unknown }
+    const pedidoActivo =
+      typeof d.pedidoId === 'string' && typeof d.linkToken === 'string'
+        ? { pedidoId: d.pedidoId, linkToken: d.linkToken }
+        : undefined
+    return {
+      codigo: 'PEDIDO_ACTIVO',
+      mensaje: mensajeBackend || 'Ya tenés un pedido activo. Cancelalo o esperá a que termine.',
+      ...(pedidoActivo ? { pedidoActivo } : {}),
+    }
+  }
   if (status === 429) {
     return {
       codigo: 'RATE_LIMIT',
@@ -470,7 +490,7 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
     case 'PEDIDO_ERROR':
       // El reducer clasifica el error (429, 400, 5xx, red) para que el copy viva en un
       // solo lugar y la UI no tenga que traducir codigos HTTP.
-      return { ...estado, fase: 'checkout', error: clasificarError(evento.status, evento.mensaje) }
+      return { ...estado, fase: 'checkout', error: clasificarError(evento.status, evento.mensaje, evento.data) }
 
     case 'REINTENTAR':
       if (estado.fase !== 'checkout') return estado

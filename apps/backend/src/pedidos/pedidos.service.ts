@@ -161,6 +161,31 @@ export class PedidosService {
     // Refinamiento 3: telefono E.164 (lanza 400 con mensaje claro)
     const telefono = normalizarTelefonoE164(dto.telefono);
 
+    // Un pedido ACTIVO por cliente (hibrido): con sesion se mira el `clienteId` —un telefono
+    // compartido (el fijo del local, el celular de la familia) no deberia bloquear a alguien
+    // logueado—; sin sesion, el telefono normalizado, que es la unica identidad del guest.
+    // Alcance NEGOCIO (no sucursal): "ya tenes un pedido" es del negocio, no de la sucursal.
+    const activo = await this.prisma.pedido.findFirst({
+      where: {
+        negocioId,
+        estado: { in: ESTADOS_ACTIVOS },
+        ...(clienteId ? { clienteId } : { telefono }),
+      },
+      orderBy: { creadoEn: 'desc' },
+      select: { id: true, linkToken: true, estado: true, linkExpiraEn: true },
+    });
+    if (activo) {
+      // El payload extra viaja al cliente: `linkToken` es lo que necesita para ofrecerle
+      // "ver mi pedido" / "cancelarlo" en el checkout.
+      throw new ConflictException({
+        message: 'Ya tenes un pedido activo. Cancelalo o espera a que termine.',
+        pedidoId: activo.id,
+        linkToken: activo.linkToken,
+        estado: activo.estado,
+        linkVigente: !linkVencido(activo.linkExpiraEn),
+      });
+    }
+
     // Refinamiento 6 + recalculo de precios desde la DB + override por sucursal.
     // `sucursalId` ya esta resuelto arriba: NO se vuelve a resolver.
     const { items, subtotal, costoEnvio, total } = await calcularTotales(

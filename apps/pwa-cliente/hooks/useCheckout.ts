@@ -86,12 +86,12 @@ export function useCheckout(): UsoCheckout {
       // No es un log temporal: un error de envio no puede quedar silencioso (el estado se quedaria
       // atrapado en 'enviando' sin que nadie se entere).
       console.error('[checkout] el envio del pedido fallo:', e)
-      const { status, mensaje } = normalizarError(e)
+      const { status, mensaje, data } = normalizarError(e)
       // LOG TEMPORAL - diagnostico del crash post-400. OJO: `e.mensaje` no existe (el crudo no tiene
       // ese campo); los valores normalizados son los que se despachan, y `crudo` va entero por si el
       // status no es el que parece.
       console.log('[checkout] pre-despacho:', { status, mensaje, crudo: e })
-      despachar({ tipo: 'PEDIDO_ERROR', status, mensaje })
+      despachar({ tipo: 'PEDIDO_ERROR', status, mensaje, data })
       return null
     }
   }, [despachar])

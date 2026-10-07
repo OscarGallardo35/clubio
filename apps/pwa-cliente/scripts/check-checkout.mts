@@ -138,12 +138,29 @@ igual('un status raro cae en el generico', clasificarError(418, 'teapot').codigo
 // --- 6. normalizarError ------------------------------------------------------
 console.log('\n== normalizarError ==')
 const apiErr = (status: number, data?: unknown) => Object.assign(new Error('boom'), { status, data })
-igual('status real + message string', normalizarError(apiErr(400, { message: 'Datos invalidos' })), { status: 400, mensaje: 'Datos invalidos' })
+igual('status real + message string', normalizarError(apiErr(400, { message: 'Datos invalidos' })), { status: 400, mensaje: 'Datos invalidos', data: { message: 'Datos invalidos' } })
 igual('message ARRAY (class-validator) se une con espacios',
   normalizarError(apiErr(400, { message: ['property x should not exist', 'property y is required'] })),
-  { status: 400, mensaje: 'property x should not exist property y is required' })
+  { status: 400, mensaje: 'property x should not exist property y is required',
+    data: { message: ['property x should not exist', 'property y is required'] } })
 igual('array con cosas que no son string se filtra',
   normalizarError(apiErr(400, { message: ['uno', 42, null] })).mensaje, 'uno')
+
+// --- 6b. 409 "pedido activo": el payload viaja para los CTAs del checkout ----------------
+// El backend manda `{ pedidoId, linkToken, estado }` en el 409 para que el cliente pueda
+// ofrecer "ver mi pedido" / "cancelarlo" en vez de un reintento que va a volver a chocar.
+igual('409 -> PEDIDO_ACTIVO con el pedido en curso',
+  (() => {
+    const e = clasificarError(409, 'Ya tenes un pedido activo. Cancelalo o espera a que termine.',
+      { pedidoId: 'p1', linkToken: 'tok-1', estado: 'PENDIENTE' })
+    return [e.codigo, e.mensaje, e.pedidoActivo?.pedidoId, e.pedidoActivo?.linkToken]
+  })(),
+  ['PEDIDO_ACTIVO', 'Ya tenes un pedido activo. Cancelalo o espera a que termine.', 'p1', 'tok-1'])
+igual('409 sin payload igual clasifica (y sin pedidoActivo inventado)',
+  [clasificarError(409, '').codigo, clasificarError(409, '').pedidoActivo], ['PEDIDO_ACTIVO', undefined])
+igual('409 con payload incompleto no arma pedidoActivo',
+  clasificarError(409, 'x', { pedidoId: 'p1' }).pedidoActivo, undefined)
+igual('el 409 no lo intercepta otra rama', clasificarError(409, 'otra cosa').codigo, 'PEDIDO_ACTIVO')
 igual('status sin data cae al message del Error', normalizarError(apiErr(500)).mensaje, 'boom')
 igual('StatusError de 401 sin data ni message util', normalizarError(apiErr(401, { message: '' })).status, 401)
 // El caso que el plan asumia y que el cliente NO produce: fetch que ni sale.

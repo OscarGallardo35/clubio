@@ -183,6 +183,18 @@ export class ModificadoresService {
       // y se actualizan/crean las demas.
       if (dto.opciones) {
         const idsEnviados = dto.opciones.map((o) => o.id).filter((v): v is string => !!v);
+        // Las opciones que vienen CON id tienen que ser de ESTE grupo. Sin este chequeo el
+        // grupo se validaba contra `negocioId` pero la opcion no: un id de otro grupo (o de
+        // otro NEGOCIO) se actualizaba igual — IDOR cross-tenant de escritura.
+        // Mismo patron que `eliminarOpcion` y `reordenarOpciones`.
+        if (idsEnviados.length) {
+          const propias = await tx.opcionModificador.count({
+            where: { id: { in: idsEnviados }, grupoModificadorId: id },
+          });
+          if (propias !== idsEnviados.length) {
+            throw new NotFoundException('Alguna opcion no pertenece a ese grupo');
+          }
+        }
         const previas = await tx.opcionModificador.findMany({
           where: { grupoModificadorId: id }, select: { id: true },
         });

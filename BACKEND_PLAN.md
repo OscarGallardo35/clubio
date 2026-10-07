@@ -953,4 +953,14 @@ Por que la primera medicion parecio un fallo: se chequeo `[role=dialog],dialog` 
 que no matchea el sheet y encima sin margen para el fetch de grupos. Leccion para los harness de
 navegador: verificar el efecto con el selector real del componente y con el fetch ya resuelto, y no
 concluir "no paso nada" desde una unica sonda.
+## TODO post-MVP - Persistencia del carrito
+
+El carrito vive solo en memoria. Un reload pierde lo armado (verificado en browser: al volver al menu,
+el contador vuelve a cero).
+
+- Opcion A (recomendada): persistir en localStorage (mismo patron que pedido.linkToken).
+- Opcion B: sessionStorage.
+- Impacto: alto en UX mobile (refresh accidental).
+- No bloqueante para MVP. Va con el MVP-2, post-onboarding del primer local: cada cambio despues del
+  deploy agrega riesgo, y el flujo E2E no lo necesita.
 

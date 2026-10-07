@@ -980,3 +980,15 @@ el contador vuelve a cero).
 3. Timing del WS: la lista de /visitas se llena por REST (GET /visitas/pendientes -> 200) aunque el
    rotulo diga "Reconectando". Verificar si es el fallback correcto o si el socket tarda en conectar.
    Cosmetico, no bloqueante.
+## Hallazgos post-Fase 4 (alertas y cache)
+
+- Alerta en la transicion carrito -> checkout: **el upsell NO es la causa**. `CarritoSheet` consume
+  `useUpsell` y solo destructura `{ sugerencias, aceptar, cargando, desactivado }`: el estado `ERROR`
+  del reducer no se pinta en ningun lado, es silencioso por diseno. Los candidatos reales son los
+  `toast.success` (`CartaDigital.tsx:83` "${item.nombre} al carrito", con vida util que alcanza a verse
+  durante la transicion) y las etiquetas de `PasoEspera.tsx:11-12`. Cosmetico, no bloquea.
+  Fix post-MVP: no hace falta; si molesta, acortar la vida del toast.
+- `cache_level = aggressive` + redeploys: el borde puede servir chunks viejos y en movil eso se ve como
+  "no carga". Medido: tras purgar, `app.clubio.lat` paso de 4.44 s a 0.39 s (11x). Purgar la cache
+  despues de cada deploy importante, o bajar el cache level a standard.
+

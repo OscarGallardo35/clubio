@@ -2464,4 +2464,10 @@ backend lee la primera (la vieja, que puede estar revocada por la rotacion de se
   migracion.
 - **Fix de fondo propuesto (post-MVP)**: al validar, si llegan dos cookies con el mismo nombre, elegir la de
   `Domain=.clubio.lat` / la mas nueva por timestamp, en vez de la primera del header.
+## min_tls_version: no buscar ahi los fallos en celulares
+
+`min_tls_version = 1.0` es el **minimo** aceptado, no el maximo: subirlo reduce los dispositivos
+aceptados, nunca los aumenta. Un celular viejo que negocie TLS 1.0 **no** falla por tener el minimo en
+1.0 — al contrario, es la configuracion mas permisiva. Si se sube (p.ej. a 1.2) el riesgo es el opuesto:
+dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
 

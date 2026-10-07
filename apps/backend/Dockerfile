@@ -34,8 +34,11 @@ FROM builder AS deploy
 # hay que adivinar donde lo dejo el store de pnpm (que es distinto en Linux y en Windows).
 # El CLI sale del builder (/app/node_modules/.bin/prisma), donde prisma esta como devDependency.
 RUN pnpm --filter backend deploy --prod /app/out \
+    && PRISMA_CLI=$(find /app -path '*/prisma/build/index.js' -not -path '/app/out/*' 2>/dev/null | head -1) \
+    && echo "prisma cli: $PRISMA_CLI" \
+    && test -n "$PRISMA_CLI" \
     && cd /app/out \
-    && /app/node_modules/.bin/prisma generate --schema=prisma/schema.prisma \
+    && node "$PRISMA_CLI" generate --schema=prisma/schema.prisma \
     && test -d node_modules/.prisma/client \
     && ls node_modules/.prisma/client | head -5
 

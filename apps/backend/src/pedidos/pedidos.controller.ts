@@ -60,9 +60,9 @@ export class PedidosController {
     @Body() dto: CrearPedidoDto,
     @Headers('authorization') auth?: string,
   ) {
-    const { id: negocioId, slug } = await this.pedidos.negocioPorSlug(tenant);
+    const negocioId = await this.pedidos.negocioPorSlug(tenant);
     const clienteId = await this.pedidos.identificarClienteOpcional(auth);
-    return this.pedidos.crearPedido(negocioId, dto, clienteId, slug);
+    return this.pedidos.crearPedido(negocioId, dto, clienteId);
   }
 
   /** El atendiente abre el link del WhatsApp. 30 req/min por IP. */
@@ -76,7 +76,7 @@ export class PedidosController {
   })
   @Get('publico/:linkToken')
   async publico(@Tenant() tenant: string | null, @Param('linkToken') linkToken: string) {
-    const { id: negocioId } = await this.pedidos.negocioPorSlug(tenant);
+    const negocioId = await this.pedidos.negocioPorSlug(tenant);
     return this.pedidos.obtenerPedidoPorLink(negocioId, linkToken);
   }
 

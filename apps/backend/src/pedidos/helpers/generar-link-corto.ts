@@ -18,17 +18,6 @@ export function construirUrlCorta(linkToken: string): string {
   return `${base}/pedido/${linkToken}`;
 }
 
-/**
- * URL de seguimiento del CLIENTE: PUBLIC_APP_URL + slug del negocio.
- *
- * No confundir con `construirUrlCorta`, que es la del staff (STAFF_APP_URL): mezclarlas manda al
- * cliente al dominio del staff, donde la ruta /pedido/:token no existe y recibe un 404.
- */
-export function construirUrlCliente(linkToken: string, slugNegocio: string): string {
-  const base = (process.env.PUBLIC_APP_URL ?? 'https://app.dominio.com').replace(/\/$/, '');
-  return `${base}/${slugNegocio}/pedido/${linkToken}`;
-}
-
 /** ¿El link ya vencio? */
 export function linkVencido(linkExpiraEn: Date | null | undefined): boolean {
   return !!linkExpiraEn && linkExpiraEn.getTime() < Date.now();

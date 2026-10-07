@@ -2350,3 +2350,33 @@ Copiar el `.prisma` del builder a mano funciona en el laboratorio (`require('@pr
 `node_modules/.prisma/client` **de la raiz del builder**, con el engine de esa plataforma. Lo limpio es
 generarlo apuntando al /out, para que el engine y la ruta sean los del arbol desplegado.
 
+### 10. El engine de Prisma se elige en el BUILD: openssl tiene que estar en TODOS los stages
+
+Con la app ya arrancando y mapeando todas las rutas, el unico error era:
+
+```
+PrismaClientInitializationError: Prisma Client could not locate the Query Engine for runtime
+"linux-musl-openssl-3.0.x"
+```
+
+Causa: `prisma generate` corre en un stage de build y decide que engine copiar segun la version de
+openssl que VE. Si openssl esta solo en el runner (donde corre la app) y no en el stage que genera,
+Prisma avisa "Defaulting to openssl-1.1.x", copia el engine de 1.1.x, y el contenedor --que si tiene
+openssl 3.0-- busca el de 3.0.x y no lo encuentra.
+
+Regla: `apk add --no-cache openssl` va en el stage BASE del Dockerfile. Asi el install, el generate y
+el runtime ven la misma version y el target del engine coincide.
+
+### 11. El layout de pnpm NO es el mismo en Windows que en Linux (y eso invalida los tests locales)
+
+Todo lo que se valido en el laboratorio local (Windows) pasaba, y en el contenedor (Linux) fallaba:
+
+- `prisma generate` desde `apps/backend` deja en Windows un `node_modules/.prisma` real; en Linux el
+  cliente queda dentro del store del `@prisma/client` del propio arbol (`node_modules/.pnpm/...`).
+- `/app/node_modules/.bin/prisma` existia en el lab y NO existia en el contenedor (`not found`).
+- En general: `find`/`cp` sobre rutas del store es fragil; hay que verificar el layout EN el contenedor.
+
+Regla: el laboratorio local sirve para validar LOGICA (que el cliente generado exponga los enums, que
+`pnpm deploy` deje directorios reales sin symlinks), no para validar RUTAS. Los guards del Dockerfile
+tienen que buscar donde quedo la cosa (`find` + `echo` + test del resultado), no asumir una ruta.
+

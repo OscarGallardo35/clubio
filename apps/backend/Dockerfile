@@ -40,7 +40,11 @@ RUN pnpm --filter backend deploy --prod /app/out \
 # ============ Runner ============
 FROM base AS runner
 ENV NODE_ENV=production
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
+# openssl es obligatorio para Prisma en Alpine: sin el, el motor no arranca y la app muere
+# al conectar. El propio log del build lo avisa ("Prisma failed to detect the libssl/openssl
+# version to use... Please manually install OpenSSL").
+RUN apk add --no-cache openssl \
+    && addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
 COPY --from=deploy --chown=nestjs:nodejs /app/out ./
 USER nestjs
 EXPOSE 3000

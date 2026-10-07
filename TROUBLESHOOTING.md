@@ -2311,3 +2311,42 @@ resuelve empezando por `/app/node_modules`.
 Regla: no copiar `node_modules` entre stages a mano. `pnpm --filter <app> deploy --prod /app/out`
 genera un arbol autocontenido, y el runner copia `/app/out`.
 
+### 7-bis. La forma RELIABLE de leer los logs de UN deployment (esto destraba la regla 7)
+
+`railway logs` sirve un stream agregado y desincronizado. La API tiene los logs atados al deployment:
+
+```graphql
+query($d: String!, $n: Int) {
+  deploymentLogs(deploymentId: $d, limit: $n) { timestamp severity message }
+}
+```
+
+(`Log` tiene ademas `attributes` y `tags`, que son sub-objetos: hay que pedirles subcampos o la query
+falla.) `buildLogs` tiene la misma forma para la etapa de build.
+
+Con esto se leyo, por primera vez, el error REAL del contenedor (los otros logs mostraban el de un
+intento anterior durante horas). Regla: ante un healthcheck rojo, `deploymentLogs` del ID exacto
+—despues de confirmar con `meta.commitHash` que es el deployment que se queria probar— y no
+`railway logs`.
+
+### 9. `pnpm deploy` no genera el cliente de Prisma: hay que generarlo DENTRO de /out
+
+`pnpm --filter backend deploy --prod /app/out` re-instala las dependencias de produccion, asi que
+`@prisma/client` entra **sin generar**: el paquete existe pero no expone los enums. Sintoma exacto, ya
+con la app arrancando (no confundir con el error de `@nestjs/core`, que era otro):
+
+```
+/app/dist/negocios/negocios.controller.js:58
+    (0, roles_decorator_1.Roles)(client_1.RolEmpleado.DUENO),
+TypeError: Cannot read properties of undefined (reading 'DUENO')
+```
+
+`client_1` es el `require('@prisma/client')` que emite TypeScript para `import ... from '@prisma/client'`
+(lo nombra por el basename del modulo). Si el cliente esta generado, `RolEmpleado` es un objeto real;
+si no, `undefined` y la decoracion `@Roles(...)` explota al cargar el modulo.
+
+Copiar el `.prisma` del builder a mano funciona en el laboratorio (`require('@prisma/client')` +
+`new PrismaClient()` desde /out andan) pero es fragil: el generador lo escribe en
+`node_modules/.prisma/client` **de la raiz del builder**, con el engine de esa plataforma. Lo limpio es
+generarlo apuntando al /out, para que el engine y la ruta sean los del arbol desplegado.
+

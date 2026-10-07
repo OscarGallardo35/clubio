@@ -2411,4 +2411,20 @@ tienen que buscar donde quedo la cosa (`find` + `echo` + test del resultado), no
 - **Fix**: `form.requestSubmit()` dispara el submit nativo y React lo intercepta correctamente.
 - Caso real: el login de staff quedo en `/login` sin ningun request; con `requestSubmit()` salio 201 a la
   primera. Aplicar a todo submit automatizado (checkout, login).
+## Bugs en capas del mismo sintoma
+
+Un 401/307 con cookies "correctas" puede tener **tres causas apiladas**:
+
+1. **Atributos** de la cookie (SameSite, Secure, Domain).
+2. **Topologia**: PWA y API en dominios registrables distintos (eTLD+1).
+3. **Scope del Domain**: host-only vs subdominio compartido (el guard server-side de una PWA solo ve
+   la cookie si el `Domain` la cubre).
+
+Verificar las **tres** antes de declarar fix. Y en multi-PWA: si una tiene el problema, verificar las
+otras dos antes de seguir.
+
+**Caso real**: 401 del cliente -> causa (2) cross-site -> fix `api.clubio.lat` -> el staff tambien
+estaba roto (mismo sintoma, no reportado) -> y ademas su guard server-side seguia fallando por la
+causa (3): la cookie quedaba host-only de `api.clubio.lat` y el middleware de `staff.clubio.lat` no la
+veia -> `COOKIE_DOMAIN=.clubio.lat`. Tres capas, un solo sintoma.
 

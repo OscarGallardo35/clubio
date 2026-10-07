@@ -2505,4 +2505,14 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
   actualizalo **en el mismo commit**.
 - Sintoma del bug real: listas que funcionan (van por REST) + cero peticiones a `/socket.io` + cartel de
   conexion encendido. Ese trio significa "el cliente nunca intento conectarse", no "se cayo la red".
+## URLs compartibles: PUBLIC_APP_URL vs STAFF_APP_URL
+
+- Las URLs que recibe el **cliente** (link de seguimiento del pedido, mensaje de WhatsApp) se arman con
+  **`PUBLIC_APP_URL` + slug del negocio**: `${PUBLIC_APP_URL}/${slug}/pedido/${linkToken}`.
+- `STAFF_APP_URL` es solo para links **internos del staff** (validacion de visitas, `/validar?ref=`).
+- **Nunca mezclar.** Caso real: `crearPedido` armaba el link del cliente con `construirUrlCorta`
+  (`STAFF_APP_URL`), asi que el WhatsApp del cliente llevaba a `staff.clubio.lat/pedido/<token>`, donde la
+  ruta no existe -> 404. La ruta correcta respondia 200 con el mismo token.
+- Regla de diagnostico util: un **404** en la ruta de tracking significa que la URL nunca debio llegar
+  (dominio o path mal armado); un **200 con error adentro** significa que el token no corresponde.
 

@@ -17,7 +17,7 @@ import { getPagination, paginar } from '../common/utils/pagination.util';
 import { requireEnv } from '../common/utils/env.util';
 import { PedidosGateway } from './pedidos.gateway';
 import { calcularTotales } from './helpers/calcular-totales';
-import { construirUrlCorta, generarLinkToken, calcularExpiracion, linkVencido } from './helpers/generar-link-corto';
+import { construirUrlCliente, generarLinkToken, calcularExpiracion, linkVencido } from './helpers/generar-link-corto';
 import { generarMensajeWhatsApp } from './helpers/generar-mensaje-whatsapp';
 import {
   ESTADOS_ACTIVOS, MENSAJE_POR_ESTADO, TITULO_POR_ESTADO, transicionValidaParaTipo,
@@ -100,16 +100,16 @@ export class PedidosService {
   }
 
   /** Resuelve el negocio desde el slug del tenant (rutas publicas). */
-  async negocioPorSlug(slug?: string | null): Promise<string> {
+  async negocioPorSlug(slug?: string | null): Promise<{ id: string; slug: string }> {
     if (!slug) throw new NotFoundException('Falta el tenant (X-Tenant-Slug) para esta operacion');
     const negocio = await this.prisma.negocio.findUnique({
-      where: { slug: String(slug).toLowerCase() }, select: { id: true },
+      where: { slug: String(slug).toLowerCase() }, select: { id: true, slug: true },
     });
     if (!negocio) throw new NotFoundException('Negocio no encontrado');
-    return negocio.id;
+    return { id: negocio.id, slug: negocio.slug };
   }
 
-  async crearPedido(negocioId: string, dto: CrearPedidoDto, clienteId?: string | null) {
+  async crearPedido(negocioId: string, dto: CrearPedidoDto, clienteId?: string | null, slugNegocio?: string | null) {
     const sucursal = await this.resolverSucursalPedido(negocioId, dto, clienteId);
     const sucursalId = sucursal.id as string;
 
@@ -212,7 +212,8 @@ export class PedidosService {
     }
     if (!pedido) throw new BadRequestException('No se pudo generar el link del pedido');
 
-    const urlCorta = construirUrlCorta(linkToken);
+    // URL del CLIENTE (PUBLIC_APP_URL): la del staff iria a otro dominio y da 404.
+    const urlCorta = construirUrlCliente(linkToken, slugNegocio ?? '');
     const mensajeWhatsApp = generarMensajeWhatsApp({
       nombreCliente: pedido.nombreCliente, items, subtotal, costoEnvio, total,
       tipo: dto.tipo, mesa: pedido.mesa, modoPago: dto.modoPago, notas: pedido.notas, urlCorta,

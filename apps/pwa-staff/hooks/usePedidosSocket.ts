@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { EVENTOS_PEDIDO, crearSocketPedidos } from '@/lib/socket';
-import { useEmpleadoStore } from '@/stores/empleadoStore';
 
 export interface UsoPedidosSocket {
   enVivo: boolean;
@@ -21,14 +20,14 @@ export interface UsoPedidosSocket {
  * confiable que mergear payloads parciales, y el endpoint ES la fuente de verdad.
  */
 export function usePedidosSocket(): UsoPedidosSocket {
-  const token = useEmpleadoStore((st) => st.token);
   const [enVivo, setEnVivo] = React.useState(false);
   const [cambios, setCambios] = React.useState(0);
   const [conexiones, setConexiones] = React.useState(0);
 
   React.useEffect(() => {
-    if (!token) return undefined;
-    const socket = crearSocketPedidos(token);
+    // Sin token: la cookie HttpOnly (empleado_token) viaja en el handshake gracias a
+    // withCredentials. El gateway la lee (COOKIE_EMPLEADO) y WsJwtGuard valida el tipo.
+    const socket = crearSocketPedidos();
     const marcar = () => setCambios((n) => n + 1);
 
     socket.on('connect', () => {
@@ -47,7 +46,7 @@ export function usePedidosSocket(): UsoPedidosSocket {
       socket.disconnect();
       setEnVivo(false);
     };
-  }, [token]);
+  }, []);
 
   return { enVivo, cambios, conexiones };
 }

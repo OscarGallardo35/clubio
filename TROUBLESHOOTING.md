@@ -2492,4 +2492,17 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
 - **Fix**: revertir a `proxied: true` + `purge_cache` (purge_everything).
 - **Regla**: no hacer flip DNS Only en produccion sin planear el cache de los clientes (TTL + el cache
   propio de cada dispositivo). Un DNS Only es util como diagnostico acotado, no como estado estable.
+## Carteles de conexion y comentarios stale
+
+- Un cartel que reporta la **ausencia de una variable** (no un estado real del socket) miente por diseno.
+  Caso real: el staff mostraba "Reconectando" sin que existiera una sola peticion a /socket.io, porque
+  `enVivo` arrancaba en `false` y el socket nunca se creaba. Regla: tri-estado explicito — `null` (inicial,
+  sin intento), `true` (conectado), `false` (hubo intento y se corto). Solo pintar con un evento real
+  (`connect`, `disconnect`, `reconnect_attempt`).
+- **Comentario stale**: `lib/socket.ts` decia que el gateway NO leia la cookie del staff y que hacia falta
+  el token en memoria. Era falso: los gateways ya resuelven `COOKIE_EMPLEADO`. Un diagnostico entero se
+  apoyo en ese comentario. Regla: si tocas un modulo cuyo comentario describe comportamiento viejo,
+  actualizalo **en el mismo commit**.
+- Sintoma del bug real: listas que funcionan (van por REST) + cero peticiones a `/socket.io` + cartel de
+  conexion encendido. Ese trio significa "el cliente nunca intento conectarse", no "se cayo la red".
 

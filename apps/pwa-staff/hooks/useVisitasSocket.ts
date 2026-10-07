@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { EVENTOS_VISITA, crearSocketStaff } from '@/lib/socket';
-import { useEmpleadoStore } from '@/stores/empleadoStore';
 import type { VisitaSolicitadaWs } from '@/types/api';
 
 export interface UsoVisitasSocket {
@@ -27,14 +26,13 @@ export interface UsoVisitasSocket {
  * (refetch), que es la razon de exponerlo.
  */
 export function useVisitasSocket(): UsoVisitasSocket {
-  const token = useEmpleadoStore((st) => st.token);
   const [enVivo, setEnVivo] = React.useState(false);
   const [ultimaSolicitada, setUltima] = React.useState<VisitaSolicitadaWs | null>(null);
   const [conexiones, setConexiones] = React.useState(0);
 
   React.useEffect(() => {
-    if (!token) return undefined;
-    const socket = crearSocketStaff(token);
+    // Sin token: la cookie HttpOnly (empleado_token) viaja en el handshake.
+    const socket = crearSocketStaff();
 
     socket.on('connect', () => {
       setEnVivo(true);
@@ -48,7 +46,7 @@ export function useVisitasSocket(): UsoVisitasSocket {
       socket.disconnect();
       setEnVivo(false);
     };
-  }, [token]);
+  }, []);
 
   return { enVivo, ultimaSolicitada, conexiones };
 }

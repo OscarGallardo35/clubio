@@ -2439,4 +2439,29 @@ veia -> `COOKIE_DOMAIN=.clubio.lat`. Tres capas, un solo sintoma.
   revocada; y (b) la validacion de la sesion contra la base (`SesionEmpleado`).
 - Caso real: una sesion de staff murio a los 11 minutos con 12h configurados. Comparar produccion contra
   local (`variables` de Railway vs `.env`) descarta el TTL en un minuto: hacerlo ANTES de tocar valores.
+## "No carga" en el celular con el stack verde
+
+- **Sintoma**: el usuario reporta que la app no carga en el celular; puede aparecer un aviso de Cloudflare.
+- **Diagnostico que cierra el caso en un minuto**: `curl -s -o /dev/null -D - -m 25 <url>` sobre los tres
+  dominios **desde una red independiente a la del usuario**. Si los tres dan 200 y Railway esta SUCCESS, el
+  problema no esta en la infra. No tocar nada hasta tener ese dato.
+- **Causa encontrada**: `always_use_https` estaba **OFF** en la zona. Con el proxy naranja activo, una
+  visita por `http://` **no se redirige a https** y el navegador se queda con una pagina que no resuelve:
+  es la causa mas comun de este sintoma. Fix: `PATCH /zones/<zone>/settings/always_use_https {"value":"on"}`
+  y **verificar el 301 real** con `curl -D - http://<host>/<ruta>`, no solo leyendo la setting.
+- **No confundir con las cookies**: una cookie no puede impedir la descarga del HTML. Las cookies
+  duplicadas explican 401 **despues** de cargar, no un fallo de carga.
+- Ademas: `CartaDigital` ya muestra skeletons mientras carga por cliente, pero el TTFB de 4.4 s es del
+  **servidor** (antes del primer byte): un skeleton no puede taparlo. TODO post-MVP: shell estatica/cache.
+
+## Cookies duplicadas tras migrar el Domain
+
+Al pasar de cookie host-only a `Domain=.clubio.lat` las dos pueden convivir en el navegador del usuario y el
+backend lee la primera (la vieja, que puede estar revocada por la rotacion de sesion) -> 401 con la sesion
+"visiblemente sana".
+
+- **Workaround (usuarios existentes)**: borrar las cookies de `*.clubio.lat` **una vez** despues de la
+  migracion.
+- **Fix de fondo propuesto (post-MVP)**: al validar, si llegan dos cookies con el mismo nombre, elegir la de
+  `Domain=.clubio.lat` / la mas nueva por timestamp, en vez de la primera del header.
 

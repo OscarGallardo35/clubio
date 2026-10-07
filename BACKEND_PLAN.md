@@ -963,4 +963,12 @@ el contador vuelve a cero).
 - Impacto: alto en UX mobile (refresh accidental).
 - No bloqueante para MVP. Va con el MVP-2, post-onboarding del primer local: cada cambio despues del
   deploy agrega riesgo, y el flujo E2E no lo necesita.
+## Backlog Fase 6 - cosmeticos
+
+- manifest.json (staff + cliente)
+- favicon.ico (staff + cliente)
+- apple-mobile-web-app-capable -> mobile-web-app-capable
+- Cartel "Reconectando" del WS en disconnect transitorio
+- Service worker + push notifications
+- Iconos PWA reales
 

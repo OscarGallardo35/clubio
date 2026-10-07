@@ -2221,3 +2221,93 @@ Regla: el script va con **dry-run por defecto**, `--apply` explicito, todo en **
 aplica entero o nada) e **idempotente** (la segunda corrida dice "no hay nada para limpiar"). Y despues de
 limpiar, **volver a mirar los totales del negocio**, no confiar en el conteo del borrado.
 
+## Deploy a Railway (backend por API)
+
+Primer deploy del backend, hecho entero por API/CLI. Todo lo de abajo se verifico en vivo; varias de
+estas cosas cuestan un ciclo de deploy (~3 min) cada una, asi que conviene leerlas antes de empezar.
+
+### 1. La API de Railway responde 403 `error code: 1010` sin User-Agent
+
+El token es correcto; el que rechaza es Cloudflare, por la firma del cliente. Con `urllib` o `curl`
+pelados la request muere antes de llegar a Railway.
+
+Regla: toda llamada a `https://backboard.railway.app/graphql/v2` va con un `User-Agent` real (el de un
+browser alcanza) ademas del `Authorization: Bearer <token>`.
+
+### 2. El enum `Builder` no tiene `DOCKERFILE`: el Dockerfile se elige con `dockerfilePath`
+
+`__type(name:"Builder")` devuelve `['HEROKU','NIXPACKS','PAKETO','RAILPACK']`. Mandar
+`{builder:"DOCKERFILE"}` en `serviceInstanceUpdate` da un 400 opaco ("Problem processing request").
+El Dockerfile se usa seteando `dockerfilePath` y dejando el builder como esta.
+
+Verificado: con `dockerfilePath: "apps/backend/Dockerfile"` el build pasa a
+`load build definition from apps/backend/Dockerfile`. Con el builder por defecto (RAILPACK) y un
+monorepo, Railpack falla con "No start command detected" porque el package.json de la raiz es el de
+turbo.
+
+### 3. `railway login --token` no existe en la CLI 5.63.4
+
+`railway login` es solo OAuth (o `--browserless` con device code). El token va por variable de entorno:
+`RAILWAY_API_TOKEN` para un **token de cuenta** (el que usa la GraphQL API) y `RAILWAY_TOKEN` para un
+**token de proyecto**. Pasar un token de cuenta por `RAILWAY_TOKEN` da
+`Invalid RAILWAY_TOKEN. Please check that it is valid...`.
+
+Ademas: sin `RAILWAY_ENVIRONMENT_ID` (el ID, no el nombre) `railway up` corta con
+"No environment specified".
+
+### 4. NO setear `PORT`
+
+`main.ts` hace `process.env.PORT ? Number(process.env.PORT) : 3000`. Railway inyecta su propio `PORT`
+y espera que la app escuche ahi: si se fija `PORT=3000` en las variables del servicio, se pisa el de
+Railway, la app escucha en el puerto equivocado y el healthcheck nunca pasa (sintoma: "1/1 replicas
+never became healthy", sin ningun error de la app en los logs).
+
+### 5. `railway.toml` esta deprecado (migrar antes de 2026-12-01)
+
+La CLI avisa: "Config as Code (railway.json / railway.toml) is deprecated. Prefer Infrastructure as
+Code (.railway/railway.ts)". Los archivos siguen funcionando hasta 2026-12-01. Y ojo con la ubicacion:
+el `railway.toml` va en la RAIZ del repo, no en `apps/backend`, porque sus rutas son relativas a la
+raiz (el Dockerfile del backend necesita el contexto del monorepo).
+
+### 6. `serviceInstanceDeploy` REUSA el ultimo commit: para tomar el HEAD hay que pushear
+
+Es el hallazgo que costo mas tiempo. `serviceInstanceDeploy(serviceId, environmentId)` devuelve `true`
+y crea un deployment, pero con el **mismo `commitHash`** del anterior: no va a buscar el HEAD de la
+rama. Reproducido: con `git ls-remote origin refs/heads/main` = `d79d468`, dos deploys seguidos
+construyeron `f12d983` (el commit previo).
+
+Consecuencia real: tres fixes del Dockerfile "no funcionaron" porque **ninguno llego a la imagen**.
+El unico disparador que si toma el push es el **webhook de GitHub**.
+
+Regla: pushear y verificar el hash del deployment (`meta.commitHash`) ANTES de leer cualquier log o
+concluir algo. Si el hash no es el del push, el ciclo no probo nada.
+
+### 7. `railway logs` puede servir contenido viejo
+
+Con deploys reintentando (6 reintentos por healthcheck) el stream se desincroniza: se ve UN solo
+"Starting Container" y errores de un intento anterior. Un `RUN` de sonda nueva que hacia `echo` en la
+imagen **nunca aparecio** en `railway logs --build`, aunque el build si la tenia.
+
+Regla: ante un error de runtime, confirmar primero con `meta.commitHash` que el deployment es el que
+se queria probar. Si no coincide, el log no dice nada de tu cambio.
+
+### 8. El bug de fondo: `node_modules` entre stages (pnpm + Docker)
+
+El contenedor arrancaba y moria con `Cannot find module '@nestjs/core'` (require-time, `/app/dist/main.js`).
+
+Medido en un laboratorio local (mismo `.npmrc` + mismo lockfile, un install limpio):
+
+- con el `node-linker=isolated` del repo: `apps/backend/node_modules/*` son **symlinks relativos** al
+  store de la raiz (`../../../node_modules/.pnpm/...`).
+- con `node-linker=hoisted`: `@nestjs/core` queda como **directorio real en el `node_modules` de la
+  RAIZ** y **no existe** en `apps/backend/node_modules` (que solo conserva `.bin`, `@repo`, `glob`,
+  `minimatch`, `rimraf`, `socket.io`).
+
+El Dockerfile copiaba solo `apps/backend/node_modules` -> `/app/node_modules`, asi que fallaba en los
+dos escenarios: symlinks rotos (porque al copiarlos a otra profundidad apuntan a `/node_modules/.pnpm`)
+o carpeta sin `@nestjs/core`. Y el runner corre `node dist/main.js` desde `/app`, por lo que Node
+resuelve empezando por `/app/node_modules`.
+
+Regla: no copiar `node_modules` entre stages a mano. `pnpm --filter <app> deploy --prod /app/out`
+genera un arbol autocontenido, y el runner copia `/app/out`.
+

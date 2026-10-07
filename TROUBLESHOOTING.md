@@ -2505,4 +2505,17 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
   actualizalo **en el mismo commit**.
 - Sintoma del bug real: listas que funcionan (van por REST) + cero peticiones a `/socket.io` + cartel de
   conexion encendido. Ese trio significa "el cliente nunca intento conectarse", no "se cayo la red".
+## Un mensaje puede estar dirigido al STAFF, no al cliente
+
+- Antes de "arreglar" una URL en un mensaje, identificar el **destinatario real**.
+- Caso real: `generarMensajeWhatsApp` (pedidos) arma el texto que el CLIENTE le manda por WhatsApp **al
+  local**, y su ultima linea es una instruccion para el atacante: "Verifica el pedido aca antes de
+  prepararlo". Su link (`urlCorta` -> `STAFF_APP_URL`) era **correcto por diseno**. Un cambio que lo
+  apunte a `PUBLIC_APP_URL` rompe la pantalla de verificacion del staff y no arregla nada del lado del
+  cliente, que abre su tracking desde la app con un path relativo (`/${slug}/pedido/${token}`).
+- Sintoma que confundio: abrir `staff.clubio.lat/pedido/<token>` sin sesion devuelve **307 a /login**, no
+  404. La ruta existe y es del staff; lo que faltaba era la sesion.
+- Regla: `STAFF_APP_URL` = links que abre el personal (verificacion de pedido, `/validar?ref=`).
+  `PUBLIC_APP_URL` + slug = links que abre el cliente (QRs de menu/club). **Verificar el destinatario
+  antes de tocar la constante.**
 

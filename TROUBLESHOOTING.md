@@ -2562,4 +2562,21 @@ dejar afuera telefonos viejos. No es el lugar donde buscar un "no carga".
   reporta el estado del sistema: reporta el de su primer intento, y lo congela para siempre — que es
   peor que no tener probe, porque ademas enmascara una caida real. Si el objetivo es "no colgarse",
   se acota el timeout / `maxRetriesPerRequest`, nunca la reconexion.
+## Un store con `skipHydration` no se hidrata solo: cada pantalla que lo lee tiene que llamar `activar`
+
+- **Sintoma**: el boton "Abrir WhatsApp" del seguimiento **no aparece** si abris (o recargas) el link
+  del pedido en una pestana nueva, aunque el mensaje este guardado. Venias navegando desde el
+  checkout y si aparecia.
+- **Causa**: `carritoStore` es un `persist` con `skipHydration: true`, asi que **nadie lo hidrata
+  solo**. La hidratacion es manual (`activar()`), y hasta ahora la llamaban unicamente `/checkout` y
+  la carta. En el seguimiento, `useCarritoStore((s) => s.pedido)` devolvia el estado inicial
+  (`pedido: null`) y el boton depende de ese valor. El store solo quedaba "lleno" si llegabas por
+  navegacion client-side desde el checkout (mismo documento, store en memoria).
+- **Fix**: `Seguimiento` llama `activar(slugNegocio, null, null)` al montar. Las dos sucursales van en
+  `null` **a proposito**: `rehidratar` conserva la sucursal guardada y no dispara el vaciado por
+  cambio de sucursal (`contexto.sucursalId` falsy entra por el `else`).
+- **Regla**: si un store usa `skipHydration`, **cada** pantalla que lea de el tiene que hidratarlo; no
+  alcanza con que lo haga el flujo principal. Y ojo con la hidratacion "de refilon": hidratar
+  pasando una sucursal distinta de la guardada VACIA el carrito con aviso — el contexto tiene que ser
+  el real o `null`, nunca un valor inventado.
 

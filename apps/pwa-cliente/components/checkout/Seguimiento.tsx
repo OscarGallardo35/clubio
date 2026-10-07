@@ -44,7 +44,19 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   const token = useClienteStore((s) => s.token)
   const pedidoGuardado = useCarritoStore((s) => s.pedido)
   const despachar = useCarritoStore((s) => s.despachar)
+  const activar = useCarritoStore((s) => s.activar)
   const { negocio, resenasDisponibles } = useBranding()
+
+  // El store del carrito usa `skipHydration`: NADIE lo hidrata solo. Hasta ahora `activar` lo
+  // llamaban el checkout y la carta, asi que abrir el link del pedido en una pestana nueva
+  // (o recargar) dejaba `pedido` en null y el boton de WhatsApp NO aparecia — aunque el
+  // mensaje estuviera guardado. Sin esto, el boton solo existia si venias navegando desde el
+  // checkout, con el store ya en memoria.
+  // Sucursal en null a proposito: `rehidratar` conserva la sucursal guardada y no dispara el
+  // vaciado por cambio de sucursal.
+  React.useEffect(() => {
+    void activar(slugNegocio, null, null)
+  }, [activar, slugNegocio])
 
   const [pedido, setPedido] = React.useState<PedidoPublico | null>(null)
   const [fallo, setFallo] = React.useState<FalloSeguimiento | null>(null)

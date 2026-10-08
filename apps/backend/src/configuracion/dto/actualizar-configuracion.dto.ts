@@ -14,6 +14,8 @@ export class ActualizarConfiguracionDto {
   @IsOptional() @IsBoolean() permiteRegaloManual?: boolean;
   @IsOptional() @IsBoolean() mostrarResenaPostVisita?: boolean;
   @IsOptional() @IsBoolean() menuActivo?: boolean;
+  /** Mensaje que ve el cliente en su tarjeta. Faltaba en el DTO (estaba solo en el modelo). */
+  @IsOptional() @IsString() @MaxLength(500) mensajeBienvenida?: string;
 
   @IsOptional() @IsArray() tiposPedidoHabilitados?: TipoPedido[];
   @IsOptional() @IsArray() modosPagoHabilitados?: ModoPago[];

@@ -16,6 +16,7 @@ import {
   Tabs,
   TabsList,
   TabsTrigger,
+  Textarea,
   toast,
 } from '@repo/ui';
 import { configuracionApi } from '@/lib/api';
@@ -335,6 +336,7 @@ function FormPrograma({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado
 /** Local: que promete el club al cliente y como entran los pedidos. */
 function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: () => Promise<void> }) {
   const [premio, setPremio] = React.useState(cfg.premioTexto);
+  const [mensaje, setMensaje] = React.useState(cfg.mensajeBienvenida ?? '');
   const [atendiente, setAtendiente] = React.useState(cfg.numeroAtendiente ?? '');
   const [menuActivo, setMenuActivo] = React.useState(cfg.menuActivo);
   const [tipos, setTipos] = React.useState<TipoPedido[]>(cfg.tiposPedidoHabilitados);
@@ -352,6 +354,7 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
     try {
       await configuracionApi.actualizar({
         premioTexto: premio.trim(),
+        mensajeBienvenida: mensaje.trim() === '' ? undefined : mensaje.trim(),
         numeroAtendiente: atendiente.trim() === '' ? undefined : atendiente.trim(),
         menuActivo,
         tiposPedidoHabilitados: tipos,
@@ -391,11 +394,16 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
         />
       </div>
 
-      <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        El <strong>mensaje de bienvenida</strong> todavia no se edita desde el panel: esta en la base
-        pero el endpoint no lo acepta (si lo mandaramos, se descartaria en silencio). Queda anotado
-        como TODO del backend.
-      </p>
+      <div className="space-y-2">
+        <Label htmlFor="mensaje">Mensaje de bienvenida (opcional)</Label>
+        <Textarea
+          id="mensaje"
+          value={mensaje}
+          onChange={(e) => setMensaje(e.target.value.slice(0, 500))}
+          placeholder="Bienvenido al club de Bar La Esquina"
+        />
+        <p className="text-xs text-muted-foreground">Se lo mostramos al cliente en su tarjeta.</p>
+      </div>
 
       <FilaSwitch
         id="menu"

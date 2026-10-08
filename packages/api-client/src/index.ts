@@ -231,6 +231,8 @@ export const endpoints = {
   pedidos: {
     crear: '/api/pedidos',
     publico: (linkToken: string) => `/api/pedidos/publico/${linkToken}`,
+    /** De STAFF: resuelve por linkToken usando el negocio del token (sin `X-Tenant-Slug`). */
+    porLink: (linkToken: string) => `/api/pedidos/por-link/${linkToken}`,
     /** Cancela con SOLO el linkToken (la puerta de los guest del QR #1). */
     cancelar: (linkToken: string) => `/api/pedidos/publico/${linkToken}/cancelar`,
     get: (id: string) => `/api/pedidos/${id}`,

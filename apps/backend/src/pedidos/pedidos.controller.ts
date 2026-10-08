@@ -150,6 +150,26 @@ export class PedidosController {
     });
   }
 
+  /**
+   * Resuelve un pedido por el `linkToken` del link que el cliente manda por WhatsApp.
+   *
+   * Existe para la pantalla `/validar-pedido?ref=` de la PWA Staff: ahi el linkToken es lo unico
+   * que llega, y el staff necesita el id para abrir el detalle. NO se puede usar el GET publico
+   * desde la PWA Staff: ese endpoint resuelve el negocio por `X-Tenant-Slug` y el api-client del
+   * staff no manda ese header a proposito ("negocio y sucursal salen del token"), asi que fallaba
+   * con "Falta el tenant (X-Tenant-Slug)". Aca el negocio sale del token del empleado, que ademas
+   * acota la busqueda a SU local (un token de otro negocio no puede leer este pedido).
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(
+    RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO,
+    RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY,
+  )
+  @Get('por-link/:linkToken')
+  porLink(@CurrentEmpleado() emp: EmpleadoAuth, @Param('linkToken') linkToken: string) {
+    return this.pedidos.obtenerPedidoPorLink(emp.negocioId, linkToken);
+  }
+
   @UseGuards(StaffGuard, TenantGuard, RolesGuard)
   @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
   @Get(':id')

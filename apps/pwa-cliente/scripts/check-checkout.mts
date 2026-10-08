@@ -297,6 +297,18 @@ igual('OLVIDAR_PEDIDO conserva los items', olvidado.items.length, 1)
 igual('OLVIDAR_PEDIDO conserva la fase', olvidado.fase, 'conItems')
 igual('OLVIDAR_PEDIDO es idempotente', reducerCarrito(olvidado, { tipo: 'OLVIDAR_PEDIDO' }).pedido, null)
 
+// PEDIDO_ESTADO: el seguimiento SINCRONIZA el estado del pedido en curso (WS o polling). Es lo
+// que hace que un pedido cancelado por el staff deje de contar como activo.
+let enCurso = reducerCarrito(conPedidoYNuevo, { tipo: 'PEDIDO_ESTADO', estado: 'CANCELADO' })
+igual('PEDIDO_ESTADO mueve el estado del pedido en curso', enCurso.pedido?.estado, 'CANCELADO')
+igual('y conserva el linkToken', enCurso.pedido?.linkToken, 'tok-viejo')
+chk('es idempotente: el mismo estado devuelve el mismo objeto',
+  reducerCarrito(enCurso, { tipo: 'PEDIDO_ESTADO', estado: 'CANCELADO' }) === enCurso)
+igual('el estado sobrevive el roundtrip de localStorage',
+  deserializarCarrito(JSON.stringify(recortarParaPersistir(enCurso)), NEG)?.pedido?.estado, 'CANCELADO')
+igual('sin pedido en curso el evento no inventa uno',
+  reducerCarrito(base(), { tipo: 'PEDIDO_ESTADO', estado: 'CANCELADO' }).pedido, null)
+
 
 // --- 13. Fallos del seguimiento: el mismo 404, dos significados -------------
 console.log('\n== fallos del seguimiento ==')

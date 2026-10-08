@@ -22,7 +22,7 @@ import type { Socket } from 'socket.io-client'
 import { Button, BottomSheet, buttonVariants } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
 import { api, pedidosApi } from '@/lib/api'
-import { ETIQUETAS_MODO_PAGO, clasificarFalloPedido, normalizarError, timeline, urlWhatsAppStaff } from '@/lib/checkout-maquina'
+import { ETIQUETAS, ETIQUETAS_MODO_PAGO, clasificarFalloPedido, normalizarError, timeline, urlWhatsAppStaff } from '@/lib/checkout-maquina'
 import type { EstadoPedido } from '@/lib/checkout-maquina'
 import type { FalloSeguimiento } from '@/lib/checkout-maquina'
 import { crearSocketPedidos } from '@/lib/socket'
@@ -34,6 +34,23 @@ import type { PedidoPublico } from '@/types/api'
 const INTERVALO_POLLING_MS = 5000
 const ESPERA_WS_MS = 3000
 const MAX_INTENTOS_WS = 3
+
+/** Los 8 estados validos (unica fuente: las etiquetas del checkout). */
+const ESTADOS_VALIDOS = new Set<string>(Object.keys(ETIQUETAS))
+
+/** Guard del payload del WS: solo se acepta un estado que exista. */
+function esEstadoPedido(valor: unknown): valor is EstadoPedido {
+  return typeof valor === 'string' && ESTADOS_VALIDOS.has(valor)
+}
+
+/**
+ * El payload del WS trae el `pedidoId`. La sala `cliente:{id}` recibe los eventos de TODOS los
+ * pedidos del cliente, asi que un evento de otro pedido no puede tocar el de esta pantalla: solo
+ * se aplica si el id coincide con el pedido que se esta siguiendo.
+ */
+function esDeEstePedido(pedidoId: unknown, actual: PedidoPublico | null): boolean {
+  return !!actual && typeof pedidoId === 'string' && pedidoId === actual.id
+}
 
 export interface SeguimientoProps {
   linkToken: string
@@ -80,6 +97,13 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
       const r = await pedidosApi.publico(linkToken)
       setPedido(r)
       setFallo(null)
+      // El store guarda el pedido EN CURSO. Si el link que estamos siguiendo ES ese pedido, se
+      // sincroniza su estado: es lo que hace que un CANCELADO deje de contar como activo (y que el
+      // checkout suelte el 409 "pedido activo"). El GET es la fuente de verdad, asi que esto cubre
+      // tambien al guest del QR (que no tiene WebSocket y solo tiene este polling).
+      if (pedidoGuardado?.linkToken === linkToken) {
+        despachar({ tipo: 'PEDIDO_ESTADO', estado: r.estado })
+      }
     } catch (e) {
       const { status, mensaje } = normalizarError(e)
       // Un error de red no borra lo que ya tenemos: se reintenta en el proximo tick.
@@ -127,7 +151,22 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
         // No conecto en 3 s: seguimos con polling y se avisa en el footer.
         if (!socket?.connected) setSoloPolling(true)
       }, ESPERA_WS_MS)
-      socket.on('pedido:estado-actualizado', () => void refetch())
+      socket.on('pedido:estado-actualizado', (p: { pedidoId?: unknown; estado?: unknown }) => {
+        // El payload del WS SI trae el estado (a diferencia del resto de los campos): si es de este
+        // pedido, se refleja en el store al instante. El refetch de abajo sincroniza igual.
+        if (esDeEstePedido(p?.pedidoId, pedidoRef.current) && esEstadoPedido(p.estado)) {
+          despachar({ tipo: 'PEDIDO_ESTADO', estado: p.estado })
+        }
+        void refetch()
+      })
+      // El cancelado del staff (o del cron) tiene su propio evento. Mismo guard de identidad: la
+      // sala del cliente recibe los eventos de todos sus pedidos.
+      socket.on('pedido:cancelado', (p: { pedidoId?: unknown }) => {
+        if (esDeEstePedido(p?.pedidoId, pedidoRef.current)) {
+          despachar({ tipo: 'PEDIDO_ESTADO', estado: 'CANCELADO' })
+        }
+        void refetch()
+      })
       socket.on('disconnect', () => {
         if (!vivo) return
         intentos += 1
@@ -146,7 +185,7 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
       if (timeout) clearTimeout(timeout)
       socket?.disconnect()
     }
-  }, [token, refetch])
+  }, [token, refetch, despachar])
 
   // 'tenant' es transitorio: se sigue mostrando el mismo cartel de espera y el polling NO se corta
   // (el efecto de polling solo frena con 'no-encontrado'/'vencido'/estado final).

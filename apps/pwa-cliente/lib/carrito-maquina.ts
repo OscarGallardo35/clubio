@@ -1,3 +1,5 @@
+import type { EstadoPedido } from './checkout-maquina'
+
 /**
  * Maquina de estados PURA del carrito (QR #1: menu + carrito + checkout).
  *
@@ -154,6 +156,13 @@ export type EventoCarrito =
   | { tipo: 'ENVIAR' }
   | { tipo: 'PEDIDO_OK'; linkToken: string; numero?: number; urlCorta?: string; mensajeWhatsApp?: string }
   | { tipo: 'PEDIDO_ERROR'; status: number; mensaje: string; data?: unknown }
+  /**
+   * El seguimiento sincroniza el estado del pedido EN CURSO con lo que dice el backend (`GET
+   * /pedidos/publico/:linkToken` o el payload del WS). Es la unica accion que mueve `pedido.estado`
+   * despues de crearlo: sin esto, un pedido cancelado por el staff seguia contando como activo
+   * (el store no se enteraba) y bloqueaba el checkout.
+   */
+  | { tipo: 'PEDIDO_ESTADO'; estado: EstadoPedido }
   | { tipo: 'REINTENTAR' }
   | { tipo: 'DESCARTAR_AVISO' }
   // Olvida el pedido guardado. Se dispara cuando el seguimiento recibe 404: ese linkToken ya no
@@ -507,6 +516,14 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
       // solo lugar y la UI no tenga que traducir codigos HTTP.
       return { ...estado, fase: 'checkout', error: clasificarError(evento.status, evento.mensaje, evento.data) }
 
+    case 'PEDIDO_ESTADO': {
+      // El pedido en curso sigue su estado real (lo trae el seguimiento). No se crea un pedido si
+      // no habia uno: este evento SINCRONIZA, no inventa.
+      if (!estado.pedido) return estado
+      if (estado.pedido.estado === evento.estado) return estado
+      return { ...estado, pedido: { ...estado.pedido, estado: evento.estado } }
+    }
+
     case 'REINTENTAR':
       if (estado.fase !== 'checkout') return estado
       return { ...estado, error: null }
@@ -561,6 +578,11 @@ export interface PedidoEnCurso {
   numero?: number | undefined
   urlCorta?: string | undefined
   mensajeWhatsApp?: string | undefined
+  /**
+   * Ultimo estado conocido del pedido (lo sincroniza el seguimiento con `PEDIDO_ESTADO`). Con
+   * `CANCELADO`/`RECHAZADO`/`ENTREGADO` el pedido deja de contar como activo.
+   */
+  estado?: EstadoPedido | undefined
 }
 
 export interface CarritoPersistido {
@@ -630,6 +652,8 @@ export function deserializarCarrito(crudo: unknown, negocioSlug: string): Carrit
             ...(d.pedido.numero ? { numero: d.pedido.numero } : {}),
             ...(typeof d.pedido.urlCorta === 'string' ? { urlCorta: d.pedido.urlCorta } : {}),
             ...(typeof d.pedido.mensajeWhatsApp === 'string' ? { mensajeWhatsApp: d.pedido.mensajeWhatsApp } : {}),
+            // El estado lo setea el seguimiento: se conserva para no perder el CANCELADO al recargar.
+            ...(d.pedido.estado ? { estado: d.pedido.estado } : {}),
           }
         : null,
     notasPedido: typeof d.notasPedido === 'string' ? d.notasPedido.slice(0, 500) : '',

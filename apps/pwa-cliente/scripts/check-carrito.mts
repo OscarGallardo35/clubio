@@ -192,6 +192,7 @@ const EVENTOS: EventoCarrito[] = [
   { tipo: 'ENVIAR' },
   { tipo: 'PEDIDO_OK', linkToken: 't' },
   { tipo: 'PEDIDO_ERROR', status: 400, mensaje: 'x' },
+  { tipo: 'PEDIDO_ESTADO', estado: 'CANCELADO' },
   { tipo: 'REINTENTAR' },
   { tipo: 'DESCARTAR_AVISO' },
 ]

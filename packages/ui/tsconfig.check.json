@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "./.check-dist",
+    "noEmit": false,
+    "noEmitOnError": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "scripts/check-ssr.tsx"]
+}

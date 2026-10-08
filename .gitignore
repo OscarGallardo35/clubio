@@ -1,6 +1,8 @@
 node_modules/
 .next/
 dist/
+# build de chequeo de @repo/ui (aserciones SSR): se regenera con `check:ssr`
+.check-dist/
 build/
 .turbo/
 .env

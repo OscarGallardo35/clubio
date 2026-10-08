@@ -20,8 +20,8 @@ const SECCIONES = [
   { href: '/carta', etiqueta: 'Carta', listo: true },
   { href: '/personal', etiqueta: 'Personal', listo: true },
   { href: '/sucursales', etiqueta: 'Sucursales', listo: true },
-  { href: '/configuracion', etiqueta: 'Configuracion', listo: false },
-  { href: '/qr', etiqueta: 'QR', listo: false },
+  { href: '/configuracion', etiqueta: 'Configuracion', listo: true },
+  { href: '/qr', etiqueta: 'QR', listo: true },
 ] as const;
 
 export function Sidebar() {

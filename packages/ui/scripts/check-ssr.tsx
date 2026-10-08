@@ -122,5 +122,38 @@ chk(
   'rol y "no cierra con Escape" los aporta Radix al montar',
 )
 
+// ---------------------------------------------------------------- Select
+import * as SelectPrimitive from '@radix-ui/react-select'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectLabel, SelectItem } from '../src/index'
+
+console.log('\nSelect')
+const selCerrado = renderToStaticMarkup(
+  <Select>
+    <SelectTrigger aria-label="Sucursal">
+      <SelectValue placeholder="Elegi una sucursal" />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectGroup>
+        <SelectLabel>Centro</SelectLabel>
+        <SelectItem value="centro">Centro</SelectItem>
+        <SelectItem value="norte">Norte</SelectItem>
+      </SelectGroup>
+    </SelectContent>
+  </Select>,
+)
+
+chk('Select ES el Root de Radix', Select === SelectPrimitive.Root)
+chk('SelectGroup ES el Group de Radix', SelectGroup === SelectPrimitive.Group)
+chk('SelectValue ES el Value de Radix', SelectValue === SelectPrimitive.Value)
+chk('el trigger declarara role="combobox"', selCerrado.includes('role="combobox"'), selCerrado.trim())
+chk('cerrado: aria-expanded="false" + data-state="closed"',
+  selCerrado.includes('aria-expanded="false"') && selCerrado.includes('data-state="closed"'))
+chk('el placeholder se muestra mientras no hay valor', selCerrado.includes('Elegi una sucursal'))
+chk(
+  'la lista (role="listbox") NO viaja en el SSR (Radix usa Portal)',
+  !selCerrado.includes('role="listbox"'),
+  'listbox + navegacion con teclado los aporta Radix al montar',
+)
+
 console.log(fallos === 0 ? '\nTOTAL OK' : `\nTOTAL FALLAS: ${fallos}`)
 proc?.exit?.(fallos === 0 ? 0 : 1)

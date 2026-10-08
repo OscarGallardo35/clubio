@@ -11,8 +11,10 @@ import { SegmentosService } from '../clientes/segmentos.service';
 import { enmascararTelefono } from '../common/utils/phone.util';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { VisitasGateway } from './visitas.gateway';
+import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
 import type { SolicitarVisitaDto } from './dto/solicitar-visita.dto';
 import type { AprobarVisitaDto } from './dto/aprobar-visita.dto';
+import type { CanjearPremioDto } from './dto/canjear-premio.dto';
 import type { RechazarVisitaDto } from './dto/rechazar-visita.dto';
 import type { HistorialVisitasDto } from './dto/historial-visitas.dto';
 
@@ -50,6 +52,7 @@ export class VisitasService {
     private readonly resolver: SucursalResolverService,
     private readonly segmentos: SegmentosService,
     private readonly gateway: VisitasGateway,
+    private readonly fidelizacion: FidelizacionService,
   ) {}
 
   /**
@@ -216,19 +219,11 @@ export class VisitasService {
 
     const config = await this.prisma.configuracionClub.findUnique({
       where: { negocioId },
-      select: { sellosParaPremio: true, sellosBienvenida: true, mostrarResenaPostVisita: true },
+      select: { mostrarResenaPostVisita: true },
     });
-    const sellosParaPremio = config?.sellosParaPremio ?? 10;
     // Estaba HARDCODEADO en true: el dueño apaga las resenas y la PWA igual las
     // mostraba. Ahora manda la configuracion del club.
     const mostrarResena = config?.mostrarResenaPostVisita ?? false;
-
-    const negocio = await this.prisma.negocio.findUnique({
-      where: { id: negocioId }, select: { modoClientes: true },
-    });
-    const porSucursal = negocio?.modoClientes === 'POR_SUCURSAL';
-
-    const sellosOtorgados = 1;
 
     const resultado = await this.prisma.$transaction(async (tx) => {
       const marcado = await tx.tokenValidacion.updateMany({
@@ -236,86 +231,157 @@ export class VisitasService {
       });
       if (marcado.count === 0) throw new BadRequestException('Este token ya fue usado');
 
-      const visita = await tx.visita.create({
-        data: {
-          negocioId, sucursalId, clienteId: fila.clienteId, empleadoId: empleado.id,
-          tipo: TipoVisita.VISITA,
-          sellosOtorgados,
-          puntosOtorgados: 0,
-          montoConsumido: dto.montoConsumido !== undefined ? new Prisma.Decimal(dto.montoConsumido) : null,
-          metodo: 'QR_DINAMICO',
-          origen: dto.origen ?? null,
-          notas: dto.notas ?? null,
-        },
+      // Sellos + puntos: los decide FidelizacionService segun el modo del negocio y el monto.
+      // (Antes era `sellosOtorgados = 1` fijo y los puntos siempre 0.)
+      const acreditado = await this.fidelizacion.acreditar(tx, {
+        negocioId,
+        clienteId: fila.clienteId,
+        sucursalId,
+        empleadoId: empleado.id,
+        monto: dto.montoConsumido ?? null,
+        tipo: TipoVisita.VISITA,
+        metodo: 'QR_DINAMICO',
+        origen: dto.origen ?? null,
+        notas: dto.notas ?? null,
       });
 
-      // Cliente: los AGREGADOS globales (totalVisitas, ultimaVisita, etiqueta) se
-      // actualizan siempre. Los SELLOS solo con modoClientes = GLOBAL: con
-      // POR_SUCURSAL el saldo vive en la tarjeta de cada sucursal.
-      const actualizado = await tx.cliente.update({
-        where: { id: fila.clienteId },
-        data: {
-          ...(porSucursal ? {} : { sellosActuales: { increment: sellosOtorgados } }),
-          totalVisitas: { increment: 1 },
-          ultimaVisita: new Date(),
-          etiqueta: this.segmentos.calcularEtiqueta(fila.cliente.totalVisitas + 1, new Date()),
-        },
-        select: { id: true, sellosActuales: true, puntosActuales: true, totalVisitas: true, etiqueta: true, ultimaVisita: true },
-      });
-
-      // Tarjeta de la sucursal: se actualiza SIEMPRE (con GLOBAL ademas de los
-      // sellos del cliente). Antes se actualizaba solo con POR_SUCURSAL, asi que
-      // con GLOBAL la tarjeta quedaba en 0 para siempre.
-      const tarjeta = await tx.tarjetaClienteSucursal.upsert({
-        where: { clienteId_sucursalId: { clienteId: fila.clienteId, sucursalId } },
-        update: {
-          sellosActuales: { increment: sellosOtorgados },
-          totalVisitas: { increment: 1 },
-          ultimaVisita: new Date(),
-        },
-        create: {
-          clienteId: fila.clienteId, sucursalId,
-          sellosActuales: sellosOtorgados, totalVisitas: 1, ultimaVisita: new Date(),
-        },
-        select: { sellosActuales: true },
-      });
-
-      return { visita, actualizado, tarjeta };
+      return acreditado;
     });
 
     await this.auditoria.registrar({
       negocioId, accion: 'visita.aprobada', empleadoId: empleado.id, clienteId: fila.clienteId,
-      detalle: { visitaId: resultado.visita.id, sucursalId, origen: dto.origen ?? null },
+      detalle: {
+        visitaId: resultado.visitaId, sucursalId, origen: dto.origen ?? null,
+        sellos: resultado.sellos, puntos: resultado.puntos, monto: dto.montoConsumido ?? null,
+      },
       ip: empleado.ip,
     });
 
-    // El saldo con el que se mide el premio depende del modo: con POR_SUCURSAL es
-    // el de la TARJETA de esa sucursal, con GLOBAL el del cliente.
-    const sellosEfectivos = porSucursal
-      ? resultado.tarjeta.sellosActuales
-      : resultado.actualizado.sellosActuales;
-    const progreso = this.segmentos.progreso(sellosEfectivos, sellosParaPremio);
-
     this.gateway.emitirAprobada(fila.clienteId, {
-      visitaId: resultado.visita.id,
+      visitaId: resultado.visitaId,
       sucursalId,
-      sellosActuales: sellosEfectivos,
-      sellosCliente: resultado.actualizado.sellosActuales,
-      sellosTarjetaSucursal: resultado.tarjeta.sellosActuales,
-      premioDesbloqueado: progreso.completado,
-      aprobadoEn: resultado.visita.aprobadoEn.toISOString(),
+      sellosActuales: resultado.sellosActuales,
+      sellosCliente: resultado.sellosActuales,
+      sellosTarjetaSucursal: resultado.sellosTarjetaSucursal,
+      premioDesbloqueado: resultado.premioDesbloqueado,
+      aprobadoEn: new Date().toISOString(),
     });
 
     return {
       success: true,
-      visitaId: resultado.visita.id,
+      visitaId: resultado.visitaId,
       sucursalId,
-      modoClientes: porSucursal ? 'POR_SUCURSAL' : 'GLOBAL',
-      sellosActuales: sellosEfectivos,
-      sellosCliente: resultado.actualizado.sellosActuales,
-      sellosTarjetaSucursal: resultado.tarjeta.sellosActuales,
-      premioDesbloqueado: progreso.completado,
+      modoClientes: resultado.modoClientes,
+      modoFidelizacion: resultado.modoFidelizacion,
+      sellosOtorgados: resultado.sellos,
+      puntosOtorgados: resultado.puntos,
+      sellosActuales: resultado.sellosActuales,
+      sellosCliente: resultado.sellosActuales,
+      sellosTarjetaSucursal: resultado.sellosTarjetaSucursal,
+      puntosActuales: resultado.puntosActuales,
+      puntosTarjetaSucursal: resultado.puntosTarjetaSucursal,
+      sellosParaPremio: resultado.sellosParaPremio,
+      premioPorPuntos: resultado.premioPorPuntos,
+      premioDesbloqueado: resultado.premioDesbloqueado,
+      premioPuntosDesbloqueado: resultado.premioPuntosDesbloqueado,
       mostrarResena,
+    };
+  }
+
+  /**
+   * POST /visitas/canjear (staff).
+   *
+   * Canjea un premio YA desbloqueado y RESTA el saldo. Hasta ahora el premio era solo visual
+   * (`premioDesbloqueado` en la tarjeta) y ningun saldo bajaba nunca.
+   *
+   * Cual saldo: con `modoClientes = POR_SUCURSAL` manda la tarjeta de la sucursal; con GLOBAL, el
+   * contador del cliente. Igual que en la acreditacion, el cliente solo se toca con GLOBAL (con
+   * POR_SUCURSAL su contador queda en 0 y restarlo lo mandaria a negativo).
+   */
+  async canjear(negocioId: string, dto: CanjearPremioDto, empleado: EmpleadoCtx) {
+    const cfg = await this.fidelizacion.contexto(negocioId);
+
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: dto.clienteId, negocioId, eliminadoEn: null },
+      select: { id: true, nombre: true, sellosActuales: true, puntosActuales: true },
+    });
+    if (!cliente) throw new NotFoundException('Cliente no encontrado');
+
+    const sucursalId = dto.sucursalId ?? empleado.sucursalId;
+    await this.exigirAccesoSucursal(empleado.id, sucursalId);
+
+    const tarjeta = await this.prisma.tarjetaClienteSucursal.findUnique({
+      where: { clienteId_sucursalId: { clienteId: cliente.id, sucursalId } },
+      select: { sellosActuales: true, puntosActuales: true },
+    });
+
+    const esSellos = dto.tipo === 'SELLOS';
+    const saldo = esSellos
+      ? (cfg.porSucursal ? (tarjeta?.sellosActuales ?? 0) : cliente.sellosActuales)
+      : (cfg.porSucursal ? (tarjeta?.puntosActuales ?? 0) : cliente.puntosActuales);
+    const costo = esSellos ? cfg.sellosParaPremio : cfg.premioPorPuntos;
+
+    if (saldo < costo) {
+      throw new BadRequestException(
+        `Saldo insuficiente: tiene ${saldo} ${esSellos ? 'sellos' : 'puntos'} y el premio cuesta ${costo}`,
+      );
+    }
+
+    const ahora = new Date();
+    const [, actualizado] = await this.prisma.$transaction([
+      // La tarjeta de la sucursal se descuenta SIEMPRE (es el espejo por sucursal del saldo).
+      // `updateMany` y no `update`: con GLOBAL la tarjeta puede no existir todavia y no queremos
+      // que el canje falle por eso.
+      this.prisma.tarjetaClienteSucursal.updateMany({
+        where: { clienteId: cliente.id, sucursalId },
+        data: esSellos
+          ? { sellosActuales: { decrement: costo } }
+          : { puntosActuales: { decrement: costo } },
+      }),
+      this.prisma.cliente.update({
+        where: { id: cliente.id },
+        data: {
+          ...(cfg.porSucursal
+            ? {}
+            : esSellos
+              ? { sellosActuales: { decrement: costo } }
+              : { puntosActuales: { decrement: costo } }),
+          premiosCanjeados: { increment: 1 },
+          ultimoCanjeEn: ahora,
+        },
+        select: { sellosActuales: true, puntosActuales: true, premiosCanjeados: true, ultimoCanjeEn: true },
+      }),
+    ]);
+
+    await this.auditoria.registrar({
+      negocioId, accion: 'premio.canjeado', empleadoId: empleado.id, clienteId: cliente.id,
+      detalle: { tipo: dto.tipo, costo, saldoAntes: saldo, sucursalId },
+      ip: empleado.ip,
+    });
+
+    // Lo que quedo disponible despues del canje, con la misma regla de alcance.
+    const tarjetaDespues = await this.prisma.tarjetaClienteSucursal.findUnique({
+      where: { clienteId_sucursalId: { clienteId: cliente.id, sucursalId } },
+      select: { sellosActuales: true, puntosActuales: true },
+    });
+    const sellosEfectivos = cfg.porSucursal
+      ? (tarjetaDespues?.sellosActuales ?? 0)
+      : actualizado.sellosActuales;
+    const puntosEfectivos = cfg.porSucursal
+      ? (tarjetaDespues?.puntosActuales ?? 0)
+      : actualizado.puntosActuales;
+
+    return {
+      success: true,
+      tipo: dto.tipo,
+      costo,
+      premioTexto: esSellos ? cfg.premioTexto : cfg.premioTextoPuntos,
+      sellosActuales: sellosEfectivos,
+      puntosActuales: puntosEfectivos,
+      premiosCanjeados: actualizado.premiosCanjeados,
+      ultimoCanjeEn: actualizado.ultimoCanjeEn,
+      premioDesbloqueado: sellosEfectivos >= cfg.sellosParaPremio,
+      premioPuntosDesbloqueado: puntosEfectivos >= cfg.premioPorPuntos,
     };
   }
 

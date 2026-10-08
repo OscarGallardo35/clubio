@@ -5,6 +5,7 @@ import { VisitasService } from './visitas.service';
 import type { ClienteCtx, EmpleadoCtx } from './visitas.service';
 import { SolicitarVisitaDto } from './dto/solicitar-visita.dto';
 import { AprobarVisitaDto } from './dto/aprobar-visita.dto';
+import { CanjearPremioDto } from './dto/canjear-premio.dto';
 import { RechazarVisitaDto } from './dto/rechazar-visita.dto';
 import { HistorialVisitasDto } from './dto/historial-visitas.dto';
 import { JwtClienteGuard } from '../common/guards/jwt-cliente.guard';
@@ -77,6 +78,13 @@ export class VisitasController {
     @Body() dto: AprobarVisitaDto, @Ip() ip: string,
   ) {
     return this.visitas.aprobar(emp.negocioId, token, this.ctx(emp, ip), dto);
+  }
+
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
+  @Post('canjear')
+  canjear(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CanjearPremioDto, @Ip() ip: string) {
+    return this.visitas.canjear(emp.negocioId, dto, this.ctx(emp, ip));
   }
 
   @UseGuards(StaffGuard, TenantGuard, RolesGuard)

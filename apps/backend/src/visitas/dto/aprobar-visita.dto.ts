@@ -4,7 +4,7 @@ export class AprobarVisitaDto {
   @IsOptional() @IsString() @MaxLength(40)
   origen?: string;
 
-  @IsOptional() @IsNumber() @Min(0) @Max(100)
+  @IsOptional() @IsNumber() @Min(0) @Max(1000000)
   montoConsumido?: number;
 
   @IsOptional() @IsString() @MaxLength(500)

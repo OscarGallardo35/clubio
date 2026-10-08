@@ -137,7 +137,7 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
       const ev = recibidos.filter((r) => r.p?.pedidoId === a.data.pedidoId
         && ((r.evento === 'pedido:estado-actualizado' && r.p?.estado === 'CANCELADO') || r.evento === 'pedido:cancelado'));
       for (const r of ev) console.log(`    +${r.t - t0} ms  ${r.evento}  ${JSON.stringify(r.p)}`);
-      chk('el cliente vio el CANCELADO del staff en vivo (< 2000 ms)', ev.length > 0,
+      chk('el cliente vio el CANCELADO del staff en vivo (< 10 s)', ev.length > 0 && (ev[0].t - t0) < 10_000,
         ev.length ? `+${ev[0].t - t0}ms ${ev[0].evento}` : 'NADA');
     }
 
@@ -155,7 +155,7 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
       await esperar(2000);
       const ev = recibidos.filter((r) => r.evento === 'pedido:cancelado' && r.p?.pedidoId === b.data.pedidoId);
       for (const r of ev) console.log(`    +${r.t - t0} ms  ${r.evento}  ${JSON.stringify(r.p)}`);
-      chk('el cliente recibio pedido:cancelado en su propia sala (< 2000 ms)', ev.length > 0, ev.length ? `+${ev[0].t - t0}ms` : 'NADA');
+      chk('el cliente recibio pedido:cancelado en su propia sala (< 10 s)', ev.length > 0 && (ev[0].t - t0) < 10_000, ev.length ? `+${ev[0].t - t0}ms` : 'NADA');
       chk('el payload trae estado CANCELADO', ev[0]?.p?.estado === 'CANCELADO', JSON.stringify(ev[0]?.p));
     }
   } finally {

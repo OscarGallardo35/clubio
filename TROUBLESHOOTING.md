@@ -2829,3 +2829,26 @@ Reglas:
   destino nuevo con `volver`).
 - Si moves la logica de redirect de una pagina a `next.config.js`, **BORRA la pagina**: si queda
   muerta, sugiere que es ella la que redirige.
+
+---
+
+## Un commit puede llevar solo la mitad del fix: verificarlo con `git show --stat HEAD`
+
+**Con varios archivos en vuelo, un commit puede quedarse con parte del cambio y parecer que el fix
+ya esta. Despues de commitear: `git show --stat HEAD`. Si no estan TODOS los archivos que tocaste,
+el commit esta incompleto.**
+
+Caso real: el fix del link viejo necesitaba dos cosas — el `git rm` de la pagina y el edit de
+`next.config.js` (el archivo que redirige de verdad). El `git rm` ya deja su cambio en el index, asi
+que el commit salio con la baja de la pagina pero **sin** el redirect: un commit que borra sin
+reemplazar. Ni el typecheck ni el build lo ven (el arbol de trabajo estaba bien); se descubrio
+mirando el `--stat`.
+
+Reglas:
+
+- Stagear explicito (`git add <archivo>`) antes de commitear cuando hay varios cambios en vuelo: un
+  `git rm`/`git mv` deja el suyo staged por su cuenta, y es facil commitear solo eso.
+- Verificar con `git show --stat HEAD` que el commit lleva todo lo que debia. Un `--stat` corto es
+  la senal: si el commit toca 1 archivo y vos tocaste 3, falta el resto.
+- Un arbol de trabajo limpio NO prueba que el commit este completo (en el caso real el
+  `next.config.js` quedo modificado y sin commitear): mirar el commit, no el `git status`.

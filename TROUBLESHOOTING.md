@@ -2883,3 +2883,52 @@ lado de las fuentes.
 
 Leccion general: un `dist` que nadie consume puede estar roto sin que nadie lo note. Si se
 verifica, verificarlo de verdad y no por lo que deberia ser.
+
+---
+
+## Un evento WS puede ir a publicos distintos segun quien lo dispare
+
+**Antes de asumir que "el cliente se entera por WebSocket", mirar las SALAS de esa emision
+concreta: el mismo evento puede emitirse a destinatarios distintos segun el camino que lo dispare,
+y un handler que existe no sirve de nada si el evento nunca llega a su sala.**
+
+Caso real: `emitirCancelado` (`apps/backend/src/pedidos/pedidos.gateway.ts`) emitia
+`pedido:cancelado` **solo** a `sucursal:{id}:empleados` y `negocio:{id}:duenos`. El cancel del
+**staff** pasa por `cambiarEstado -> emitirEstado` (`pedido:estado-actualizado`), que SI llega al
+cliente: resultado, el staff lo veia al instante y el cliente dependia del polling (hasta 5 s).
+El fix fue espejar en `emitirCancelado` la misma sala del cliente que ya usaba `emitirEstado`.
+
+Reglas:
+
+- Si el cliente tiene que reaccionar a un evento, verificar la EMISION (las salas del `emit`), no
+  solo que exista el handler: `grep` del nombre del evento en el gateway y leer a donde va.
+- El mismo evento por dos caminos puede tener destinatarios distintos (staff vs cliente): si hay
+  dos disparadores, comprobar los dos, no el que se probo primero.
+- Un cliente guest no tiene socket: para el, el polling es la red de seguridad. Si un refresco
+  "tarda unos segundos" en un caso y es instantaneo en otro, sospechar de las salas antes que del
+  front.
+
+---
+
+## Si el store guarda el pedido en curso, hay que SINCRONIZARLO (el refetch de la vista no alcanza)
+
+**Cuando un estado del backend se cachea en un store, la vista que se refresca NO lo actualiza: si
+el store guarda `pedido.estado` y nada lo mueve, el bloqueo que depende de ese estado sobrevive al
+cambio real del backend.**
+
+Caso real (PWA Cliente): `PedidoEnCurso` del carrito no tenia `estado` y nadie lo movia despues de
+crear el pedido. El seguimiento hacia su propio `refetch()` y actualizaba SU estado de React,
+mientras el store seguia con el pedido "activo": al cancelar, el error `PEDIDO_ACTIVO` (409) nunca
+se soltaba y el checkout seguia bloqueado. El fix fue un evento dedicado (`PEDIDO_ESTADO`), la
+UNICA accion que mueve `pedido.estado`, despachado desde el `refetch` (fuente de verdad, y lo unico
+que cubre al guest sin socket) y desde los handlers WS, con guard de identidad por `pedidoId`
+(la sala de un cliente recibe los eventos de TODOS sus pedidos).
+
+Reglas:
+
+- Un dato que vive en dos lugares (backend + store) necesita un camino explicito de
+  sincronizacion. El `refetch` de una vista actualiza la vista, no el store.
+- Si un estado del store habilita o bloquea una accion (el 409 del checkout), la misma accion que
+  actualiza el estado tiene que SOLTAR el bloqueo; si no, queda pegado y el usuario ve un loop.
+- Cuando una sala recibe eventos de varios pedidos del mismo cliente, el handler filtra por
+  `pedidoId` antes de tocar el store: sin ese guard, el evento de otro pedido pisa el actual.

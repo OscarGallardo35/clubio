@@ -2991,3 +2991,9 @@ llamada, al reves que en Radix). Un solo string compartido con la libreria no di
 Para verificar en el navegador hay que despachar la secuencia completa:
 `pointerdown -> mousedown -> pointerup -> mouseup -> click`. Asi el menu abre y se puede verificar
 el flujo real (Editar / Reset PIN / Desactivar + el AlertDialog) sin tocar un mouse.
+
+Los **Tabs** son el mismo caso con otro evento: Radix los activa en `mousedown` (y con el teclado),
+no en `click`. Un `t.click()` deja la pestana anterior activa y el chequeo lee el contenido
+equivocado ("el campo no esta"). Se verifica con la misma secuencia. Regla general: si el estado de
+la UI se lee distinto despues del `click()`, sospechar del evento que escucha la primitiva antes de
+sospechar de la app.

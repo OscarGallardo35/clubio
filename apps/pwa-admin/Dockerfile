@@ -1,38 +1,39 @@
-# ============ Base ============
 FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
-WORKDIR /app
 
-# ============ Dependencies ============
 FROM base AS deps
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/pwa-admin/package.json apps/pwa-admin/
-COPY packages/config/package.json packages/config/
-COPY packages/types/package.json packages/types/
-COPY packages/validators/package.json packages/validators/
-COPY packages/utils/package.json packages/utils/
-COPY packages/ui/package.json packages/ui/
-COPY packages/api-client/package.json packages/api-client/
-RUN pnpm install --frozen-lockfile --prod=false
-
-# ============ Builder ============
-FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/pwa-admin/node_modules ./apps/pwa-admin/node_modules
-COPY . .
+WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY . .
+RUN pnpm install --frozen-lockfile
+
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app ./
+COPY . .
+# El API se inyecta en BUILD time (Next inlinea los NEXT_PUBLIC_*): Railway pasa las variables
+# del servicio como build args con el mismo nombre. El default es la API publica y no la URL
+# interna, para que una build sin la var apunte a algo usable.
+ARG NEXT_PUBLIC_API_URL=https://api.clubio.lat
+ARG NEXT_PUBLIC_WS_URL=https://api.clubio.lat
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 RUN pnpm --filter pwa-admin build
 
-# ============ Runner ============
 FROM base AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
-COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-admin/public ./apps/pwa-admin/public
+ENV HOSTNAME=0.0.0.0
+# PORT no se setea a proposito: Railway inyecta el suyo. Fijarlo rompe el healthcheck
+# (misma leccion que en el backend).
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-admin/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-admin/.next/static ./apps/pwa-admin/.next/static
+# El admin SI tiene public/ (el manifest de la PWA): a diferencia del staff, este COPY no se
+# omite. Un COPY de una fuente inexistente rompe el build con "failed to compute cache key".
+COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-admin/public ./apps/pwa-admin/public
 USER nextjs
 EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
 CMD ["node", "apps/pwa-admin/server.js"]

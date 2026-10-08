@@ -80,10 +80,13 @@ aba2391 docs: regla de los tokens de color
   `POST /pedidos/mantenimiento/auto-cancelar` (DUENO, y solo su negocio) — es lo que usa
   `test:auto-cancelar`. El 409 sigue devolviendo `linkVigente` y el checkout esconde "Ver mi pedido"
   si esta vencido (link vencido != pedido muerto).
-  - **Deuda que queda (decision, no implementacion):** que hacer con un CONFIRMADO que quedo colgado
-    >12 h. Hoy NO se toca: cerrarlo tendria que salir de una decision de negocio, no de un cron.
-  - **Enhancement:** avisar al cliente ANTES de auto-cancelar (push/WhatsApp). Hoy se cancela en
-    silencio porque el link ya vencio y no hay canal saliente.
+  - **DECISION (tomada): un CONFIRMADO colgado >12 h NO se toca.** Cerrarlo es decision del dueno
+    del local, no de un cron: el local ya acepto el pedido, asi que darlo de baja solo deberia
+    salir de una accion suya. Si el caso aparece en la practica, se resuelve desde el panel del
+    local (no con un job).
+  - **DECISION (tomada): avisar al cliente ANTES de auto-cancelar = enhancement post-MVP.** Hoy se
+    cancela en silencio porque el link ya vencio y no hay canal saliente; el aviso necesita
+    push/WhatsApp saliente (que no existe) mas una ventana de gracia previa al cierre.
 - **Stubs exportados y sin implementar** en `@repo/ui`: `radio-group`, `checkbox`, `textarea`. El
   import compila y el fallo aparece en runtime. Se implementan en la Fase 0 (los necesita la Staff).
 - `endpoints` de `@repo/api-client` **no tiene**: `auth.meEmpleado`, `pedidos.list/estado/tomar/

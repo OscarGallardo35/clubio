@@ -278,6 +278,18 @@ Y por fase: el test unit/e2e que indica cada prompt.
   `next.config.js`. Los links internos entre paginas se pueden romper: **si no controlas donde vive
   el link, es contrato**. (Nacio del link del mensaje al staff: `/pedido/<token>` -> 308 ->
   `/validar-pedido?ref=<token>`; ver TROUBLESHOOTING.md.)
+- **Tipos de eventos WS**: viven en `@repo/types` (`src/ws-events.ts`, re-exportados por
+  `@repo/api-client`). Agregar un campo a un evento es UNA edicion, no tres. Si un campo se pierde
+  silenciosamente, verificar que los tramos que **rearman el objeto** (gateway -> mapeador del
+  cliente -> handler -> reducer) usen el mismo tipo: el que tenia su copia es el que descarta
+  (ver TROUBLESHOOTING.md, "el pasamanos del WS tiene 3 tramos").
+  **Deuda**: el gateway del backend TODAVIA no puede importarlo. Su `tsconfig` tiene
+  `rootDir: ./src` y el paquete vive fuera, asi que importarlo rompe el build con TS6059; y el
+  Dockerfile construye SOLO el backend (`RUN pnpm --filter backend build`, sin el `^build` de
+  turbo), asi que la ruta por `dist` tampoco esta disponible. **Fix**: construir `@repo/types`
+  tambien en el Dockerfile (`RUN pnpm --filter @repo/types build`) y apuntar el `paths` del backend
+  a su `dist` — asi resuelve el `.d.ts` y no hay conflicto de `rootDir`. Toca el Dockerfile
+  (config de prod): espera OK del dueño.
 
 ---
 

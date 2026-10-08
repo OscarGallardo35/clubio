@@ -161,6 +161,21 @@ igual('409 sin payload igual clasifica (y sin pedidoActivo inventado)',
 igual('409 con payload incompleto no arma pedidoActivo',
   clasificarError(409, 'x', { pedidoId: 'p1' }).pedidoActivo, undefined)
 igual('el 409 no lo intercepta otra rama', clasificarError(409, 'otra cosa').codigo, 'PEDIDO_ACTIVO')
+
+// Con el link vencido el seguimiento devuelve 410: no se puede ofrecer "ver mi pedido" y el copy
+// tiene que decir la unica salida real (cancelarlo). `linkVigente` lo manda el backend y usa el
+// MISMO `linkVencido` que el 410, asi que predice exactamente lo que pasaria.
+igual('409 con linkVigente=false -> copy de link vencido',
+  clasificarError(409, 'Ya tenes un pedido activo.', { pedidoId: 'p1', linkToken: 't-1', linkVigente: false }).mensaje,
+  'El link del pedido activo ya venció. Cancelalo para hacer uno nuevo.')
+igual('409 con linkVigente=false -> el CTA de ver pedido se esconde',
+  clasificarError(409, 'x', { pedidoId: 'p1', linkToken: 't-1', linkVigente: false }).pedidoActivo?.linkVigente,
+  false)
+igual('409 con linkVigente=true -> pasa el copy del backend',
+  clasificarError(409, 'Ya tenes un pedido activo.', { pedidoId: 'p1', linkToken: 't-1', linkVigente: true }).mensaje,
+  'Ya tenes un pedido activo.')
+igual('409 sin linkVigente -> se asume vigente (conservador)',
+  clasificarError(409, 'x', { pedidoId: 'p1', linkToken: 't-1' }).pedidoActivo?.linkVigente, true)
 igual('status sin data cae al message del Error', normalizarError(apiErr(500)).mensaje, 'boom')
 igual('StatusError de 401 sin data ni message util', normalizarError(apiErr(401, { message: '' })).status, 401)
 // El caso que el plan asumia y que el cliente NO produce: fetch que ni sale.

@@ -345,14 +345,17 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
           <p>{carrito.error.mensaje}</p>
           {carrito.error.pedidoActivo ? (
             // 409 "pedido activo": no es un error del formulario, asi que en vez de "Reintentar"
-            // (que va a volver a chocar) se ofrecen las dos salidas reales.
+            // (que va a volver a chocar) se ofrecen las salidas reales. "Ver mi pedido" SOLO si el
+            // link sigue vigente: con el link vencido el seguimiento devuelve 410.
             <div className="flex flex-col gap-2">
-              <Link
-                href={`/${slugNegocio}/pedido/${carrito.error.pedidoActivo.linkToken}`}
-                className={buttonVariants({ variant: 'outline', className: 'min-h-12 border-destructive/40 text-destructive' })}
-              >
-                Ver mi pedido
-              </Link>
+              {carrito.error.pedidoActivo.linkVigente ? (
+                <Link
+                  href={`/${slugNegocio}/pedido/${carrito.error.pedidoActivo.linkToken}`}
+                  className={buttonVariants({ variant: 'outline', className: 'min-h-12 border-destructive/40 text-destructive' })}
+                >
+                  Ver mi pedido
+                </Link>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"

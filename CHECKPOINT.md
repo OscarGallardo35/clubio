@@ -70,6 +70,13 @@ aba2391 docs: regla de los tokens de color
   ignora. `withTenant()` no se llama nunca y `DATABASE_URL_ADMIN` no existe. **El aislamiento
   multi-tenant depende SOLO de los `where negocioId` del codigo.** TODO post-MVP: activar RLS de
   verdad (`app_user` + `withTenant` + `AdminPrismaService`). Detalle y evidencia en `BACKEND_PLAN.md`.
+- **TODO post-MVP (opcion C del bug del 409): auto-cancelar los pedidos activos cuyo link vencio
+  hace >X horas.** Hoy un PENDIENTE con el link vencido (>4 h) sigue contando como "activo": bloquea
+  pedidos nuevos y el unico camino es cancelarlo. NO se auto-cancela por ahora porque el pedido
+  puede estar vivo de verdad (el link vence a las 4 h, la cocina puede seguir con el pedido); un job
+  que cierre los PENDIENTE/CONFIRMADO con el link vencido hace N horas evita el "me quede trabado y
+  no puedo pedir". Ojo con ENVIADO: cancelar un delivery en curso solo seria peor.
+  Mientras tanto el 409 devuelve `linkVigente` y el checkout esconde "Ver mi pedido" si esta vencido.
 - **Stubs exportados y sin implementar** en `@repo/ui`: `radio-group`, `checkbox`, `textarea`. El
   import compila y el fallo aparece en runtime. Se implementan en la Fase 0 (los necesita la Staff).
 - `endpoints` de `@repo/api-client` **no tiene**: `auth.meEmpleado`, `pedidos.list/estado/tomar/

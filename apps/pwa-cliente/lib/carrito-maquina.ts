@@ -100,8 +100,12 @@ export interface ErrorCarrito {
   /**
    * Solo con `PEDIDO_ACTIVO` (409 por "un pedido activo por cliente"): el pedido que ya esta en
    * curso, para ofrecer "ver mi pedido" / "cancelarlo" en vez de un reintento que va a chocar.
+   *
+   * `linkVigente` es el dato que decide si "ver mi pedido" tiene sentido: el link dura 4 h, y con
+   * el link vencido el seguimiento devuelve 410. Lo manda el backend y predice EXACTAMENTE lo que
+   * haria el GET publico (usa el mismo `linkVencido`).
    */
-  pedidoActivo?: { pedidoId: string; linkToken: string } | undefined
+  pedidoActivo?: { pedidoId: string; linkToken: string; linkVigente: boolean } | undefined
 }
 
 export interface EstadoCarrito {
@@ -280,14 +284,25 @@ export function clasificarError(status: number, mensajeBackend: string, data?: u
     // Ya hay un pedido activo de este cliente (o de este telefono). No es un error del
     // formulario: es un ESTADO, asi que ademas del copy se le pasa el link del pedido en curso
     // para que pueda mirarlo o cancelarlo. El backend lo manda en el payload del 409.
-    const d = (data ?? {}) as { pedidoId?: unknown; linkToken?: unknown }
+    const d = (data ?? {}) as { pedidoId?: unknown; linkToken?: unknown; linkVigente?: unknown }
     const pedidoActivo =
       typeof d.pedidoId === 'string' && typeof d.linkToken === 'string'
-        ? { pedidoId: d.pedidoId, linkToken: d.linkToken }
+        ? {
+            pedidoId: d.pedidoId,
+            linkToken: d.linkToken,
+            // Conservador: solo se da por muerto si el backend lo dice EXPLICITAMENTE. Si el
+            // campo no viniera (frontend nuevo contra backend viejo), se sigue ofreciendo el CTA.
+            linkVigente: d.linkVigente !== false,
+          }
         : undefined
+    // Con el link vencido el seguimiento devuelve 410, asi que ofrecer "ver mi pedido" seria
+    // mandar al usuario a una pantalla de error. El copy cambia para decir la unica salida real.
+    const linkMuerto = pedidoActivo !== undefined && !pedidoActivo.linkVigente
     return {
       codigo: 'PEDIDO_ACTIVO',
-      mensaje: mensajeBackend || 'Ya tenés un pedido activo. Cancelalo o esperá a que termine.',
+      mensaje: linkMuerto
+        ? 'El link del pedido activo ya venció. Cancelalo para hacer uno nuevo.'
+        : (mensajeBackend || 'Ya tenés un pedido activo. Cancelalo o esperá a que termine.'),
       ...(pedidoActivo ? { pedidoActivo } : {}),
     }
   }

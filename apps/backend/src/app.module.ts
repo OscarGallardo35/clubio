@@ -19,6 +19,7 @@ import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { EmpleadosModule } from './empleados/empleados.module';
 import { VisitasModule } from './visitas/visitas.module';
+import { FidelizacionModule } from './fidelizacion/fidelizacion.module';
 // WebhooksModule es @Global (lo usan Google y futuros webhooks)
 import { CartaModule } from './carta/carta.module';
 import { PedidosModule } from './pedidos/pedidos.module';
@@ -59,6 +60,7 @@ import { EstadisticasModule } from './estadisticas/estadisticas.module';
     // --- Lote 4: fidelizacion + carta ---
     VisitasModule,
     CartaModule,
+    FidelizacionModule,
     // --- Fase 2: pedidos + modificadores + upsell ---
     PedidosModule,
     ModificadoresModule,

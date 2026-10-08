@@ -30,6 +30,25 @@ const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || '.next',
   output: salidaStandalone(),
   env: { NEXT_PUBLIC_COMMIT: commitActual() },
+
+  /**
+   * Compatibilidad con el formato VIEJO del link del mensaje al local
+   * (`/pedido/<linkToken>` -> `/validar-pedido?ref=<linkToken>`), con un 308 real.
+   *
+   * Va aca y NO en una pagina con `permanentRedirect()`: el layout de `(staff)` hace streaming,
+   * asi que la respuesta ya salio con 200 y Next degrada el redirect a client-side (deja
+   * `NEXT_REDIRECT` en el payload: funciona en el browser, pero el status sigue siendo 200 y un
+   * `curl -I` no ve ningun 308). Los `redirects` del config corren ANTES del middleware y del
+   * render, asi que el 308 viaja como header, tambien para un HEAD.
+   *
+   * 308 (permanente) porque el cambio de formato es definitivo: los mensajes ya enviados viven
+   * en el WhatsApp del cliente para siempre, y el browser cachea el redirect.
+   */
+  async redirects() {
+    return [
+      { source: '/pedido/:token', destination: '/validar-pedido?ref=:token', permanent: true },
+    ];
+  },
 };
 
 module.exports = nextConfig;

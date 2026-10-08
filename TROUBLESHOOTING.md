@@ -2816,13 +2816,16 @@ browser anda (el JS navega), pero el status sigue siendo 200 y un `curl -I` no v
 
 Reglas:
 
+- Un build/deploy verde **NO** prueba el status HTTP de un redirect: el build lista la ruta, el
+  deploy dice SUCCESS, y el status puede seguir siendo 200. Se verifica con `curl` contra el deploy
+  real: tiene que ser **308** con header `Location` (y `-L` para comprobar a donde termina). Un 200
+  "que igual redirige en el browser" no es un 308.
 - Antes de cambiar la ruta que arma un mensaje compartido (WhatsApp, mail, QR), dejar el formato
   viejo con un redirect permanente. El link viejo no se puede reescribir.
 - El redirect de compatibilidad va en `next.config.js` (`redirects()`), no en una pagina con
   `permanentRedirect()`: el de la pagina depende del render y se degrada a client-side cuando la
-  respuesta ya empezo a streamear (200 sin header). Y el del config corre ANTES del middleware, asi
-  que responde 308 incluso sin sesion (el login despues vuelve al destino nuevo con `volver`).
-- Verificar un redirect con `curl -D -` (o `-I`) mirando el status **y** el `Location`, y despues
-  `-L` para comprobar el destino final. Un 200 "que igual redirige en el browser" no es un 308.
-- Con varios cambios en vuelo, stagear explicito antes de commitear: un `git rm` ya deja su cambio
-  en el index, y es facil commitear solo eso y creer que el commit quedo completo.
+  respuesta ya empezo a streamear (200 + `NEXT_REDIRECT` dentro del payload RSC). Y el del config
+  corre ANTES del middleware, asi que responde 308 incluso sin sesion (el login despues vuelve al
+  destino nuevo con `volver`).
+- Si moves la logica de redirect de una pagina a `next.config.js`, **BORRA la pagina**: si queda
+  muerta, sugiere que es ella la que redirige.

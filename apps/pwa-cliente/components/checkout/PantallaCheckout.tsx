@@ -147,8 +147,9 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
   }
 
   // 409 "ya tenes un pedido activo": con el linkToken del pedido en curso se lo cancela y se
-  // limpia el error para poder reintentar. El estado es local a proposito: es efimero y no tiene
-  // que sobrevivir a un reload.
+  // limpia el error. NO reintenta solo: el usuario vuelve a tocar "Enviar pedido" (auto-reenviar
+  // seria un estado mas para un caso que se resuelve con un toque). El estado es local a proposito:
+  // es efimero y no tiene que sobrevivir a un reload.
   const [cancelandoActivo, setCancelandoActivo] = React.useState(false)
   const cancelarActivo = async () => {
     const linkToken = carrito.error?.pedidoActivo?.linkToken
@@ -363,7 +364,7 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
                 disabled={cancelandoActivo}
                 onClick={() => void cancelarActivo()}
               >
-                {cancelandoActivo ? 'Cancelando...' : 'Cancelar ese pedido y reintentar'}
+                {cancelandoActivo ? 'Cancelando...' : 'Cancelar ese pedido'}
               </Button>
             </div>
           ) : carrito.error.codigo === 'CARTA_VENCIDA' ? (

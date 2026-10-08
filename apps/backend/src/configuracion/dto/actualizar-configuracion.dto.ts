@@ -7,6 +7,12 @@ export class ActualizarConfiguracionDto {
   @IsOptional() @IsEnum(ModoFidelizacion) modoFidelizacion?: ModoFidelizacion;
   @IsOptional() @IsInt() @Min(1) @Max(100) sellosParaPremio?: number;
   @IsOptional() @IsString() @MaxLength(160) premioTexto?: string;
+  /** Puntos que cuesta el premio de puntos (el de sellos es `sellosParaPremio`). */
+  @IsOptional() @IsInt() @Min(1) @Max(100000) premioPorPuntos?: number;
+  /** Tasa del programa por puntos: cuantos puntos por cada $1000 de consumo. */
+  @IsOptional() @IsInt() @Min(1) @Max(1000) puntosPorMil?: number;
+  /** Texto del premio de puntos (el de sellos es `premioTexto`). */
+  @IsOptional() @IsString() @MaxLength(160) premioTextoPuntos?: string;
   @IsOptional() @IsInt() @Min(0) @Max(100) sellosBienvenida?: number;
   @IsOptional() @IsInt() @Min(1) @Max(10) limiteVisitasPorDia?: number;
   @IsOptional() @IsInt() @Min(0) @Max(72) horasMinimasEntreVisitas?: number;

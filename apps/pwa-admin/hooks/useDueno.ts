@@ -27,9 +27,8 @@ export interface UsoDueno {
  * - Cualquier otro error (red, 500) => NO se cierra la sesion. Un backend caido no puede
  *   eyectar al dueno que esta administrando su local.
  *
- * El sondeo usa `GET /negocios/mi-negocio` porque es el endpoint de DUENO que existe hoy: sale
- * por el mismo guard que va a usar `GET /auth/dueno/me`, asi que un 401 significa exactamente lo
- * mismo. Cuando `me` exista (Fase 0c), se cambia la URL y este hook no cambia de forma.
+ * El sondeo de sesion es `GET /auth/dueno/me` (Fase 0c): devuelve la identidad del dueno y su
+ * negocio, y sale por `JwtDuenoGuard`, que acepta la cookie `dueno_token` ademas del Bearer.
  */
 export function useDueno(): UsoDueno {
   const { dueno, negocio, autenticado, cargando } = useDuenoStore();
@@ -41,8 +40,8 @@ export function useDueno(): UsoDueno {
 
   const refetch = React.useCallback(async () => {
     try {
-      const negocioActual = await duenoApi.me();
-      fijarSesion({ dueno: { id: '', nombre: '', email: '' }, negocio: negocioActual });
+      const sesion = await duenoApi.me();
+      fijarSesion(sesion);
       setError(null);
     } catch (e) {
       const { status, mensaje } = normalizarError(e);

@@ -534,4 +534,26 @@ export class AuthService {
       sucursal,
     };
   }
+
+  /**
+   * Datos del dueno para la PWA Admin (`GET /auth/dueno/me`).
+   *
+   * Simetrico a `meEmpleado`: devuelve IDENTIDAD, no sesion. El email se lee de la DB porque el
+   * token no lo lleva (para autorizar no hace falta, y un dato de mas en el token es un dato de
+   * mas que viaja).
+   */
+  async meDueno(user: { id: string; nombre: string; negocioId: string; negocioSlug: string }) {
+    const empleado = await this.prisma.empleado.findUnique({
+      where: { id: user.id },
+      select: { email: true, nombre: true },
+    });
+
+    return {
+      dueno: {
+        id: user.id,
+        nombre: empleado?.nombre ?? user.nombre,
+        email: empleado?.email ?? null,
+      },
+    };
+  }
 }

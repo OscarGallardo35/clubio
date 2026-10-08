@@ -191,6 +191,7 @@ export const endpoints = {
     verificar2FA: '/api/auth/dueno/verificar-2fa',
     refreshDueno: '/api/auth/dueno/refresh',
     logoutDueno: '/api/auth/dueno/logout',
+    meDueno: '/api/auth/dueno/me',
   },
   negocios: {
     publico: (slug: string) => `/api/negocios/publico/${slug}`,

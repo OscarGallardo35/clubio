@@ -1,5 +1,5 @@
 import { ApiClient, endpoints } from '@repo/api-client';
-import type { FeaturePlan, LoginDuenoRespuesta, NegocioAdmin } from '@/types/api';
+import type { DuenoSesion, FeaturePlan, LoginDuenoRespuesta, NegocioAdmin } from '@/types/api';
 
 /**
  * Cliente HTTP unico de la PWA Admin.
@@ -27,10 +27,11 @@ export const duenoApi = {
   logout: () => api.post<{ ok: boolean }>(endpoints.auth.logoutDueno, {}),
 
   /**
-   * Sondeo de sesion: devuelve el negocio del dueno autenticado.
-   * (Es `GET /negocios/mi-negocio` hasta que exista `GET /auth/dueno/me`, Fase 0c.)
+   * Sondeo de sesion (`GET /auth/dueno/me`): identidad del dueno + su negocio con las features
+   * del plan. Antes de la Fase 0c esto usaba `mi-negocio`, que trae campos de administracion de
+   * mas y no dice quien es el que esta mirando.
    */
-  me: () => api.get<NegocioAdmin>(endpoints.negocios.miNegocio),
+  me: () => api.get<DuenoSesion>(endpoints.auth.meDueno),
 };
 
 export const negociosApi = {

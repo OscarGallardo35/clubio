@@ -215,6 +215,10 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
     return <Aviso titulo="No pudimos mostrar tu pedido" detalle="Proba de nuevo en un rato." slugNegocio={slugNegocio} />
   }
 
+  const pasos = timeline(pedido.estado as EstadoPedido)
+  const cancelado = pedido.estado === 'CANCELADO' || pedido.estado === 'RECHAZADO'
+  const entregado = pedido.estado === 'ENTREGADO'
+
   // El WhatsApp sale del store, y SOLO si el pedido guardado es el de este linkToken (si no,
   // abrir otro link mostraria el mensaje de un pedido ajeno). Un pedido viejo no lo tiene: ahi no
   // se muestra el boton.
@@ -226,11 +230,9 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   // El numero sale del pedido (lo resuelve el backend al crearlo) y, si esa sucursal no tenia
   // atendiente configurado, del default del negocio.
   const numeroAtendiente = pedido.numeroAtendiente ?? negocio?.numeroAtendiente ?? null
-  const whatsapp = mensajeWhatsApp ? urlWhatsAppStaff(numeroAtendiente, mensajeWhatsApp) : null
-
-  const pasos = timeline(pedido.estado as EstadoPedido)
-  const cancelado = pedido.estado === 'CANCELADO' || pedido.estado === 'RECHAZADO'
-  const entregado = pedido.estado === 'ENTREGADO'
+  // Un pedido cancelado o rechazado NO ofrece "Abrir WhatsApp": no hay nada que coordinar con el
+  // local. El resto de la vista final (badge rojo, motivoRechazo y "Volver al menu") sale mas abajo.
+  const whatsapp = !cancelado && mensajeWhatsApp ? urlWhatsAppStaff(numeroAtendiente, mensajeWhatsApp) : null
 
   // Misma regla que el backend: solo PENDIENTE o CONFIRMADO. No se ofrece un boton que ya se
   // sabe que va a terminar en 400.

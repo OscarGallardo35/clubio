@@ -116,12 +116,18 @@ async function req(method, path, body, headers = {}) {
   }
 
   // 5) login con credenciales invalidas: no emite sesion NI cookie
-  const malLogin = await req('POST', '/api/auth/dueno/login', { email: 'no-existe@test.invalid', password: 'x'.repeat(12) });
+  // El login pide `negocioSlug`: resuelve el NEGOCIO por slug (como el de staff), porque el email
+  // no es unico a nivel global.
+  const malLogin = await req('POST', '/api/auth/dueno/login', {
+    email: 'no-existe@test.invalid', password: 'x'.repeat(12), negocioSlug: SLUG,
+  });
   chk('login con credenciales invalidas -> 401', malLogin.status === 401, `status=${malLogin.status}`);
   chk('y NO setea la cookie', !/dueno_token=/.test(malLogin.setCookie), malLogin.setCookie || '(sin Set-Cookie)');
 
   // 6) LOGIN COMPLETO del dueno demo (sin 2FA) -> cookie con las banderas del repo
-  const login = await req('POST', '/api/auth/dueno/login', { email: EMAIL_DEMO, password: PASSWORD_DEMO });
+  const login = await req('POST', '/api/auth/dueno/login', {
+    email: EMAIL_DEMO, password: PASSWORD_DEMO, negocioSlug: SLUG,
+  });
   chk('login del dueno demo -> 200/201', [200, 201].includes(login.status), `status=${login.status} ${JSON.stringify(login.data?.message ?? '')}`);
   chk('el body sigue trayendo accessToken (compatibilidad)', typeof login.data?.accessToken === 'string');
   chk('setea la cookie dueno_token', /dueno_token=/.test(login.setCookie), login.setCookie.slice(0, 120));

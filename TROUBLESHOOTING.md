@@ -284,6 +284,19 @@ silenciosamente: el `emit` acepta cualquier objeto y el cliente que rearma el ev
 Nota de dev: un `tsc --noEmit` del backend en un clon limpio falla hasta que se corra el build de
 `@repo/types` (turbo lo hace solo con `dependsOn: ["^build"]`; a mano, primero el paquete).
 
+Y en un workspace pnpm CADA package tiene su propio `node_modules` (con los links a sus deps y su
+`.bin`): el Dockerfile del backend tiene que copiar el `node_modules` de CADA package que COMPILE en
+ese stage, no solo el suyo:
+
+```
+COPY --from=deps /app/packages/types/node_modules ./packages/types/node_modules
+```
+
+El sintoma de olvidarlo es `TS6053: File '@repo/config/tsconfig.base.json' not found`, precedido del
+WARN `Local package.json exists, but node_modules missing`: el `tsc` del paquete no encuentra ni su
+`extends` ni su propio binario. Ojo con el alcance: los packages que el backend solo IMPORTA (via
+`paths` a su `src`, como @repo/validators) no lo necesitan; solo los que se BUILDEAN en ese stage.
+
 ### Rate limiting: limites configurables por env
 
 `POST /pedidos` limita a 10 por hora por IP y `GET /pedidos/publico/:linkToken` a

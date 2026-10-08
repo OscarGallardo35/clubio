@@ -176,6 +176,26 @@ igual('409 con linkVigente=true -> pasa el copy del backend',
   'Ya tenes un pedido activo.')
 igual('409 sin linkVigente -> se asume vigente (conservador)',
   clasificarError(409, 'x', { pedidoId: 'p1', linkToken: 't-1' }).pedidoActivo?.linkVigente, true)
+
+// --- 6c. un pedido CANCELADO deja de bloquear el checkout (su 409) ------------------------
+// El 409 se guarda como `error` del store. Cuando el seguimiento sincroniza un estado final
+// (PEDIDO_ESTADO), ese error ya no aplica y el checkout vuelve a ofrecer "Enviar pedido".
+console.log('\n== el cancelado suelta el 409 ==')
+let bloqueado = reducerCarrito(conCarrito(), { tipo: 'PEDIDO_OK', linkToken: 'tok-1' })
+bloqueado = reducerCarrito(bloqueado, { tipo: 'PEDIDO_ERROR', status: 409, mensaje: 'Ya tenes un pedido activo.', data: { pedidoId: 'p1', linkToken: 'tok-1' } })
+igual('el POST que choca deja el store bloqueado', bloqueado.error?.codigo, 'PEDIDO_ACTIVO')
+igual('y guarda el link del pedido en curso', bloqueado.error?.pedidoActivo?.linkToken, 'tok-1')
+const trasCancelar = reducerCarrito(bloqueado, { tipo: 'PEDIDO_ESTADO', estado: 'CANCELADO' })
+igual('el CANCELADO suelta el 409 (ya no bloquea)', trasCancelar.error, null)
+igual('y el pedido queda CANCELADO', trasCancelar.pedido?.estado, 'CANCELADO')
+// Un estado NO final no suelta el error: el pedido sigue activo.
+igual('un estado intermedio conserva el 409',
+  reducerCarrito(bloqueado, { tipo: 'PEDIDO_ESTADO', estado: 'CONFIRMADO' }).error?.codigo, 'PEDIDO_ACTIVO')
+// Un error que NO era "pedido activo" (429, red) no depende del pedido: se conserva.
+let conRate = reducerCarrito(conCarrito(), { tipo: 'PEDIDO_OK', linkToken: 'tok-1' })
+conRate = reducerCarrito(conRate, { tipo: 'PEDIDO_ERROR', status: 429, mensaje: '' })
+igual('un error ajeno al pedido se conserva',
+  reducerCarrito(conRate, { tipo: 'PEDIDO_ESTADO', estado: 'CANCELADO' }).error?.codigo, 'RATE_LIMIT')
 igual('status sin data cae al message del Error', normalizarError(apiErr(500)).mensaje, 'boom')
 igual('StatusError de 401 sin data ni message util', normalizarError(apiErr(401, { message: '' })).status, 401)
 // El caso que el plan asumia y que el cliente NO produce: fetch que ni sale.

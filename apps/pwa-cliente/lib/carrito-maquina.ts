@@ -520,8 +520,19 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
       // El pedido en curso sigue su estado real (lo trae el seguimiento). No se crea un pedido si
       // no habia uno: este evento SINCRONIZA, no inventa.
       if (!estado.pedido) return estado
-      if (estado.pedido.estado === evento.estado) return estado
-      return { ...estado, pedido: { ...estado.pedido, estado: evento.estado } }
+      const final =
+        evento.estado === 'CANCELADO' || evento.estado === 'RECHAZADO' || evento.estado === 'ENTREGADO'
+      const pedido =
+        estado.pedido.estado === evento.estado ? estado.pedido : { ...estado.pedido, estado: evento.estado }
+      // Un estado final (CANCELADO/RECHAZADO/ENTREGADO) ya no cuenta como pedido activo: se suelta
+      // el 409 "pedido activo" del checkout. Ese error era una foto del POST que choco y, con el
+      // pedido cerrado, dejo de aplicar: sin esto el checkout seguia mostrando el bloqueo viejo
+      // (y su CTA "Cancelar ese pedido" respondia 400, porque ya estaba cancelado). El resto de los
+      // errores se conserva. El reducer es el dueno del `error`: la regla vive aca y no en la
+      // pantalla.
+      const error = final && estado.error?.codigo === 'PEDIDO_ACTIVO' ? null : estado.error
+      if (pedido === estado.pedido && error === estado.error) return estado
+      return { ...estado, pedido, error }
     }
 
     case 'REINTENTAR':

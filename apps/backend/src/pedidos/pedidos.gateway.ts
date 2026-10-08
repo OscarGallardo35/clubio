@@ -192,20 +192,42 @@ export class PedidosGateway implements OnGatewayConnection, OnGatewayDisconnect 
       .emit(`empleado:${evento}`, { ...payload, emitidoEn: new Date().toISOString() });
   }
 
-  /** Cambio de estado: al pedido y al cliente. */
+  /**
+   * Cambio de estado: al pedido y al cliente.
+   *
+   * OJO: `operador.to(sala)` NO muta el operador, devuelve uno NUEVO. Antes aca
+   * se hacia `if (clienteId) destino.to(salaCliente(clienteId))` sin reasignar,
+   * asi que esa segunda sala se DESCARTAba y el cliente jamas recibia el
+   * `pedido:estado-actualizado`: solo le llegaba si ya estaba en `pedido:{id}`.
+   * Hay que reasignar (`destino = destino.to(...)`).
+   *
+   * Encadenado: el cliente suele estar en `pedido:{id}` Y en `cliente:{id}`, y
+   * Socket.IO deduplica por socket y le entrega UNA sola copia.
+   */
   emitirEstado(pedidoId: string, clienteId: string | null, payload: Record<string, unknown>) {
-    // Encadenado: el cliente suele estar en pedido:{id} Y en cliente:{id};
-    // con dos .emit() separados le llegaba el evento DOS veces.
-    const destino = this.server.to(PedidosGateway.salaPedido(pedidoId));
-    if (clienteId) destino.to(PedidosGateway.salaCliente(clienteId));
+    let destino = this.server.to(PedidosGateway.salaPedido(pedidoId));
+    if (clienteId) destino = destino.to(PedidosGateway.salaCliente(clienteId));
     destino.emit('pedido:estado-actualizado', payload);
   }
 
-  /** Cancelado por el cliente: avisa a la sucursal. */
-  emitirCancelado(negocioId: string, sucursalId: string, payload: Record<string, unknown>) {
-    this.server
+  /**
+   * Cancelado (por el cliente, el staff o el cron): avisa a la sucursal, a los
+   * duenos Y al cliente del pedido.
+   *
+   * El cliente va a las MISMAS salas que en `emitirEstado` (`pedido:{id}` +
+   * `cliente:{id}`): antes este evento solo salia a las salas del staff, asi que
+   * un cliente logueado NO se enteraba del cancel por WS y lo veia recien con el
+   * polling de 5 s. OJO con reasignar el resultado de `.to()` (ver `emitirEstado`).
+   */
+  emitirCancelado(
+    negocioId: string, sucursalId: string, clienteId: string | null,
+    payload: Record<string, unknown> & { pedidoId: string },
+  ) {
+    let destino = this.server
       .to(PedidosGateway.salaSucursal(sucursalId))
       .to(PedidosGateway.salaDuenos(negocioId))
-      .emit('pedido:cancelado', payload);
+      .to(PedidosGateway.salaPedido(payload.pedidoId));
+    if (clienteId) destino = destino.to(PedidosGateway.salaCliente(clienteId));
+    destino.emit('pedido:cancelado', payload);
   }
 }

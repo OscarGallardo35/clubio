@@ -654,7 +654,7 @@ export class PedidosService {
       detalle: { pedidoId: pedido.id, desde: pedido.estado, origen: ctx.origen },
     });
 
-    this.gateway.emitirCancelado(negocioId, pedido.sucursalId, {
+    this.gateway.emitirCancelado(negocioId, pedido.sucursalId, pedido.clienteId, {
       pedidoId: pedido.id, estado: EstadoPedido.CANCELADO,
       actualizadoEn: actualizado.actualizadoEn.toISOString(),
     });
@@ -680,8 +680,10 @@ export class PedidosService {
    * La logica vive aca y no en el `@Cron` para poder invocarla con cualquier `ahora` sin esperar a
    * la hora en punto (mismo criterio que los crons del #2.9).
    *
-   * El cliente NO se notifica: no hay canal saliente y, si el pedido es viejo, su link ya vencio.
-   * Queda como enhancement (avisar por push/WhatsApp antes de cancelar).
+   * Si el pedido tiene cliente logueado se le avisa por WS (`emitirCancelado` emite
+   * tambien a su sala `cliente:{id}`), pero NO se manda push/WhatsApp: si el
+   * pedido es viejo, su link ya vencio. Avisar antes de cancelar queda como
+   * enhancement.
    */
   async autoCancelarPendientesAbandonados(
     ahora = new Date(),
@@ -699,7 +701,7 @@ export class PedidosService {
     for (const negocio of negocios) {
       const candidatos = await this.prisma.pedido.findMany({
         where: { negocioId: negocio.id, estado: EstadoPedido.PENDIENTE, creadoEn: { lt: corte } },
-        select: { id: true, sucursalId: true },
+        select: { id: true, sucursalId: true, clienteId: true },
       });
       if (!candidatos.length) continue;
 
@@ -712,8 +714,9 @@ export class PedidosService {
         if (r.count !== 1) continue; // el local lo movio en el medio: ya no es nuestro
 
         cancelados += 1;
-        // Mismo evento que el cancel manual: el staff lo ve caer en vivo.
-        this.gateway.emitirCancelado(negocio.id, candidato.sucursalId, {
+        // Mismo evento que el cancel manual: el staff lo ve caer en vivo. Si el
+        // pedido tiene cliente logueado (sala cliente:{id}), tambien lo ve el.
+        this.gateway.emitirCancelado(negocio.id, candidato.sucursalId, candidato.clienteId, {
           pedidoId: candidato.id,
           estado: EstadoPedido.CANCELADO,
           actualizadoEn: ahora.toISOString(),

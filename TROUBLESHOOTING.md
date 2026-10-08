@@ -2852,3 +2852,34 @@ Reglas:
   la senal: si el commit toca 1 archivo y vos tocaste 3, falta el resto.
 - Un arbol de trabajo limpio NO prueba que el commit este completo (en el caso real el
   `next.config.js` quedo modificado y sin commitear): mirar el commit, no el `git status`.
+
+---
+
+## SSR de Radix: los Portals NO se renderizan en el servidor
+
+**El contenido de `Dialog` / `AlertDialog` / `Select` / `DropdownMenu` (todo lo que Radix monta en
+un Portal) no existe en el HTML del SSR: el server emite solo el trigger.** Verificado con una
+sonda (con `defaultOpen`): sale el `<button role="combobox" aria-haspopup="dialog" ...>` y nada del
+contenido. Consecuencia para las aserciones: los roles del contenido abierto (`role="dialog"`,
+`listbox`, `menu`, `alertdialog`) **no se pueden afirmar con `renderToStaticMarkup`** — hace falta
+un DOM (jsdom, que no esta entre las dependencias del repo).
+
+Lo que si se afirma en `pnpm --filter @repo/ui check:ssr`: el trigger (aria + `data-state`) y la
+IDENTIDAD de los primitivos que se re-exportan sin wrapper (`Dialog === DialogPrimitive.Root`):
+si el componente ES el de Radix, el comportamiento (foco atrapado, Escape, rol) es el de Radix.
+
+## `tsc` no le agrega `.js` a los imports relativos: el `dist/` no lo carga Node
+
+**`pnpm --filter @repo/ui build` (tsc) emite ESM con los imports sin extension
+(`./components/button`), y Node ESM exige la extension: `ERR_MODULE_NOT_FOUND`.** Nadie lo habia
+notado porque las PWAs consumen el SOURCE (`main: src/index.ts` + `transpilePackages`), no el
+`dist`.
+
+Por eso las aserciones SSR compilan a **CommonJS** (que resuelve sin extension) en `.check-dist/`
+via `tsconfig.check.json`, con un shim `{"type":"commonjs"}` porque el package declara
+`"type": "module"`. Dos detalles que salieron al armarlo: `rootDir` tiene que cubrir `src` Y
+`scripts` (si no, TS6059) y `noEmitOnError` evita que una corrida fallida deje `.js` sueltos al
+lado de las fuentes.
+
+Leccion general: un `dist` que nadie consume puede estar roto sin que nadie lo note. Si se
+verifica, verificarlo de verdad y no por lo que deberia ser.

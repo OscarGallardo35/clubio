@@ -69,5 +69,58 @@ chk(
   'el rol del contenido lo pone Radix al montar',
 )
 
+// ---------------------------------------------------------------- AlertDialog
+// El import va aca (y no arriba) para que cada componente traiga su bloque + su primitivo
+// juntos: `import` es hoisted, asi que es valido a nivel top-level en cualquier posicion.
+import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog'
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '../src/index'
+
+console.log('\nAlertDialog')
+const alertCerrado = renderToStaticMarkup(
+  <AlertDialog>
+    <AlertDialogTrigger>Borrar</AlertDialogTrigger>
+    <AlertDialogContent>
+      <AlertDialogTitle>Estas seguro?</AlertDialogTitle>
+      <AlertDialogDescription>No se puede deshacer.</AlertDialogDescription>
+      <AlertDialogAction>Borrar</AlertDialogAction>
+      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+    </AlertDialogContent>
+  </AlertDialog>,
+)
+
+chk('AlertDialog ES el Root de Radix', AlertDialog === AlertDialogPrimitive.Root)
+chk('AlertDialogTrigger ES el Trigger de Radix', AlertDialogTrigger === AlertDialogPrimitive.Trigger)
+// Action/Cancel NO son el primitivo pelado: son wrappers que le aplican `buttonVariants()`.
+// Lo verificable aca es que envuelven al primitivo correcto (heredan su displayName).
+chk(
+  'AlertDialogAction es un wrapper del Action (no el primitivo)',
+  AlertDialogAction !== AlertDialogPrimitive.Action &&
+    (AlertDialogAction as { displayName?: string }).displayName === AlertDialogPrimitive.Action.displayName,
+)
+chk(
+  'AlertDialogCancel es un wrapper del Cancel (no el primitivo)',
+  AlertDialogCancel !== AlertDialogPrimitive.Cancel &&
+    (AlertDialogCancel as { displayName?: string }).displayName === AlertDialogPrimitive.Cancel.displayName,
+)
+chk('el trigger es un <button type="button">', alertCerrado.includes('<button type="button"'))
+chk('el trigger declara aria-haspopup="dialog"', alertCerrado.includes('aria-haspopup="dialog"'))
+chk(
+  'cerrado: aria-expanded="false"',
+  alertCerrado.includes('aria-expanded="false"') && alertCerrado.includes('data-state="closed"'),
+)
+chk(
+  'el contenido NO viaja en el SSR (Radix usa Portal)',
+  !alertCerrado.includes('role="alertdialog"'),
+  'rol y "no cierra con Escape" los aporta Radix al montar',
+)
+
 console.log(fallos === 0 ? '\nTOTAL OK' : `\nTOTAL FALLAS: ${fallos}`)
 proc?.exit?.(fallos === 0 ? 0 : 1)

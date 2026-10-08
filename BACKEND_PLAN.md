@@ -831,6 +831,41 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 | `AlertDialog` se cierra con Escape | Diferido (deuda tecnica #4 de este archivo) | — |
 | "Horarios" / "mensaje propio del local" por sucursal | Diferido (deuda tecnica #5) | — |
 
+### BLOQUEANTE: `admin_role` no es dueño de las tablas -> no se puede migrar
+
+Medido (no supuesto): la app se conecta como `admin_role` y **las 41 tablas de `public` pertenecen a
+`neondb_owner`** (`SELECT count(*) FILTER (WHERE tableowner = current_user) FROM pg_tables` → **0**).
+Consecuencia: cualquier `ALTER TABLE` falla con
+`ERROR: must be owner of table "Cliente" (SQLSTATE 42501)`.
+
+Lo que YA no funciona por esto:
+- `prisma migrate dev` **ademas** pide una shadow database y Neon no deja crearla
+  (`permission denied to create database`). O sea: en este proyecto `migrate dev` no se puede usar.
+  El camino que si funciona: `prisma migrate diff --from-schema-datasource ./prisma/schema.prisma
+  --to-schema-datamodel ./prisma/schema.prisma --script`, escribir el `migration.sql` a mano y
+  aplicarlo con `prisma migrate deploy`.
+
+**Como destrabarlo (una sola vez, en la consola de Neon como `neondb_owner`):**
+
+```sql
+-- Opcion A (recomendada): transferir la propiedad y no volver a chocar nunca mas.
+--   Se corre una vez por tabla (41). Ejemplo con las que importan:
+ALTER TABLE "Cliente" OWNER TO admin_role;
+ALTER TABLE "ConfiguracionClub" OWNER TO admin_role;
+-- ... y el resto de las 41.
+
+-- Opcion B (quirurjica): correr el ALTER a mano y despues registrar la migracion como aplicada.
+ALTER TABLE "Cliente" ADD COLUMN "ultimoCanjeEn" TIMESTAMP(3);
+ALTER TABLE "ConfiguracionClub" ADD COLUMN "premioTextoPuntos" TEXT DEFAULT 'Postre gratis';
+ALTER TABLE "ConfiguracionClub" ADD COLUMN "puntosPorMil" INTEGER DEFAULT 5;
+--   y despues, desde el repo:
+--   prisma migrate resolve --applied 20261008181500_hibrido_puntos
+```
+
+Nota aparte: en la base quedo una tabla `playing_with_neon` (la deja Neon al crear el proyecto) que
+NO esta en el schema. Prisma la propone borrar en cada diff; **no** la toca ninguna migracion
+nuestra. Si se quiere sacar, es decision del usuario.
+
 ### Google Business (OAuth): setup completo
 
 El codigo esta listo y desplegado, pero la integracion **no es operable** hasta cargar esto.

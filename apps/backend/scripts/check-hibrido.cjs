@@ -288,6 +288,36 @@ async function saldos(clienteId, sucursalId) {
     const sinSaldo = await req('POST', '/api/visitas/canjear', { clienteId: cliente.id, tipo: 'SELLOS' }, duenoToken);
     chk('responde 400 con el saldo en 0', sinSaldo.status === 400, `status=${sinSaldo.status} ${JSON.stringify(sinSaldo.data?.message ?? '')}`);
 
+    // ---------- 9) POR_SUCURSAL: el canje descuenta UNA sola vez ----------
+    // Regresion de un bug real: con modoClientes GLOBAL el canje descontaba en la TARJETA y en el
+    // CLIENTE. La tarjeta es un contador POR SUCURSAL, asi que un cliente que acumulo en dos
+    // sucursales la mandaba a negativo (se lo vio en -66).
+    console.log('\n[9] modoClientes POR_SUCURSAL: el canje descuenta solo la tarjeta');
+    const modoClientesOriginal = negocio.modoClientes;
+    await prisma.negocio.update({ where: { id: negocio.id }, data: { modoClientes: 'POR_SUCURSAL' } });
+    try {
+      await config('HIBRIDO', 5, 100);
+      await prisma.tarjetaClienteSucursal.updateMany({
+        where: { clienteId: cliente.id, sucursalId: sucursal.id },
+        data: { puntosActuales: 0, sellosActuales: 0 },
+      });
+      await prisma.cliente.update({ where: { id: cliente.id }, data: { puntosActuales: 0, sellosActuales: 0 } });
+
+      const t9 = await crearToken(negocio.id, cliente.id, sucursal.id);
+      await req('POST', `/api/visitas/aprobar/${t9.token}`, { montoConsumido: 20000 }, duenoToken); // 20000/1000*5 = 100
+      const antes9 = await saldos(cliente.id, sucursal.id);
+      const canje9 = await req('POST', '/api/visitas/canjear', { clienteId: cliente.id, tipo: 'PUNTOS' }, duenoToken);
+      const desp9 = await saldos(cliente.id, sucursal.id);
+      const cli9 = await prisma.cliente.findUnique({ where: { id: cliente.id }, select: { puntosActuales: true } });
+
+      chk('la tarjeta acumulo los 100 puntos', antes9.tarjetaPuntos === 100, `tarjeta ${antes9.tarjetaPuntos}`);
+      chk('el canje fue 2xx', canje9.status === 200 || canje9.status === 201, `status=${canje9.status}`);
+      chk('la tarjeta quedo en 0 (nunca negativa)', desp9.tarjetaPuntos === 0, `tarjeta ${desp9.tarjetaPuntos}`);
+      chk('el contador del cliente no se tocó', cli9.puntosActuales === 0, `cliente ${cli9.puntosActuales}`);
+    } finally {
+      await prisma.negocio.update({ where: { id: negocio.id }, data: { modoClientes: modoClientesOriginal } });
+    }
+
   } finally {
     // RESTAURA la config original y borra el cliente de prueba (cascada: visitas, pedidos, tarjetas).
     if (original) {

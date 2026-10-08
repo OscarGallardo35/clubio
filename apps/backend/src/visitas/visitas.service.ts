@@ -328,17 +328,23 @@ export class VisitasService {
     }
 
     const ahora = new Date();
-    const [, actualizado] = await this.prisma.$transaction([
-      // La tarjeta de la sucursal se descuenta SIEMPRE (es el espejo por sucursal del saldo).
-      // `updateMany` y no `update`: con GLOBAL la tarjeta puede no existir todavia y no queremos
-      // que el canje falle por eso.
-      this.prisma.tarjetaClienteSucursal.updateMany({
-        where: { clienteId: cliente.id, sucursalId },
-        data: esSellos
-          ? { sellosActuales: { decrement: costo } }
-          : { puntosActuales: { decrement: costo } },
-      }),
-      this.prisma.cliente.update({
+    // El descuento va en UN solo lado: el que tiene la verdad del saldo. Con POR_SUCURSAL es la
+    // tarjeta de esa sucursal; con GLOBAL, el contador del cliente.
+    //
+    // Descontar en los DOS (lo que hacia antes) mandaba la tarjeta a NEGATIVO en cuanto el cliente
+    // habia acumulado en mas de una sucursal: la tarjeta es un contador POR SUCURSAL, no un espejo
+    // del saldo global. Lo cazo la verificacion en el navegador (tarjeta en -66 sobre un cliente con
+    // 24 puntos).
+    const actualizado = await this.prisma.$transaction(async (tx) => {
+      if (cfg.porSucursal) {
+        await tx.tarjetaClienteSucursal.updateMany({
+          where: { clienteId: cliente.id, sucursalId },
+          data: esSellos
+            ? { sellosActuales: { decrement: costo } }
+            : { puntosActuales: { decrement: costo } },
+        });
+      }
+      return tx.cliente.update({
         where: { id: cliente.id },
         data: {
           ...(cfg.porSucursal
@@ -350,8 +356,8 @@ export class VisitasService {
           ultimoCanjeEn: ahora,
         },
         select: { sellosActuales: true, puntosActuales: true, premiosCanjeados: true, ultimoCanjeEn: true },
-      }),
-    ]);
+      });
+    });
 
     await this.auditoria.registrar({
       negocioId, accion: 'premio.canjeado', empleadoId: empleado.id, clienteId: cliente.id,

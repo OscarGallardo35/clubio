@@ -26,6 +26,7 @@ import { ETIQUETAS, ETIQUETAS_MODO_PAGO, clasificarFalloPedido, normalizarError,
 import type { EstadoPedido } from '@/lib/checkout-maquina'
 import type { FalloSeguimiento } from '@/lib/checkout-maquina'
 import { crearSocketPedidos } from '@/lib/socket'
+import { useCliente } from '@/hooks/useCliente'
 import { useClienteStore } from '@/stores/clienteStore'
 import { useCarritoStore } from '@/stores/carritoStore'
 import { useBranding } from '@/hooks/useBranding'
@@ -59,6 +60,10 @@ export interface SeguimientoProps {
 
 export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   const token = useClienteStore((s) => s.token)
+  // La sesion del cliente puede ser SOLO una cookie HttpOnly (JS no la lee) y el
+  // token en memoria queda null. `useCliente` resuelve si hay sesion real via
+  // GET /auth/cliente/me: es la senal que necesita el efecto del WS.
+  const { autenticado: sesionAutenticada, resuelto: sesionResuelta } = useCliente()
   const pedidoGuardado = useCarritoStore((s) => s.pedido)
   const despachar = useCarritoStore((s) => s.despachar)
   const activar = useCarritoStore((s) => s.activar)
@@ -134,9 +139,17 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   }, [refetch, pedido?.estado, fallo])
 
   // 2) WS como adelanto, solo si hay sesion de cliente.
+  //
+  // OJO: la sesion puede ser SOLO una cookie HttpOnly (JS no la lee), asi que
+  // `token` es null en una carga en frio o tras un F5. Antes el efecto cortaba
+  // con `if (!token)`, y eso dejaba al cliente SIEMPRE en polling: el socket
+  // nunca se abria y el cancel en vivo no llegaba. Se dispara si hay token en
+  // memoria O si `useCliente` confirmo sesion (la cookie autentica el handshake).
   React.useEffect(() => {
-    if (!token) {
-      setSoloPolling(true)
+    if (!token && !sesionAutenticada) {
+      // Sin token el veredicto todavia no llego: no se marca soloPolling hasta
+      // que /me resuelva, para no quedarse sin socket por un falso negativo.
+      if (sesionResuelta) setSoloPolling(true)
       return undefined
     }
     let socket: Socket | null = null
@@ -185,7 +198,7 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
       if (timeout) clearTimeout(timeout)
       socket?.disconnect()
     }
-  }, [token, refetch, despachar])
+  }, [token, sesionAutenticada, sesionResuelta, refetch, despachar])
 
   // 'tenant' es transitorio: se sigue mostrando el mismo cartel de espera y el polling NO se corta
   // (el efecto de polling solo frena con 'no-encontrado'/'vencido'/estado final).

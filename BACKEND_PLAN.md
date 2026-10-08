@@ -272,6 +272,12 @@ Y por fase: el test unit/e2e que indica cada prompt.
   las PWAs. Si aparece una regla de negocio compleja (ej. validar un pedido completo), se evalúa
   un `ZodValidationPipe` custom.
 - **Enums en el backend**: siempre desde `@prisma/client`, nunca desde `@repo/types` (desactualizado).
+- **Links salientes = contrato**: cualquier URL que pudo haber quedado fuera del sistema (WhatsApp
+  del cliente, QR impreso, email, push, favoritos) se cambia SOLO con un redirect permanente al
+  formato nuevo — `permanentRedirect()` en una pagina no alcanza si la respuesta ya streameo, va en
+  `next.config.js`. Los links internos entre paginas se pueden romper: **si no controlas donde vive
+  el link, es contrato**. (Nacio del link del mensaje al staff: `/pedido/<token>` -> 308 ->
+  `/validar-pedido?ref=<token>`; ver TROUBLESHOOTING.md.)
 
 ---
 

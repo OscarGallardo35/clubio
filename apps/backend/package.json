@@ -21,6 +21,7 @@
     "test:cancelar": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-cancelar-link.cjs",
     "test:pedido-activo": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-pedido-activo.cjs",
     "test:auto-cancelar": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-auto-cancelar.cjs",
+    "test:ws-cancelado": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-ws-cancelado-cliente.cjs",
     "test:auth-dueno": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-auth-dueno.cjs",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",

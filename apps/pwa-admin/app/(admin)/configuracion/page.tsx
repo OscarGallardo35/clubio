@@ -237,13 +237,24 @@ function FormPrograma({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado
   const bienvenida = useNumero(cfg.sellosBienvenida);
   const limiteDia = useNumero(cfg.limiteVisitasPorDia);
   const horas = useNumero(cfg.horasMinimasEntreVisitas);
+  // Programa por PUNTOS. `premioPorPuntos` viene null en los clubes que nunca lo tocaron: el
+  // default de la pantalla (100) es el mismo que usa el backend al canjear, asi que si el dueño
+  // guarda sin cambiarlo, se persiste 100 y no queda un null mintiendo.
+  const puntosPorMil = useNumero(cfg.puntosPorMil ?? 5);
+  const premioPuntos = useNumero(cfg.premioPorPuntos ?? 100);
+  const [premioTextoPuntos, setPremioTextoPuntos] = React.useState(cfg.premioTextoPuntos ?? 'Postre gratis');
   const [valida, setValida] = React.useState(cfg.requiereValidacionEmpleado);
   const [regalo, setRegalo] = React.useState(cfg.permiteRegaloManual);
   const [resena, setResena] = React.useState(cfg.mostrarResenaPostVisita);
   const [guardando, setGuardando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const valido = sellos.valido && bienvenida.valido && limiteDia.valido && horas.valido;
+  /** Los campos de puntos solo tienen sentido si el modo los usa. */
+  const usaPuntos = modo !== 'SOLO_VISITAS';
+
+  const valido =
+    sellos.valido && bienvenida.valido && limiteDia.valido && horas.valido &&
+    (!usaPuntos || (puntosPorMil.valido && premioPuntos.valido && premioTextoPuntos.trim().length > 0));
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -260,6 +271,15 @@ function FormPrograma({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado
         requiereValidacionEmpleado: valida,
         permiteRegaloManual: regalo,
         mostrarResenaPostVisita: resena,
+        // Solo se mandan si el modo los usa: con SOLO_VISITAS los campos estan ocultos y lo que
+        // no se ve no se pisa.
+        ...(usaPuntos
+          ? {
+              puntosPorMil: puntosPorMil.numero,
+              premioPorPuntos: premioPuntos.numero,
+              premioTextoPuntos: premioTextoPuntos.trim(),
+            }
+          : {}),
       });
       toast.success('Programa guardado');
       await onGuardado();
@@ -286,11 +306,47 @@ function FormPrograma({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado
             ))}
           </SelectContent>
         </Select>
-        {modo !== 'SOLO_VISITAS' ? (
+        {usaPuntos ? (
+          <div className="space-y-4 rounded-xl border bg-muted/30 p-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <CampoNumero
+                id="puntosPorMil"
+                etiqueta="Puntos por cada $1000"
+                valor={puntosPorMil.valor}
+                onChange={puntosPorMil.setValor}
+                ayuda="Cuanto suma el cliente por cada $1000 de consumo."
+              />
+              <CampoNumero
+                id="premioPuntos"
+                etiqueta="Puntos que cuesta el premio"
+                valor={premioPuntos.valor}
+                onChange={premioPuntos.setValor}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="premioTextoPuntos">Texto del premio por puntos</Label>
+              <Input
+                id="premioTextoPuntos"
+                value={premioTextoPuntos}
+                onChange={(e) => setPremioTextoPuntos(e.target.value.slice(0, 160))}
+                placeholder="Postre gratis"
+              />
+            </div>
+            <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+              Ejemplo: el cliente gasta <strong>$6.800</strong> →{' '}
+              {modo === 'HIBRIDO' ? '+1 sello ' : ''}
+              +{Math.floor((6800 / 1000) * (puntosPorMil.numero || 0))} puntos
+              {'. '}Le faltan{' '}
+              {Math.max(0, premioPuntos.numero - Math.floor((6800 / 1000) * (puntosPorMil.numero || 0)))}{' '}
+              para {premioTextoPuntos.trim() || 'el premio'}.
+            </p>
+          </div>
+        ) : (
           <p className="text-xs text-muted-foreground">
-            Aca se configura el programa de visitas. Los puntos se ajustan por otro lado.
+            Este club premia por visitas. Cambia el modo a Solo puntos o a Hibrido para sumar
+            puntos por consumo.
           </p>
-        ) : null}
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

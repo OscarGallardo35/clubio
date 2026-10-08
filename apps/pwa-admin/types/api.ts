@@ -272,6 +272,10 @@ export interface ConfiguracionAdmin {
   horasMinimasEntreVisitas: number
   puntosPorPeso: string | null
   premioPorPuntos: number | null
+  /** Tasa del programa de puntos: puntos por cada $1000. */
+  puntosPorMil: number | null
+  /** Texto del premio de puntos (el de sellos es `premioTexto`). */
+  premioTextoPuntos: string | null
   requiereValidacionEmpleado: boolean
   permiteRegaloManual: boolean
   mensajeBienvenida: string | null
@@ -318,6 +322,10 @@ export interface ActualizarConfiguracionBody {
   menuActivo?: boolean | undefined
   /** Estaba en el modelo pero no en el DTO: se agrego al backend y ahora la pantalla lo guarda. */
   mensajeBienvenida?: string | undefined
+  /** Programa por PUNTOS: tasa (puntos por cada $1000) y umbral/texto de su premio. */
+  puntosPorMil?: number | undefined
+  premioPorPuntos?: number | undefined
+  premioTextoPuntos?: string | undefined
   tiposPedidoHabilitados?: TipoPedido[] | undefined
   modosPagoHabilitados?: ModoPago[] | undefined
   modoPagoPorDefecto?: ModoPago | undefined

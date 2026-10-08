@@ -256,6 +256,8 @@ export const endpoints = {
     validar: (token: string) => `/api/visitas/validar/${token}`,
     aprobar: (token: string) => `/api/visitas/aprobar/${token}`,
     rechazar: (token: string) => `/api/visitas/rechazar/${token}`,
+    /** Canjea un premio ya desbloqueado: `{ clienteId, tipo: SELLOS | PUNTOS }`. */
+    canjear: '/api/visitas/canjear',
     miTarjeta: '/api/visitas/mi-tarjeta',
     miHistorial: '/api/visitas/mi-historial',
     pendientes: '/api/visitas/pendientes',

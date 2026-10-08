@@ -2,6 +2,7 @@ import { ApiClient, endpoints } from '@repo/api-client';
 import type {
   ActualizarItemCartaBody,
   CartaAdminRespuesta,
+  ConfiguracionEfectivaStaff,
   EmpleadoMe,
   ItemCarta,
   EstadoPedido,
@@ -9,7 +10,9 @@ import type {
   PedidoStaff,
   LoginEmpleadoRespuesta,
   RespuestaAprobacion,
+  RespuestaCanje,
   RespuestaRechazo,
+  TipoCanje,
   VisitaAprobada,
   VisitaPendiente,
   VisitaValidable,
@@ -38,13 +41,25 @@ export const staffApi = {
   me: () => api.get<EmpleadoMe>(endpoints.auth.meEmpleado),
 };
 
+/** Config del club resuelta para la sucursal del empleado (lo que decide si hay puntos). */
+export const configuracionApi = {
+  efectiva: () => api.get<ConfiguracionEfectivaStaff>(endpoints.configuracion.efectiva),
+};
+
 /** Visitas del lado staff (los 5 endpoints que existen hoy). */
 export const visitasApi = {
   /** Detalle de una solicitud por token. 404 si no existe; 403 si es de otra sucursal. */
   validar: (token: string) => api.get<VisitaValidable>(endpoints.visitas.validar(token)),
 
-  aprobar: (token: string, body: { origen?: string } = {}) =>
+  aprobar: (token: string, body: { origen?: string; montoConsumido?: number } = {}) =>
     api.post<RespuestaAprobacion>(endpoints.visitas.aprobar(token), { origen: 'pwa_staff', ...body }),
+
+  /**
+   * Canjea un premio YA desbloqueado. 400 si el saldo no alcanza (el mensaje trae los numeros).
+   * `sucursalId` es opcional: sin el, el backend usa la del empleado que canjea.
+   */
+  canjear: (clienteId: string, tipo: TipoCanje, sucursalId?: string) =>
+    api.post<RespuestaCanje>(endpoints.visitas.canjear, { clienteId, tipo, ...(sucursalId ? { sucursalId } : {}) }),
 
   rechazar: (token: string, body: { motivo?: string }) =>
     api.post<RespuestaRechazo>(endpoints.visitas.rechazar(token), body),

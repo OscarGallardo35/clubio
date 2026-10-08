@@ -89,11 +89,56 @@ export interface RespuestaAprobacion {
   visitaId: string
   sucursalId: string
   modoClientes: 'GLOBAL' | 'POR_SUCURSAL'
+  /** Modo de fidelizacion vigente: con SOLO_PUNTOS no se otorga sello. */
+  modoFidelizacion: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
+  /** Lo que OTORGO esta aprobacion (no el saldo). */
+  sellosOtorgados: number
+  puntosOtorgados: number
   sellosActuales: number
   sellosCliente: number
   sellosTarjetaSucursal: number
+  puntosActuales: number
+  puntosTarjetaSucursal: number
+  sellosParaPremio: number
+  premioPorPuntos: number
   premioDesbloqueado: boolean
+  premioPuntosDesbloqueado: boolean
   mostrarResena: boolean
+}
+
+/** POST /visitas/canjear */
+export interface RespuestaCanje {
+  success: true
+  tipo: TipoCanje
+  /** Cuanto costo el premio (sellos o puntos). */
+  costo: number
+  premioTexto: string
+  sellosActuales: number
+  puntosActuales: number
+  premiosCanjeados: number
+  ultimoCanjeEn: string | null
+  premioDesbloqueado: boolean
+  premioPuntosDesbloqueado: boolean
+}
+
+export type TipoCanje = 'SELLOS' | 'PUNTOS'
+
+/**
+ * `GET /configuracion/efectiva` (JwtEmpleadoGuard): la config del club ya resuelta para la sucursal
+ * del empleado. Es lo que necesita el staff para saber si el club da puntos y cuanto vale cada uno.
+ *
+ * OJO: la tasa y el umbral de puntos NO se pueden overridear por sucursal (`CAMPOS_OVERRIDE` no los
+ * incluye): son del club.
+ */
+export interface ConfiguracionEfectivaStaff {
+  modoFidelizacion: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
+  puntosPorMil: number | null
+  premioPorPuntos: number | null
+  premioTextoPuntos: string | null
+  sellosParaPremio: number
+  premioTexto: string
+  overrideAplicado?: boolean
+  sucursalId?: string
 }
 
 /** POST /visitas/rechazar/:token */

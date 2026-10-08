@@ -23,6 +23,12 @@ RUN pnpm install --frozen-lockfile --prod=false
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/backend/node_modules ./apps/backend/node_modules
+# En un workspace pnpm CADA package tiene su propio node_modules (los links a sus deps + su .bin).
+# Se buildea @repo/types en este stage, asi que hace falta el suyo: su tsconfig hace `extends` de
+# @repo/config y su `tsc` sale de ese .bin. Sin esto: TS6053 '@repo/config/tsconfig.base.json not
+# found'. Los demas packages no lo necesitan: no se buildean aca y el backend solo importa
+# @repo/types (los otros @repo/* de su package.json no se usan en src).
+COPY --from=deps /app/packages/types/node_modules ./packages/types/node_modules
 COPY . .
 RUN pnpm --filter backend db:generate
 # @repo/types PRIMERO: el backend lo consume desde dist (su tsconfig tiene rootDir: ./src, asi que

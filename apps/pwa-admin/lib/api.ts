@@ -16,8 +16,8 @@ export const api = new ApiClient({
 });
 
 export const duenoApi = {
-  /** Paso 1 del login: email + password. Si el 2FA esta prendido, devuelve el challenge y nada mas. */
-  login: (body: { email: string; password: string }) =>
+  /** Paso 1 del login: email + password + el slug del negocio (el email no es unico global). */
+  login: (body: { email: string; password: string; negocioSlug: string }) =>
     api.post<LoginDuenoRespuesta>(endpoints.auth.loginDueno, body),
 
   /** Paso 2: el codigo TOTP + el challenge de 5 minutos. */

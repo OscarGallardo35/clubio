@@ -21,6 +21,7 @@ const SECCIONES = [
   { href: '/personal', etiqueta: 'Personal', listo: false },
   { href: '/sucursales', etiqueta: 'Sucursales', listo: false },
   { href: '/configuracion', etiqueta: 'Configuracion', listo: false },
+  { href: '/qr', etiqueta: 'QR', listo: false },
 ] as const;
 
 export function Sidebar() {

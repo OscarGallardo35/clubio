@@ -245,6 +245,27 @@ suscrito. El sintoma de (b) ("el toast llega igual") se ve igual que un bug de
 backend y manda a buscar en el lugar equivocado. Evidencia: `Seguimiento.tsx` +
 harness `test:ws-cancelado`, que imprime las salas del socket conectado.
 
+### El pasamanos del WS tiene 3 tramos: una interfaz que declara solo los campos VIEJOS los descarta en silencio
+
+Corolario del anterior, con el sintoma al reves: el socket SI abre y el evento SI
+llega, pero el payload se pierde en el camino. El WS del cliente tiene 3 tramos:
+gateway (`emitirAprobada`) -> `crearSocketVisita` (mapea el payload a los
+manejadores) -> el hook (`useVisitaQr`), que **rearma el objeto** al despachar al
+reducer. Con `onAprobada?: (p: { sellosActuales: number; premioDesbloqueado: boolean })`
+el tercer tramo copiaba solo esos dos campos: los incrementos nuevos
+(`sellosOtorgados`, `puntosOtorgados`, `puntosActuales`, `modoFidelizacion`) viajaban
+por el cable y morian en el hook, y la confirmacion mostraba su texto generico.
+
+Regla: al agregar un campo a un evento de WS hay que tocar los TRES tramos, y el tipo
+del tramo del medio es el que decide si el campo sobrevive. Verificar el ultimo
+eslabon (lo que ve el usuario), no que el gateway emita bien.
+
+Ojo con el diagnostico facil: en la 3ra aparicion de este sintoma el sospechoso obvio
+era "cookie vs token en memoria", y era FALSO (`createSocket` ya manda
+`withCredentials: true` y los dos gateways ya leen las cookies). Los comentarios que
+describen el comportamiento viejo siguen ahi y vuelven a mandar al lugar equivocado:
+antes de culpar al transporte, mirar quien rearma el payload.
+
 ### Rate limiting: limites configurables por env
 
 `POST /pedidos` limita a 10 por hora por IP y `GET /pedidos/publico/:linkToken` a

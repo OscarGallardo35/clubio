@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ModoClientes, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
@@ -271,29 +271,57 @@ export class ClientesService {
     return cliente;
   }
 
-  /** Regalo manual de sellos/puntos (solo DUENO). */
+  /**
+   * Regalo manual de sellos/puntos (solo DUENO).
+   *
+   * Dos cosas que faltaban:
+   * 1. El flag `permiteRegaloManual` prometia algo que nadie leia: si el club lo tiene apagado,
+   *    esto ahora responde 403.
+   * 2. El saldo se acredita con la MISMA regla que una visita. Antes iba siempre al contador del
+   *    cliente, asi que con `modoClientes = POR_SUCURSAL` el regalo no se veia (ese modo muestra el
+   *    de la tarjeta de la sucursal).
+   */
   async regalarSello(negocioId: string, clienteId: string, dto: RegalarSelloDto, ctx: AuthCtx) {
     const cliente = await this.exigirCliente(negocioId, clienteId);
     const sellos = dto.sellos ?? 1;
     const puntos = dto.puntos ?? 0;
 
+    const [config, negocio] = await Promise.all([
+      this.prisma.configuracionClub.findUnique({
+        where: { negocioId }, select: { permiteRegaloManual: true },
+      }),
+      this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
+    ]);
+    if (config && config.permiteRegaloManual === false) {
+      throw new ForbiddenException('El club no permite regalos manuales (Configuracion > Programa)');
+    }
+    const porSucursal = negocio?.modoClientes === 'POR_SUCURSAL';
+
     const sucursal = await this.resolver.resolverSucursal(negocioId, {
       sucursalId: ctx.sucursalId, empleadoId: ctx.empleadoId,
     });
+    const sucursalId = sucursal.id as string;
 
-    const [visita, actualizado] = await this.prisma.$transaction([
+    const [visita, , actualizado] = await this.prisma.$transaction([
       this.prisma.visita.create({
         data: {
-          negocioId, sucursalId: sucursal.id as string, clienteId, empleadoId: ctx.empleadoId,
+          negocioId, sucursalId, clienteId, empleadoId: ctx.empleadoId,
           tipo: 'REGALO_MANUAL', sellosOtorgados: sellos, puntosOtorgados: puntos,
           metodo: 'MANUAL', notas: dto.motivo ?? 'Regalo manual',
         },
       }),
+      // La tarjeta de la sucursal SIEMPRE (es el espejo por sucursal del saldo).
+      this.prisma.tarjetaClienteSucursal.upsert({
+        where: { clienteId_sucursalId: { clienteId, sucursalId } },
+        update: { sellosActuales: { increment: sellos }, puntosActuales: { increment: puntos } },
+        create: { clienteId, sucursalId, sellosActuales: sellos, puntosActuales: puntos },
+      }),
       this.prisma.cliente.update({
         where: { id: clienteId },
         data: {
-          sellosActuales: { increment: sellos },
-          puntosActuales: { increment: puntos },
+          ...(porSucursal
+            ? {}
+            : { sellosActuales: { increment: sellos }, puntosActuales: { increment: puntos } }),
           etiqueta: this.segmentos.calcularEtiqueta(cliente.totalVisitas, cliente.ultimaVisita),
         },
       }),

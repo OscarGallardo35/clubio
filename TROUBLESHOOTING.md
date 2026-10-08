@@ -2963,3 +2963,31 @@ Reglas:
   actualiza el estado tiene que SOLTAR el bloqueo; si no, queda pegado y el usuario ve un loop.
 - Cuando una sala recibe eventos de varios pedidos del mismo cliente, el handler filtra por
   `pedidoId` antes de tocar el store: sin ese guard, el evento de otro pedido pisa el actual.
+
+## Verificacion de UI en el navegador (lecciones del admin)
+
+### Un `preventDefault` no alcanza si la libreria compone su handler DESPUES del tuyo
+
+Pasar `onEscapeKeyDown` con `preventDefault` a un `AlertDialog` de Radix **no** impide que Escape
+lo cierre: `DialogContent` compone su propio handler (`context.onClose()` + `event.preventDefault()`)
+DESPUES del del consumidor, y `composeEventHandlers` no consulta `event.defaultPrevented`. La doc
+dice que el AlertDialog no se cierra con Escape; el codigo instalado dice otra cosa. Se verifica en
+la fuente instalada (`node_modules/.pnpm/@radix-ui+react-alert-dialog@.../dist/index.mjs`), no en la
+doc. Evidencia: bundle desplegado con el `preventDefault` adentro y el dialogo cerrándose igual.
+Para bloquearlo de verdad hay que interceptar el keydown en `window` (fase de captura), antes del
+listener que Radix registra en `ownerDocument`.
+
+### Verificar un bundle minificado por el VALOR unico de tu cambio, no por un nombre que la libreria tambien tiene
+
+Para saber si un deploy tiene un cambio, buscar en el bundle un nombre de prop que la libreria
+tambien define (`onEscapeKeyDown`) da un **falso positivo**: el codigo de Radix bundleado ya lo
+tiene. Hay que buscar el patron PROPIO (en este caso `preventDefault` inmediatamente ANTES de la
+llamada, al reves que en Radix). Un solo string compartido con la libreria no dice nada.
+
+### Los menus de Radix NO abren con `click()` sintetico: hay que disparar `pointerdown`
+
+`DropdownMenu` (y demas primitivas de Radix) abren en `pointerdown`/`pointerup`, no en `click`. Un
+`elemento.click()` desde JS/CDP no abre el menu, y el chequeo queda mintiendo ("no hay items").
+Para verificar en el navegador hay que despachar la secuencia completa:
+`pointerdown -> mousedown -> pointerup -> mouseup -> click`. Asi el menu abre y se puede verificar
+el flujo real (Editar / Reset PIN / Desactivar + el AlertDialog) sin tocar un mouse.

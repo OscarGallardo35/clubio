@@ -1,13 +1,24 @@
 import { ApiClient, endpoints } from '@repo/api-client';
 import type {
+  ActualizarEmpleadoBody,
   ActualizarItemCartaBody,
+  ActualizarSucursalBody,
   CartaAdminRespuesta,
+  ConfiguracionSucursalBody,
+  CrearEmpleadoBody,
   CrearItemCartaBody,
+  CrearSucursalBody,
   DuenoSesion,
+  EmpleadoAdmin,
+  EmpleadosRespuesta,
   FeaturePlan,
   ItemCartaAdmin,
+  ItemOverrideAdmin,
   LoginDuenoRespuesta,
   NegocioAdmin,
+  ResultadoEliminarSucursal,
+  SucursalAdmin,
+  SucursalesRespuesta,
 } from '@/types/api';
 
 /**
@@ -53,27 +64,97 @@ export const negociosApi = {
 };
 
 export const sucursalesApi = {
-  /** `mis-sucursales` respeta el alcance por rol (en el admin siempre son todas las del negocio). */
-  listar: () => api.get<{ data: unknown[]; total: number }>(endpoints.sucursales.misSucursales),
-  obtener: (id: string) => api.get<unknown>(endpoints.sucursales.get(id)),
-  crear: (body: { nombre: string; direccion?: string; telefono?: string }) =>
-    api.post<{ id: string }>(endpoints.sucursales.create, body),
-  actualizar: (id: string, body: Record<string, unknown>) =>
-    api.patch<{ id: string }>(endpoints.sucursales.update(id), body),
+  /**
+   * Listado del dueno (`GET /sucursales`): trae las metricas del mes y si la sucursal tiene
+   * config propia. Es distinto de `mis-sucursales` (pensado para el selector de la staff).
+   */
+  listar: (filtros: { activa?: string; esPrincipal?: string; busqueda?: string } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filtros)) if (v !== undefined && v !== '') qs.set(k, String(v));
+    const q = qs.toString();
+    return api.get<SucursalesRespuesta>(`${endpoints.sucursales.list}${q ? `?${q}` : ''}`);
+  },
+
+  /** Alcance por rol (en el admin el dueno ve todas las activas). Da el selector de sucursal. */
+  misSucursales: () =>
+    api.get<{ data: SucursalAdmin[]; total: number; alcance: string }>(endpoints.sucursales.misSucursales),
+
+  obtener: (id: string) => api.get<SucursalAdmin>(endpoints.sucursales.get(id)),
+
+  crear: (body: CrearSucursalBody) => api.post<SucursalAdmin>(endpoints.sucursales.create, body),
+
+  actualizar: (id: string, body: ActualizarSucursalBody) =>
+    api.patch<SucursalAdmin>(endpoints.sucursales.update(id), body),
+
   marcarPrincipal: (id: string) => api.patch<{ ok: boolean }>(endpoints.sucursales.principal(id)),
-  eliminar: (id: string) => api.delete<{ ok: boolean }>(endpoints.sucursales.delete(id)),
+
+  /**
+   * `DELETE /sucursales/:id` es destructivo de verdad (a diferencia del de carta, que solo apaga):
+   * reasigna los empleados a la principal y CANCELA los pedidos activos. Sin `force`, el backend
+   * responde 409 si la sucursal tiene movimiento (`EliminarSucursalDto.force`).
+   */
+  eliminar: (id: string, force = false) =>
+    api.delete<ResultadoEliminarSucursal>(
+      `${endpoints.sucursales.delete(id)}${force ? '?force=true' : ''}`,
+    ),
+};
+
+/**
+ * Config PROPIAS de una sucursal (override del club).
+ *
+ * Un campo ausente NO se toca; un `null` LO BORRA (vuelve a heredar). Se escribe con POST (es un
+ * upsert del backend), no con PATCH.
+ */
+export const sucursalConfigApi = {
+  obtener: (sucursalId: string) =>
+    api.get<Record<string, unknown>>(endpoints.sucursales.configuracion(sucursalId)),
+  efectiva: (sucursalId: string) =>
+    api.get<Record<string, unknown>>(endpoints.sucursales.configuracionEfectiva(sucursalId)),
+  guardar: (sucursalId: string, body: ConfiguracionSucursalBody) =>
+    api.post<Record<string, unknown>>(endpoints.sucursales.configuracion(sucursalId), body),
+  /** Borra TODO el override: la sucursal vuelve a heredar del club. */
+  borrar: (sucursalId: string) =>
+    api.delete<{ ok: boolean }>(endpoints.sucursales.configuracion(sucursalId)),
+};
+
+/** Precio/disponibilidad propios de un item en UNA sucursal. */
+export const itemsOverrideApi = {
+  listar: (sucursalId: string) =>
+    api.get<{ sucursalId: string; total: number; data: ItemOverrideAdmin[] }>(
+      endpoints.sucursales.itemsOverride(sucursalId),
+    ),
+  /** `precio: null` = volver al precio global del item. */
+  guardar: (
+    sucursalId: string,
+    body: { itemCartaId: string; precio?: number | null; disponible?: boolean | null },
+  ) => api.post<Record<string, unknown>>(endpoints.sucursales.itemsOverride(sucursalId), body),
+  eliminar: (sucursalId: string, itemCartaId: string) =>
+    api.delete<{ ok: boolean }>(endpoints.sucursales.itemOverride(sucursalId, itemCartaId)),
 };
 
 export const empleadosApi = {
-  listar: () => api.get<{ data: unknown[]; total: number }>(endpoints.empleados.list),
-  obtener: (id: string) => api.get<unknown>(endpoints.empleados.get(id)),
-  crear: (body: { nombre: string; rol: string; sucursalId: string; pin: string }) =>
-    api.post<{ id: string }>(endpoints.empleados.create, body),
-  actualizar: (id: string, body: Record<string, unknown>) =>
-    api.patch<{ id: string }>(endpoints.empleados.update(id), body),
-  /** 409 si ese PIN ya lo usa otro empleado del mismo negocio. */
-  resetPin: (id: string, pin: string) => api.patch<{ ok: boolean }>(endpoints.empleados.resetPin(id), { pin }),
-  eliminar: (id: string) => api.delete<{ ok: boolean }>(endpoints.empleados.delete(id)),
+  listar: (filtros: { page?: number; pageSize?: number; sucursalId?: string; rol?: string } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filtros)) if (v !== undefined && v !== '') qs.set(k, String(v));
+    const q = qs.toString();
+    return api.get<EmpleadosRespuesta>(`${endpoints.empleados.list}${q ? `?${q}` : ''}`);
+  },
+
+  obtener: (id: string) => api.get<EmpleadoAdmin>(endpoints.empleados.get(id)),
+
+  /** `pin` de 4 a 8 digitos. SIN pin el empleado queda creado pero NO puede entrar. */
+  crear: (body: CrearEmpleadoBody) => api.post<EmpleadoAdmin>(endpoints.empleados.create, body),
+
+  actualizar: (id: string, body: ActualizarEmpleadoBody) =>
+    api.patch<EmpleadoAdmin>(endpoints.empleados.update(id), body),
+
+  /** 409 si el PIN ya lo usa otro empleado del mismo negocio (`exigirPinLibre`). */
+  resetPin: (id: string, pin: string) =>
+    api.patch<{ ok: boolean }>(endpoints.empleados.resetPin(id), { pin }),
+
+  /** Soft delete: `activo:false` + `eliminadoEn`, y borra las sesiones del empleado. */
+  desactivar: (id: string) =>
+    api.delete<{ id: string; nombre: string; activo: boolean }>(endpoints.empleados.delete(id)),
 };
 
 export const cartaApi = {

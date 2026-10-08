@@ -1,9 +1,11 @@
 import { ApiClient, endpoints } from '@repo/api-client';
 import type {
+  ActualizarConfiguracionBody,
   ActualizarEmpleadoBody,
   ActualizarItemCartaBody,
   ActualizarSucursalBody,
   CartaAdminRespuesta,
+  ConfiguracionAdmin,
   ConfiguracionSucursalBody,
   CrearEmpleadoBody,
   CrearItemCartaBody,
@@ -12,13 +14,16 @@ import type {
   EmpleadoAdmin,
   EmpleadosRespuesta,
   FeaturePlan,
+  GoogleEstado,
   ItemCartaAdmin,
   ItemOverrideAdmin,
   LoginDuenoRespuesta,
   NegocioAdmin,
+  QrInfo,
   ResultadoEliminarSucursal,
   SucursalAdmin,
   SucursalesRespuesta,
+  UbicacionGoogle,
 } from '@/types/api';
 
 /**
@@ -57,8 +62,12 @@ export const duenoApi = {
 export const negociosApi = {
   miNegocio: () => api.get<NegocioAdmin>(endpoints.negocios.miNegocio),
   features: () => api.get<FeaturePlan[]>(endpoints.negocios.features),
-  /** El QR del negocio: lo que el local imprime para sus clientes. */
-  qrInfo: () => api.get<{ urlCliente: string; urlStaff: string }>(endpoints.negocios.qrInfo),
+  /**
+   * Los 2 QRs FIJOS del negocio (`GET /negocios/qr-info`). OJO: el shape real es
+   * `{ negocio, qrMenu: {url, etiqueta}, qrClub: {url, etiqueta} }`; el `{urlCliente, urlStaff}` que
+   * se habia tipado en la Fase 0b era inventado (no hay endpoint de QR del staff).
+   */
+  qrInfo: () => api.get<QrInfo>(endpoints.negocios.qrInfo),
   actualizar: (body: { nombre?: string; telefono?: string }) =>
     api.patch<NegocioAdmin>(endpoints.negocios.update, body),
 };
@@ -188,10 +197,32 @@ export const cartaApi = {
 };
 
 export const configuracionApi = {
-  obtener: () => api.get<Record<string, unknown>>(endpoints.configuracion.get),
-  efectiva: () => api.get<Record<string, unknown>>(endpoints.configuracion.efectiva),
-  actualizar: (body: Record<string, unknown>) =>
-    api.patch<Record<string, unknown>>(endpoints.configuracion.update, body),
+  /** La fila cruda de `ConfiguracionClub` (una por negocio, con los defaults aplicados). */
+  obtener: () => api.get<ConfiguracionAdmin>(endpoints.configuracion.get),
+  efectiva: () => api.get<ConfiguracionAdmin>(endpoints.configuracion.efectiva),
+  actualizar: (body: ActualizarConfiguracionBody) =>
+    api.patch<ConfiguracionAdmin>(endpoints.configuracion.update, body),
+};
+
+/**
+ * Google Business Profile.
+ *
+ * Todo esto esta detras de `@RequiereFeature('google_business')` en el backend: si el plan no la
+ * incluye, responde 403 y la pantalla lo muestra tal cual.
+ */
+export const googleApi = {
+  estado: () => api.get<GoogleEstado>(endpoints.google.estado),
+  /** Devuelve `{ url }` con la URL de consentimiento: la pantalla REDIRIGE ahi. */
+  conectar: () => api.get<{ url?: string }>(endpoints.google.conectar),
+  /** El OAuth no devuelve accountId/locationId: hay que listarlos y elegir uno. */
+  ubicaciones: () => api.get<{ total: number; data: UbicacionGoogle[] }>(endpoints.google.ubicaciones),
+  seleccionar: (body: {
+    accountId: string
+    locationId: string
+    accountName?: string | undefined
+    locationName?: string | undefined
+  }) => api.post<{ ok: boolean }>(endpoints.google.ubicacion, body),
+  desconectar: () => api.delete<{ ok: boolean }>(endpoints.google.desconectar),
 };
 
 export const planesApi = {

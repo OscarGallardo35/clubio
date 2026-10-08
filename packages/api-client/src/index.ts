@@ -231,6 +231,15 @@ export const endpoints = {
     efectiva: '/api/configuracion/efectiva',
     update: '/api/configuracion',
   },
+  google: {
+    /** Estado de la integracion (sin tokens). */
+    estado: '/api/google/estado',
+    /** Devuelve la URL de consentimiento: el admin redirige ahi. */
+    conectar: '/api/google/conectar',
+    ubicaciones: '/api/google/ubicaciones',
+    ubicacion: '/api/google/ubicacion',
+    desconectar: '/api/google/desconectar',
+  },
   planes: {
     miPlan: '/api/planes/mi-plan',
     usoMensual: '/api/planes/uso-mensual',

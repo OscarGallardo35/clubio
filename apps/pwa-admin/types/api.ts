@@ -243,3 +243,121 @@ export interface ItemOverrideAdmin {
   precioOverride: number | null
   disponibleOverride: boolean | null
 }
+
+// ----------------------------------------------------------------- Fase 5: Config + QR + Google --
+
+/** Literales del enum de Prisma `ModoFidelizacion`. */
+export type ModoFidelizacion = 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
+/** Literales del enum de Prisma `TipoPedido`. */
+export type TipoPedido = 'MESA' | 'TAKEAWAY' | 'DELIVERY'
+/** Literales del enum de Prisma `ModoPago`. */
+export type ModoPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA'
+/** Literales del enum de Prisma `ModoAsignacionPedidos`. */
+export type ModoAsignacionPedidos = 'BROADCAST' | 'POR_ROL' | 'SOLO_ENCARGADO'
+
+/**
+ * `GET /configuracion` = la fila de `ConfiguracionClub` tal cual (una por negocio, con defaults).
+ *
+ * Los `Decimal` de Prisma llegan como **STRING** al JSON (`puntosPorPeso`, `costoEnvio`,
+ * `pedidoMinimoDelivery`): esas cuentas no se hacen en el front sin convertir.
+ */
+export interface ConfiguracionAdmin {
+  id: string
+  negocioId: string
+  modoFidelizacion: ModoFidelizacion
+  sellosParaPremio: number
+  premioTexto: string
+  sellosBienvenida: number
+  limiteVisitasPorDia: number
+  horasMinimasEntreVisitas: number
+  puntosPorPeso: string | null
+  premioPorPuntos: number | null
+  requiereValidacionEmpleado: boolean
+  permiteRegaloManual: boolean
+  mensajeBienvenida: string | null
+  mostrarResenaPostVisita: boolean
+  permitirOverrideSucursal: boolean
+  menuActivo: boolean
+  tiposPedidoHabilitados: TipoPedido[]
+  modosPagoHabilitados: ModoPago[]
+  costoEnvio: string | null
+  pedidoMinimoDelivery: string | null
+  zonaEntrega: string | null
+  modoPagoPorDefecto: ModoPago
+  tipoPedidoPorDefecto: TipoPedido
+  numeroAtendiente: string | null
+  modoAsignacionPedidos: ModoAsignacionPedidos
+  transferenciaAlias: string | null
+  transferenciaCbu: string | null
+  transferenciaTitular: string | null
+  transferenciaBanco: string | null
+  transferenciaNotas: string | null
+  linkMercadoPago: string | null
+  upsellActivo: boolean
+  upsellMaxSugerencias: number
+  turnosActivos: boolean
+  checkinObligatorio: boolean
+  pushInactividad3Dias: boolean
+  pushCumpleanos: boolean
+  pushPremioPorVencer: boolean
+  pushAUnoDelPremio: boolean
+  pushInactivos30Dias: boolean
+}
+
+/** Campos que acepta `PATCH /configuracion` (subconjunto del DTO; los Decimal van como number). */
+export interface ActualizarConfiguracionBody {
+  modoFidelizacion?: ModoFidelizacion | undefined
+  sellosParaPremio?: number | undefined
+  premioTexto?: string | undefined
+  sellosBienvenida?: number | undefined
+  limiteVisitasPorDia?: number | undefined
+  horasMinimasEntreVisitas?: number | undefined
+  requiereValidacionEmpleado?: boolean | undefined
+  permiteRegaloManual?: boolean | undefined
+  mostrarResenaPostVisita?: boolean | undefined
+  menuActivo?: boolean | undefined
+  tiposPedidoHabilitados?: TipoPedido[] | undefined
+  modosPagoHabilitados?: ModoPago[] | undefined
+  modoPagoPorDefecto?: ModoPago | undefined
+  tipoPedidoPorDefecto?: TipoPedido | undefined
+  modoAsignacionPedidos?: ModoAsignacionPedidos | undefined
+  numeroAtendiente?: string | undefined
+  transferenciaAlias?: string | undefined
+  transferenciaCbu?: string | undefined
+  transferenciaTitular?: string | undefined
+  transferenciaBanco?: string | undefined
+  linkMercadoPago?: string | undefined
+}
+
+/** `GET /negocios/qr-info`: los 2 QRs fijos del negocio (menu y club). */
+export interface QrInfo {
+  negocio: string
+  qrMenu: { url: string; etiqueta: string }
+  qrClub: { url: string; etiqueta: string }
+}
+
+/** `GET /google/estado`: estado de la integracion, sin tokens. */
+export interface GoogleEstado {
+  /** Si el backend tiene `GOOGLE_CLIENT_ID`/`SECRET`: sin eso el OAuth no se puede ni iniciar. */
+  configurado: boolean
+  conectado: boolean
+  oauthDisponible: boolean
+  integracion: {
+    googleAccountId: string | null
+    googleLocationId: string | null
+    googleAccountName: string | null
+    googleLocationName: string | null
+    estado: string
+    conectadoEn: string | null
+    expiryDate: string | null
+  } | null
+}
+
+/** Un item de `GET /google/ubicaciones` (el OAuth NO devuelve accountId/locationId: se eligen). */
+export interface UbicacionGoogle {
+  accountId: string
+  accountName: string | null
+  locationId: string
+  locationName: string | null
+  direccion: string | null
+}

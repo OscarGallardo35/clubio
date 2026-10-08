@@ -165,31 +165,6 @@ export class PedidosService {
     // Refinamiento 3: telefono E.164 (lanza 400 con mensaje claro)
     const telefono = normalizarTelefonoE164(dto.telefono);
 
-    // Un pedido ACTIVO por cliente (hibrido): con sesion se mira el `clienteId` —un telefono
-    // compartido (el fijo del local, el celular de la familia) no deberia bloquear a alguien
-    // logueado—; sin sesion, el telefono normalizado, que es la unica identidad del guest.
-    // Alcance NEGOCIO (no sucursal): "ya tenes un pedido" es del negocio, no de la sucursal.
-    const activo = await this.prisma.pedido.findFirst({
-      where: {
-        negocioId,
-        estado: { in: ESTADOS_ACTIVOS },
-        ...(clienteId ? { clienteId } : { telefono }),
-      },
-      orderBy: { creadoEn: 'desc' },
-      select: { id: true, linkToken: true, estado: true, linkExpiraEn: true },
-    });
-    if (activo) {
-      // El payload extra viaja al cliente: `linkToken` es lo que necesita para ofrecerle
-      // "ver mi pedido" / "cancelarlo" en el checkout.
-      throw new ConflictException({
-        message: 'Ya tenes un pedido activo. Cancelalo o espera a que termine.',
-        pedidoId: activo.id,
-        linkToken: activo.linkToken,
-        estado: activo.estado,
-        linkVigente: !linkVencido(activo.linkExpiraEn),
-      });
-    }
-
     // Refinamiento 6 + recalculo de precios desde la DB + override por sucursal.
     // `sucursalId` ya esta resuelto arriba: NO se vuelve a resolver.
     const { items, subtotal, costoEnvio, total } = await calcularTotales(
@@ -203,42 +178,82 @@ export class PedidosService {
       sucursalId, tipo: dto.tipo,
     });
 
-    // Link corto de 128 bits, con reintento ante colision del unique
+    // Un pedido ACTIVO por cliente (hibrido): con sesion se mira el `clienteId` —un telefono
+    // compartido (el fijo del local, el celular de la familia) no deberia bloquear a alguien
+    // logueado—; sin sesion, el telefono normalizado, que es la unica identidad del guest.
+    // Alcance NEGOCIO (no sucursal): "ya tenes un pedido" es del negocio, no de la sucursal.
+    const whereActivo = {
+      negocioId,
+      estado: { in: ESTADOS_ACTIVOS },
+      ...(clienteId ? { clienteId } : { telefono }),
+    };
+
+    // El chequeo y el create van en la MISMA transaccion, detras de un advisory lock por
+    // identidad: el read-then-write de antes no era atomico, asi que dos POST concurrentes del
+    // mismo telefono (doble tap, o el reintento del checkout) pasaban los dos y quedaban DOS
+    // pedidos activos. El 409 reporta solo el mas reciente: se cancelaba ese y el otro seguia
+    // bloqueando -> el loop "cancelar y reintentar" intermitente.
+    // Link corto de 128 bits, con reintento ante colision del unique.
     let pedido: Record<string, any> | null = null;
     let linkToken = '';
-    for (let intento = 0; intento < MAX_REINTENTOS_LINK && !pedido; intento++) {
-      linkToken = generarLinkToken();
-      try {
-        pedido = await this.prisma.pedido.create({
-          data: {
-            negocioId, sucursalId,
-            clienteId: clienteId ?? null,
-            nombreCliente: dto.nombreCliente.trim(),
-            telefono,
-            direccion: dto.direccion?.trim() ?? null,
-            origen: dto.origen?.trim() ?? null,
-            mesa: dto.mesa?.trim() ?? null,
-            tipo: dto.tipo,
-            modoPago: dto.modoPago,
-            items: items as unknown as Prisma.InputJsonValue,
-            subtotal: new Prisma.Decimal(subtotal),
-            costoEnvio: costoEnvio > 0 ? new Prisma.Decimal(costoEnvio) : null,
-            total: new Prisma.Decimal(total),
-            notas: dto.notas?.trim() ?? null,
-            estado: EstadoPedido.PENDIENTE,
-            empleadoAsignadoId: dest.empleadoAsignado,
-            encargadoId: dest.encargadoId,
-            numeroAtendiente: dest.numeroAtendiente,
-            linkToken,
-            linkExpiraEn: calcularExpiracion(),
-          },
-        }) as unknown as Record<string, any>;
-      } catch (e) {
-        const esColision = e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
-        if (!esColision || intento === MAX_REINTENTOS_LINK - 1) throw e;
-        this.logger.warn(`Colision de linkToken, reintento ${intento + 2}`);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${negocioId}:${clienteId ?? telefono}`}))`;
+
+      const activo = await tx.pedido.findFirst({
+        where: whereActivo,
+        orderBy: { creadoEn: 'desc' },
+        select: { id: true, linkToken: true, estado: true, linkExpiraEn: true },
+      });
+      if (activo) {
+        // Mas de uno = residuo de cuando el chequeo no era atomico (hoy el lock lo impide).
+        // Va en la respuesta para que la PWA pueda explicar por que el CTA vuelve.
+        const activos = await tx.pedido.count({ where: whereActivo });
+        // El payload extra viaja al cliente: `linkToken` es lo que necesita para ofrecerle
+        // "ver mi pedido" / "cancelarlo" en el checkout.
+        throw new ConflictException({
+          message: 'Ya tenes un pedido activo. Cancelalo o espera a que termine.',
+          pedidoId: activo.id,
+          linkToken: activo.linkToken,
+          estado: activo.estado,
+          linkVigente: !linkVencido(activo.linkExpiraEn),
+          activos,
+        });
       }
-    }
+
+      for (let intento = 0; intento < MAX_REINTENTOS_LINK && !pedido; intento++) {
+        linkToken = generarLinkToken();
+        try {
+          pedido = await tx.pedido.create({
+            data: {
+              negocioId, sucursalId,
+              clienteId: clienteId ?? null,
+              nombreCliente: dto.nombreCliente.trim(),
+              telefono,
+              direccion: dto.direccion?.trim() ?? null,
+              origen: dto.origen?.trim() ?? null,
+              mesa: dto.mesa?.trim() ?? null,
+              tipo: dto.tipo,
+              modoPago: dto.modoPago,
+              items: items as unknown as Prisma.InputJsonValue,
+              subtotal: new Prisma.Decimal(subtotal),
+              costoEnvio: costoEnvio > 0 ? new Prisma.Decimal(costoEnvio) : null,
+              total: new Prisma.Decimal(total),
+              notas: dto.notas?.trim() ?? null,
+              estado: EstadoPedido.PENDIENTE,
+              empleadoAsignadoId: dest.empleadoAsignado,
+              encargadoId: dest.encargadoId,
+              numeroAtendiente: dest.numeroAtendiente,
+              linkToken,
+              linkExpiraEn: calcularExpiracion(),
+            },
+          }) as unknown as Record<string, any>;
+        } catch (e) {
+          const esColision = e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
+          if (!esColision || intento === MAX_REINTENTOS_LINK - 1) throw e;
+          this.logger.warn(`Colision de linkToken, reintento ${intento + 2}`);
+        }
+      }
+    });
     if (!pedido) throw new BadRequestException('No se pudo generar el link del pedido');
 
     const urlCorta = construirUrlCorta(linkToken);

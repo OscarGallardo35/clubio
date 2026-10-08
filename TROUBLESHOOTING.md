@@ -2671,3 +2671,82 @@ Reglas:
 - Un lint que no corre en el build no existe: `tsc` y el navegador son los unicos que lo ven, y el
   navegador lo ve como pantalla rota.
 
+---
+
+## Un guard de unicidad que es read-then-write NO es un guard (pedido activo duplicado)
+
+**Un `findFirst` que prohibe algo y un `create` despues, sin transaccion, dejan pasar a los dos que
+llegan en paralelo. El sintoma no es un error: es un estado imposible que aparece despues (dos
+pedidos "activos" del mismo cliente) y una UI que da vueltas.**
+
+Sintoma reportado: *"cancelo el pedido activo, reintento, y me vuelve a pedir cancelar; despues si
+funciona"*. Intermitente = carrera.
+
+Causa: `POST /pedidos` chequeaba "un pedido activo por cliente" con `findFirst` y creaba despues.
+Dos POST concurrentes del mismo telefono (doble tap en "Enviar pedido", o el reintento del checkout
+disparado cuando el anterior no habia terminado) pasaban los DOS el chequeo y quedaban dos activos.
+El 409 devuelve UNO (el mas reciente, `orderBy: creadoEn desc`): el cliente cancela ese, el otro
+sigue bloqueando y el CTA vuelve a aparecer. Cuando cancela el segundo, "funciona".
+
+Diagnostico en la DB (mirar los datos, no la UI): contar activos por identidad.
+
+    SELECT "negocioId","telefono",count(*) FROM "Pedido"
+    WHERE "estado" IN ('PENDIENTE','CONFIRMADO','EN_PREPARACION','LISTO','ENVIADO')
+    GROUP BY 1,2 HAVING count(*) > 1;
+
+Dio 2 telefonos con 2 activos cada uno, con minutos de diferencia: la firma de la carrera.
+
+Fix: el chequeo y el `create` van en la MISMA transaccion, detras de un advisory lock por
+identidad, asi el segundo POST espera y ve el pedido del primero.
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${negocioId + ':' + (clienteId ?? telefono)}))`;
+      // recien aca adentro: el findFirst del activo + el create
+    });
+
+Y el 409 ahora informa `activos: N`, para que la UI pueda explicar por que el CTA vuelve.
+
+Reglas:
+
+- Un chequeo que decide una escritura tiene que ser atomico CON esa escritura (constraint, lock o
+  transaccion). "Lei y no habia" no alcanza: entre el `find` y el `create` entra cualquiera.
+- "Intermitente" es el sintoma de una carrera, no de la UI. Si el usuario dice que a veces si y a
+  veces no, buscar primero dos escrituras concurrentes.
+- Un lock por identidad (`pg_advisory_xact_lock` con el mismo texto) serializa por cliente sin
+  migrar el schema, y se suelta solo al cerrar la transaccion.
+- Si un guard puede tener VARIOS bloqueantes (residuo de antes), el error tiene que decir cuantos:
+  una UI que solo puede cancelar de a uno hace que el usuario viva el arreglo como un loop.
+- Cerrar los residuos es parte del fix: si no, el arreglo convive con los datos que el bug ya dejo
+  (aca los limpia el auto-cancelado de PENDIENTE abandonados).
+
+---
+
+## Una URL que el backend arma hacia OTRA app: verificar que la ruta exista en esa app
+
+**El mensaje de WhatsApp al local apuntaba a `STAFF_APP_URL/pedido/<linkToken>` (singular). La PWA
+Staff tiene `/pedidos/[id]` (plural, con id) y nunca tuvo `/pedido/`: el atendiente hacia click y
+comia un "This page could not be found".**
+
+No se ve desde el backend: el string se arma bien y viaja bien. El 404 aparece recien cuando un
+humano toca el link, en la otra app.
+
+Cuando el link tiene que abrir el pedido en el staff, va una ruta dedicada que resuelva el token:
+el mensaje solo tiene el `linkToken` (no el id), y el id es lo que la pantalla de detalle necesita.
+
+- `apps/pwa-staff/app/(staff)/validar-pedido/page.tsx`: server component que lee `?ref=` y se lo pasa
+  a un client component (mismo patron que `/validar` de visitas: `useSearchParams` obliga a un
+  `<Suspense>` para poder prerenderizar).
+- La pantalla resuelve el token con el GET publico (`/api/pedidos/publico/:linkToken`: el token ES
+  la credencial) y hace `router.replace('/pedidos/<id>')`. El detalle sigue siendo uno solo, con sus
+  acciones y su WS.
+- 410 (link vencido) es un estado propio: el pedido existe, asi que se lo manda a la lista de
+  activos en vez de ofrecerle reintentar.
+
+Reglas:
+
+- Toda URL que una app arma hacia otra se verifica contra las rutas REALES de la otra
+  (`find app -name page.tsx`), no contra la memoria de quien la escribio.
+- Cuando la otra app tiene que resolver un token y quedarse con el id, el token va en query
+  (`?ref=`) y no como segmento de path: el token no es la clave de la ruta.
+- Link vencido y link inexistente son estados distintos: el primero conserva el dato (buscalo en la
+  lista), el segundo no.

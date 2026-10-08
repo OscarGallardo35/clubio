@@ -21,9 +21,14 @@
     "@repo/ui": "workspace:*",
     "@repo/api-client": "workspace:*",
     "zod": "^3.0.0",
+    "zustand": "^5.0.15",
     "socket.io-client": "^4.7.0"
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
+    "eslint-plugin-react-hooks": "^4.6.2",
     "typescript": "^5.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",

@@ -2790,3 +2790,39 @@ Reglas:
 - Un cambio que toca DECORADORES de un controller (`@UseGuards`/`@Roles`) se verifica despues en
   vivo: un patch mal ubicado los deja aplicados al metodo equivocado y el typecheck no lo ve. Chequeo
   barato: `curl` sin token a la ruta que deberia estar protegida -> 401.
+
+---
+
+## Cambiar el formato de una URL que ya salio en un mensaje rompe los links ya enviados
+
+**Un link que ya viajo por WhatsApp no se puede corregir: vive en el telefono del cliente para
+siempre. Al cambiar la ruta que arma un mensaje hay que dejar entrando el formato VIEJO, con un
+redirect permanente al nuevo.**
+
+Caso real: el mensaje al local armaba `STAFF_APP_URL/pedido/<linkToken>` — una ruta que no existia
+(el staff comia un "This page could not be found"). El formato nuevo es
+`/validar-pedido?ref=<linkToken>`, pero los mensajes ya enviados seguian apuntando al viejo.
+
+Fix (compatibilidad en `next.config.js`, que corre antes del middleware y del render):
+
+    async redirects() {
+      return [{ source: '/pedido/:token', destination: '/validar-pedido?ref=:token', permanent: true }];
+    }
+
+**El detalle que costo un deploy: `permanentRedirect()` en una PAGINA no da un 308.** El layout de
+`(staff)` hace streaming, asi que la respuesta ya salio con 200 y Next degrada el redirect a
+client-side: deja `NEXT_REDIRECT;replace;/validar-pedido?ref=...;308` dentro del payload. En el
+browser anda (el JS navega), pero el status sigue siendo 200 y un `curl -I` no ve ningun 308.
+
+Reglas:
+
+- Antes de cambiar la ruta que arma un mensaje compartido (WhatsApp, mail, QR), dejar el formato
+  viejo con un redirect permanente. El link viejo no se puede reescribir.
+- El redirect de compatibilidad va en `next.config.js` (`redirects()`), no en una pagina con
+  `permanentRedirect()`: el de la pagina depende del render y se degrada a client-side cuando la
+  respuesta ya empezo a streamear (200 sin header). Y el del config corre ANTES del middleware, asi
+  que responde 308 incluso sin sesion (el login despues vuelve al destino nuevo con `volver`).
+- Verificar un redirect con `curl -D -` (o `-I`) mirando el status **y** el `Location`, y despues
+  `-L` para comprobar el destino final. Un 200 "que igual redirige en el browser" no es un 308.
+- Con varios cambios en vuelo, stagear explicito antes de commitear: un `git rm` ya deja su cambio
+  en el index, y es facil commitear solo eso y creer que el commit quedo completo.

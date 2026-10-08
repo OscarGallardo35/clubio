@@ -818,6 +818,43 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 
 ## TODO antes de la demo con un cliente real
 
+### Google Business (OAuth): setup completo
+
+El codigo esta listo y desplegado, pero la integracion **no es operable** hasta cargar esto.
+
+**1. Variables en Railway (servicio `backend`)**
+
+| Variable | Valor | Secreto |
+|---|---|---|
+| `ADMIN_URL` | `https://admin.clubio.lat` | no |
+| `GOOGLE_OAUTH_REDIRECT_URI` | `https://api.clubio.lat/api/google/callback` | no |
+| `GOOGLE_CLIENT_ID` | (el del proyecto de Google Cloud) | si |
+| `GOOGLE_CLIENT_SECRET` | (idem) | si |
+| `GOOGLE_GBP_API_URL` | opcional: override de la base de la Business Profile API | no |
+
+Sin `GOOGLE_CLIENT_ID`/`SECRET` el backend responde **400** en `GET /google/conectar`
+("Google OAuth no configurado") y la pantalla del admin deshabilita el boton. Sin
+`GOOGLE_OAUTH_REDIRECT_URI` el default es `http://localhost:3000/api/google/callback` y el
+consentimiento de Google falla con `redirect_uri_mismatch`. Sin `ADMIN_URL` el callback (que hoy
+cae en `http://localhost:3003`) no vuelve al panel.
+
+**2. En Google Cloud Console**
+
+- Habilitar la **Business Profile API**.
+- Credencial OAuth de tipo *Web application*.
+- *Authorized redirect URI*: exactamente `https://api.clubio.lat/api/google/callback` (tiene que
+  coincidir con `GOOGLE_OAUTH_REDIRECT_URI`, caracter por caracter).
+- Scope usado: `https://www.googleapis.com/auth/business.manage`.
+
+**3. Flujo**
+
+`GET /google/conectar` (DUENO/ENCARGADO + feature `google_business`) genera un `state` de un solo
+uso en Redis (TTL 5 min, ligado a negocio + empleado, anti-CSRF) y devuelve `{url}`; el admin
+redirige ahi. Google vuelve al **callback publico** (sin JWT: la seguridad la da el `state`), que
+guarda los tokens cifrados y redirige a `${ADMIN_URL}/configuracion/google?conectado=1`.
+El OAuth **no** devuelve `accountId`/`locationId`: hay que listar (`GET /google/ubicaciones`) y
+elegir (`POST /google/ubicacion`) antes de que se pueda sincronizar una sola resena.
+
 ### TODO: contrasena de Neon
 
 La contrasena del rol `admin_role` de Neon **ya fue rotada** (quedo expuesta en el historial de una

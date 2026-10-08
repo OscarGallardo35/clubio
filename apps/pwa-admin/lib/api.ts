@@ -1,5 +1,14 @@
 import { ApiClient, endpoints } from '@repo/api-client';
-import type { DuenoSesion, FeaturePlan, LoginDuenoRespuesta, NegocioAdmin } from '@/types/api';
+import type {
+  ActualizarItemCartaBody,
+  CartaAdminRespuesta,
+  CrearItemCartaBody,
+  DuenoSesion,
+  FeaturePlan,
+  ItemCartaAdmin,
+  LoginDuenoRespuesta,
+  NegocioAdmin,
+} from '@/types/api';
 
 /**
  * Cliente HTTP unico de la PWA Admin.
@@ -73,15 +82,28 @@ export const cartaApi = {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(filtros)) if (v !== undefined && v !== '') qs.set(k, String(v));
     const q = qs.toString();
-    return api.get<unknown>(`${endpoints.carta.admin}${q ? `?${q}` : ''}`);
+    return api.get<CartaAdminRespuesta>(`${endpoints.carta.admin}${q ? `?${q}` : ''}`);
   },
-  /** Prende/apaga un item del NEGOCIO (no hay override por sucursal en este endpoint). */
+
+  /**
+   * Prende/apaga un item del NEGOCIO (no hay override por sucursal en este endpoint): lo que se
+   * apaga aca desaparece de la carta de TODAS las sucursales.
+   */
   disponibilidad: (id: string, disponible: boolean) =>
-    api.patch<{ id: string; disponible: boolean }>(endpoints.carta.disponibilidad(id), { disponible }),
-  actualizar: (id: string, body: Record<string, unknown>) =>
-    api.patch<{ id: string }>(endpoints.carta.update(id), body),
-  crear: (body: Record<string, unknown>) => api.post<{ id: string }>(endpoints.carta.create, body),
+    api.patch<Pick<ItemCartaAdmin, 'id' | 'disponible'>>(endpoints.carta.disponibilidad(id), {
+      disponible,
+    }),
+
+  actualizar: (id: string, body: ActualizarItemCartaBody) =>
+    api.patch<ItemCartaAdmin>(endpoints.carta.update(id), body),
+
+  crear: (body: CrearItemCartaBody) => api.post<ItemCartaAdmin>(endpoints.carta.create, body),
+
   eliminar: (id: string) => api.delete<{ ok: boolean }>(endpoints.carta.delete(id)),
+
+  /** Batch: el backend actualiza el orden de todos los items en una sola transaccion. */
+  reordenar: (items: { id: string; orden: number }[]) =>
+    api.post<{ ok: boolean }>(endpoints.carta.reordenar, { items }),
 };
 
 export const configuracionApi = {

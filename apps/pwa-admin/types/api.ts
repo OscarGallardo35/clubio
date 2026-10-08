@@ -15,6 +15,8 @@ export interface NegocioAdmin {
   /** Mapa `feature -> { habilitada, limite }`: lo arma el backend para que el panel sepa que mostrar. */
   features?: Record<string, { habilitada: boolean; limite: number | null }>
   sucursalesActivas?: number
+  /** Configuracion del negocio (`menuActivo`, etc): viene del shape publico que arma `publicoPorSlug`. */
+  configuracion?: Record<string, unknown> | undefined
 }
 
 /**
@@ -49,3 +51,50 @@ export interface FeaturePlan {
   habilitada: boolean
   limite: number | null
 }
+
+/** Item de carta tal como lo devuelve `GET /carta/admin` (precios ya como number, no Decimal). */
+export interface ItemCartaAdmin {
+  id: string
+  categoria: string
+  nombre: string
+  descripcion: string | null
+  precio: number
+  fotoUrl: string | null
+  etiquetas: string[]
+  disponible: boolean
+  orden: number
+  /** Precio propio por sucursal: `null` = usa el del negocio. */
+  overridesSucursal?: {
+    sucursalId: string
+    precio: number | null
+    sucursal?: { id: string; nombre: string; slug: string }
+  }[]
+}
+
+export interface GrupoCarta {
+  categoria: string
+  items: ItemCartaAdmin[]
+}
+
+/** `GET /carta/admin` devuelve los items YA agrupados por categoria. */
+export interface CartaAdminRespuesta {
+  total: number
+  categorias: GrupoCarta[]
+}
+
+/** Campos de `POST /carta` (el de `PATCH /carta/:id` es el mismo, todo opcional). */
+export interface CrearItemCartaBody {
+  categoria: string
+  nombre: string
+  // Los opcionales van `?: T | undefined`: con `exactOptionalPropertyTypes` (tsconfig del repo),
+  // un campo declarado `?: T` NO acepta que le pases `undefined` explicito (regla de la casa).
+  descripcion?: string | undefined
+  precio: number
+  /** OJO: el backend lo llama `fotoUrl` (no `imagenUrl`). */
+  fotoUrl?: string | undefined
+  etiquetas?: string[] | undefined
+  disponible?: boolean | undefined
+  orden?: number | undefined
+}
+
+export type ActualizarItemCartaBody = Partial<CrearItemCartaBody>

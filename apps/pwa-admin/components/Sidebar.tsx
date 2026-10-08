@@ -17,7 +17,7 @@ import { useDueno } from '@/hooks/useDueno';
  */
 const SECCIONES = [
   { href: '/', etiqueta: 'Dashboard', listo: true },
-  { href: '/carta', etiqueta: 'Carta', listo: false },
+  { href: '/carta', etiqueta: 'Carta', listo: true },
   { href: '/personal', etiqueta: 'Personal', listo: false },
   { href: '/sucursales', etiqueta: 'Sucursales', listo: false },
   { href: '/configuracion', etiqueta: 'Configuracion', listo: false },

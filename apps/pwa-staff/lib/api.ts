@@ -85,6 +85,14 @@ export const pedidosApi = {
 
   obtener: (id: string) => api.get<PedidoStaff>(endpoints.pedidos.get(id)),
 
+  /**
+   * Resuelve un pedido por el `linkToken` del link que el cliente manda por WhatsApp.
+   * Usa el endpoint PUBLICO (el token es la credencial) y devuelve el id para entrar al
+   * detalle: lo consume `/validar-pedido?ref=`.
+   */
+  porLink: (linkToken: string) =>
+    api.get<{ id: string; estado: EstadoPedido; linkVigente: boolean }>(endpoints.pedidos.publico(linkToken)),
+
   /** `motivo` es obligatorio (min 10) solo cuando estado = RECHAZADO. */
   cambiarEstado: (id: string, body: { estado: EstadoPedido; motivo?: string }) =>
     api.patch<{ id: string; estado: EstadoPedido }>(endpoints.pedidos.estado(id), body),

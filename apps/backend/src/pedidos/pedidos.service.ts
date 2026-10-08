@@ -498,8 +498,8 @@ export class PedidosService {
    * Mensaje pre-armado de un pedido YA persistido (el que usa el detalle del staff).
    *
    * Devuelve `null` si el link no esta disponible: `construirUrlCorta` con un `linkToken`
-   * vacio produce `.../pedido/` sin token — peor que no ofrecer el boton. El scheduler borra
-   * el `linkToken` a los 7 dias de vencido, asi que el caso es real.
+   * vacio produce `.../validar-pedido?ref=` sin token — peor que no ofrecer el boton. El
+   * scheduler borra el `linkToken` a los 7 dias de vencido, asi que el caso es real.
    */
   private mensajeWhatsAppDelPedido(pedido: {
     nombreCliente: string; items: unknown; subtotal: unknown; costoEnvio: unknown;

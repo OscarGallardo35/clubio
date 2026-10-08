@@ -1,0 +1,10 @@
+{
+  "name": "Clubio Admin",
+  "short_name": "Admin",
+  "description": "Panel del dueno del local",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e11d48",
+  "icons": []
+}

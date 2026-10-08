@@ -8,10 +8,17 @@ import { buttonVariants } from './button'
 /**
  * AlertDialog (Radix).
  *
- * La diferencia con `Dialog` no es cosmetica: un AlertDialog **no se cierra** con Escape ni
- * con click afuera, y el foco arranca en el boton de cancelar. Es para confirmaciones
- * destructivas (borrar un empleado, dar de baja una sucursal), donde "lo cerre sin querer" no
- * puede ser una salida valida.
+ * La diferencia con `Dialog` no es cosmetica: un AlertDialog **no se cierra** con click afuera y el
+ * foco arranca en el boton de cancelar. Es para confirmaciones destructivas (borrar un empleado,
+ * dar de baja una sucursal), donde "lo cerre sin querer" no puede ser una salida valida.
+ *
+ * OJO — verificado en runtime, no supuesto: en Radix 1.1.23 el AlertDialog **SI se cierra con
+ * Escape**, aunque la doc diga lo contrario. `onEscapeKeyDown` + `preventDefault` NO alcanza:
+ * `DialogContent` compone su propio handler de Escape (`onClose()` + `preventDefault`) DESPUES del
+ * del consumidor, y `composeEventHandlers` no mira `event.defaultPrevented`. Para bloquearlo hay
+ * que interceptar el keydown en `window` (fase de captura) antes de que llegue al listener de
+ * `ownerDocument` que registra Radix. Pendiente de decision: cambia el comportamiento tambien para
+ * las otras PWAs que usan este componente.
  *
  * `AlertDialogAction` y `AlertDialogCancel` son botones con las variantes del `Button`: el
  * proyecto exporta `buttonVariants()` justamente para no necesitar `asChild` (que viene de
@@ -40,19 +47,11 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, onEscapeKeyDown, ...props }, ref) => (
+>(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Portal>
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
       ref={ref}
-      // El comentario de arriba tiene que ser CIERTO, no una intencion: verificado en runtime, el
-      // AlertDialog de Radix SI cierra con Escape (el click afuera ya lo bloquea el solo). Para una
-      // confirmacion destructiva "lo cerre sin querer" no puede ser una salida valida: la unica
-      // salida es un boton (y el foco arranca en Cancelar).
-      onEscapeKeyDown={(evento: KeyboardEvent) => {
-        evento.preventDefault();
-        onEscapeKeyDown?.(evento);
-      }}
       className={cn(
         'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2',
         'rounded-2xl border bg-background p-6 shadow-lg',

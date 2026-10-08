@@ -40,11 +40,19 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, ...props }, ref) => (
+>(({ className, onEscapeKeyDown, ...props }, ref) => (
   <AlertDialogPrimitive.Portal>
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
       ref={ref}
+      // El comentario de arriba tiene que ser CIERTO, no una intencion: verificado en runtime, el
+      // AlertDialog de Radix SI cierra con Escape (el click afuera ya lo bloquea el solo). Para una
+      // confirmacion destructiva "lo cerre sin querer" no puede ser una salida valida: la unica
+      // salida es un boton (y el foco arranca en Cancelar).
+      onEscapeKeyDown={(evento: KeyboardEvent) => {
+        evento.preventDefault();
+        onEscapeKeyDown?.(evento);
+      }}
       className={cn(
         'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2',
         'rounded-2xl border bg-background p-6 shadow-lg',

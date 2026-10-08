@@ -2964,6 +2964,69 @@ Reglas:
 - Cuando una sala recibe eventos de varios pedidos del mismo cliente, el handler filtra por
   `pedidoId` antes de tocar el store: sin ese guard, el evento de otro pedido pisa el actual.
 
+### Los enums de Postgres tambien tienen dueño: transferir las tablas NO alcanza
+
+`ALTER TABLE ... OWNER TO admin_role` arregla las tablas, pero un `ALTER TYPE ... ADD VALUE`
+(agregar un valor a un enum de Prisma) falla igual con
+`ERROR: must be owner of type "MetodoVisita" (SQLSTATE 42501)`. Son dos capas distintas de
+propiedad: `pg_tables.tableowner` y `pg_type.typowner`.
+
+Se verifica antes de culpar a Prisma:
+
+```sql
+SELECT count(*) FILTER (WHERE pg_catalog.pg_get_userbyid(typowner) = current_user) AS mios,
+       count(*) AS total
+FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+WHERE n.nspname = 'public' AND t.typtype = 'e';
+```
+
+Y se arregla una vez, para todo el schema (tablas, enums y secuencias) en un solo bloque:
+
+```sql
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT c.relname, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE n.nspname = 'public' AND c.relkind IN ('r','S')
+             AND pg_catalog.pg_get_userbyid(c.relowner) <> (SELECT oid FROM pg_roles WHERE rolname = 'admin_role')
+  LOOP
+    EXECUTE format('ALTER %s public.%I OWNER TO admin_role',
+                   CASE r.relkind WHEN 'S' THEN 'SEQUENCE' ELSE 'TABLE' END, r.relname);
+  END LOOP;
+  FOR r IN SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+           WHERE n.nspname = 'public' AND t.typtype = 'e'
+             AND pg_catalog.pg_get_userbyid(t.typowner) <> (SELECT oid FROM pg_roles WHERE rolname = 'admin_role')
+  LOOP
+    EXECUTE format('ALTER TYPE public.%I OWNER TO admin_role', r.typname);
+  END LOOP;
+END $$;
+```
+
+### En Neon, `prisma migrate dev` no se puede usar: no hay shadow database
+
+`prisma migrate dev` necesita crear una base temporal (shadow) para comparar y Neon responde
+`permission denied to create database` (el rol no puede crear bases). No es un problema del
+schema ni de la conexion: es una limitacion del proveedor.
+
+El camino que SI funciona, sin dejar de usar el flujo de migraciones:
+
+```
+prisma migrate diff --from-schema-datasource ./prisma/schema.prisma \
+                    --to-schema-datamodel ./prisma/schema.prisma --script
+```
+
+Se escribe ese SQL a mano en `prisma/migrations/<timestamp>_<nombre>/migration.sql` y se aplica con
+`prisma migrate deploy` (que ademas lo registra en `_prisma_migrations`, asi que despues
+`migrate deploy` es idempotente).
+
+Dos cuidados con este camino:
+- `migrate diff` compara contra el schema y **propone borrar lo que este en la base y no en el
+  schema** (por ejemplo la tabla `playing_with_neon` que deja Neon). Hay que leer el SQL y sacar lo
+  que no sea del cambio.
+- Si una migracion falla a mitad, queda registrada como fallida y **bloquea las siguientes**:
+  `prisma migrate resolve --rolled-back <nombre>` la destraba (no la aplica: la marca como no
+  aplicada para poder reintentarla).
+
 ## Verificacion de UI en el navegador (lecciones del admin)
 
 ### Un `preventDefault` no alcanza si la libreria compone su handler DESPUES del tuyo

@@ -56,6 +56,8 @@ enum MetodoVisita {
   QR_ESTATICO
   QR_DINAMICO
   MANUAL
+  /// Acreditada automaticamente al marcar un pedido como ENTREGADO (QR #1).
+  PEDIDO
 }
 
 // Canal de una campaña de marketing
@@ -266,6 +268,11 @@ model ConfiguracionClub {
   horasMinimasEntreVisitas    Int                   @default(4)
   puntosPorPeso               Decimal?              @db.Decimal(10, 2)
   premioPorPuntos             Int?
+  /// Tasa del programa por PUNTOS, en "puntos por cada $1000". Es la que se usa.
+  /// (`puntosPorPeso` quedo sin uso: deuda post-MVP, no borrar sin migracion.)
+  puntosPorMil                Int?                  @default(5)
+  /// Texto del premio de PUNTOS (el de sellos es `premioTexto`).
+  premioTextoPuntos           String?               @default("Postre gratis")
   requiereValidacionEmpleado  Boolean               @default(true)
   permiteRegaloManual         Boolean               @default(true)
   mensajeBienvenida           String?               @db.Text
@@ -457,6 +464,8 @@ model Cliente {
   puntosActuales        Int             @default(0)
   totalVisitas          Int             @default(0)
   premiosCanjeados      Int             @default(0)
+  /// Ultimo canje de premio (sellos o puntos). Null = nunca canjeo.
+  ultimoCanjeEn         DateTime?
   etiqueta              EtiquetaCliente @default(NUEVO)
   notasInternas         String?         @db.Text
   creadoEn              DateTime        @default(now())

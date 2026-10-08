@@ -9,10 +9,9 @@ import type { CookieOptions } from 'express';
  * hace falta SameSite=None + Secure; en desarrollo, Lax sin Secure para que
  * funcione sobre http://localhost.
  *
- * SIMETRIA DELIBERADA: la PWA Staff usa el mismo mecanismo que la PWA Cliente
- * (`empleado_token`, mismas banderas, mismo path). Un solo patron de auth en el
- * repo. El header Bearer queda como fallback (harness de integracion y llamadas
- * server-to-server).
+ * SIMETRIA DELIBERADA: las tres PWAs usan el mismo mecanismo (`cliente_token`, `empleado_token`,
+ * `dueno_token`: mismas banderas, mismo path). Un solo patron de auth en el repo. El header
+ * Bearer queda como fallback (harness de integracion y llamadas server-to-server).
  *
  * Se puede forzar con COOKIE_SAMESITE / COOKIE_SECURE / COOKIE_DOMAIN.
  */
@@ -20,6 +19,9 @@ export const COOKIE_CLIENTE = 'cliente_token';
 
 /** Cookie de sesion del STAFF (PWA Staff). Mismas banderas que la del cliente. */
 export const COOKIE_EMPLEADO = 'empleado_token';
+
+/** Cookie de sesion del DUENO (PWA Admin). Mismas banderas que las otras dos. */
+export const COOKIE_DUENO = 'dueno_token';
 
 export function esProduccion(): boolean {
   return (process.env.NODE_ENV ?? 'development') === 'production';
@@ -63,8 +65,10 @@ export function opcionesBorrarCookieSesion(): CookieOptions {
 // controllers) pero comparten una unica implementacion.
 export const opcionesCookieCliente = opcionesCookieSesion;
 export const opcionesCookieEmpleado = opcionesCookieSesion;
+export const opcionesCookieDueno = opcionesCookieSesion;
 export const opcionesBorrarCookieCliente = opcionesBorrarCookieSesion;
 export const opcionesBorrarCookieEmpleado = opcionesBorrarCookieSesion;
+export const opcionesBorrarCookieDueno = opcionesBorrarCookieSesion;
 
 /**
  * Lee una cookie del header crudo `Cookie: a=1; b=2`.

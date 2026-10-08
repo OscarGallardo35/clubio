@@ -4,6 +4,8 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { requireEnv } from '../../common/utils/env.util';
 
+import { COOKIE_DUENO, leerCookie } from '../../common/utils/cookie.util';
+
 export interface JwtDuenoPayload {
   sub: string;
   tipo: string;
@@ -17,7 +19,14 @@ export interface JwtDuenoPayload {
 export class JwtDuenoStrategy extends PassportStrategy(Strategy, 'jwt-dueno') {
   constructor(private readonly prisma: PrismaService) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // La cookie HttpOnly es la via principal de la PWA Admin (igual que cliente y staff):
+      // el navegador no tiene por que ver el token. El Bearer se mantiene para el harness de
+      // integracion y las llamadas server-to-server.
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        (req: { headers?: { cookie?: string } }) =>
+          leerCookie(req?.headers?.cookie, COOKIE_DUENO) || null,
+      ]),
       ignoreExpiration: false,
       // Secreto PROPIO del contexto dueno (distinto de empleado/cliente).
       secretOrKey: requireEnv('JWT_DUENO_SECRET', 'dev-dueno-solo-desarrollo'),

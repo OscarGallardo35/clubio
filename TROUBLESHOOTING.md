@@ -266,6 +266,24 @@ era "cookie vs token en memoria", y era FALSO (`createSocket` ya manda
 describen el comportamiento viejo siguen ahi y vuelven a mandar al lugar equivocado:
 antes de culpar al transporte, mirar quien rearma el payload.
 
+### Los tipos de WS compartidos: el backend los consume desde `dist`, no desde `src`
+
+`@repo/types` es el unico lugar donde viven los tipos de eventos WS (`VisitaAprobadaPayload`).
+El backend NO puede importarlos desde `src`: su tsconfig tiene `rootDir: ./src` y cualquier archivo
+fuera de ahi rompe el build con **TS6059** (5 errores, todos de este tipo). Por eso su `paths` apunta
+a `packages/types/dist` y el Dockerfile construye el paquete **antes** del backend:
+
+```
+RUN pnpm --filter backend db:generate
+RUN pnpm --filter @repo/types build
+RUN pnpm --filter backend build
+```
+
+Si el gateway queda sin tipar (o alguien saca ese `RUN`), un campo nuevo del payload se pierde
+silenciosamente: el `emit` acepta cualquier objeto y el cliente que rearma el evento no se entera.
+Nota de dev: un `tsc --noEmit` del backend en un clon limpio falla hasta que se corra el build de
+`@repo/types` (turbo lo hace solo con `dependsOn: ["^build"]`; a mano, primero el paquete).
+
 ### Rate limiting: limites configurables por env
 
 `POST /pedidos` limita a 10 por hora por IP y `GET /pedidos/publico/:linkToken` a

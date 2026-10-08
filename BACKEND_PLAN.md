@@ -283,13 +283,9 @@ Y por fase: el test unit/e2e que indica cada prompt.
   silenciosamente, verificar que los tramos que **rearman el objeto** (gateway -> mapeador del
   cliente -> handler -> reducer) usen el mismo tipo: el que tenia su copia es el que descarta
   (ver TROUBLESHOOTING.md, "el pasamanos del WS tiene 3 tramos").
-  **Deuda**: el gateway del backend TODAVIA no puede importarlo. Su `tsconfig` tiene
-  `rootDir: ./src` y el paquete vive fuera, asi que importarlo rompe el build con TS6059; y el
-  Dockerfile construye SOLO el backend (`RUN pnpm --filter backend build`, sin el `^build` de
-  turbo), asi que la ruta por `dist` tampoco esta disponible. **Fix**: construir `@repo/types`
-  tambien en el Dockerfile (`RUN pnpm --filter @repo/types build`) y apuntar el `paths` del backend
-  a su `dist` — asi resuelve el `.d.ts` y no hay conflicto de `rootDir`. Toca el Dockerfile
-  (config de prod): espera OK del dueño.
+  El backend tambien lo usa: su `paths` apunta a `packages/types/dist` (no a `src`: su `rootDir`
+  prohibe imports fuera de src, TS6059) y el Dockerfile construye `@repo/types` antes que el
+  backend. Ver TROUBLESHOOTING.md.
 
 ---
 

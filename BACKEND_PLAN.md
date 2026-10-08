@@ -411,6 +411,32 @@ override por sucursal, telefono E.164, cliente logueado vs guest, JSON de items 
 (listo para #2.7), validacion de items por negocio+disponibilidad, y rate limiting
 (10/hora en crear, 30/min en el link publico).
 
+### Post-cierre: auto-cancelado de PENDIENTE abandonados + link del staff
+
+Tres cosas que salieron del uso real y se cerraron despues de declarar el #2.6 cerrado:
+
+1. **Auto-cancelar los PENDIENTE abandonados** (>6 h sin que el local los confirme). `@Cron` horario
+   (`pedidos-auto-cancelar`) que corre `PedidosService.autoCancelarPendientesAbandonados(ahora,
+   soloNegocioId?)`: la logica vive en el SERVICIO (no en el `@Cron`) para poder invocarla con
+   cualquier fecha, y el endpoint `POST /pedidos/mantenimiento/auto-cancelar` (DUENO, y solo su
+   negocio) la dispara a mano — es lo que usa `test:auto-cancelar`. SOLO PENDIENTE: `CONFIRMADO` es
+   responsabilidad del local (ya lo acepto) y cancelar un ENVIADO en curso seria peor. Idempotente
+   (el `estado: PENDIENTE` va en el WHERE de cada `updateMany`, y sin candidatos no escribe) y emite
+   el mismo WS `pedido:cancelado` que el cancel manual. No se notifica al cliente: su link ya vencio
+   y no hay canal saliente (queda como enhancement).
+2. **El link del WhatsApp al staff apuntaba a `/pedido/<linkToken>`**, una ruta que NO existe en la
+   PWA Staff: el atendiente comia un 404 al hacer click. Ahora `construirUrlCorta` arma
+   `STAFF_APP_URL/validar-pedido?ref=<linkToken>` y hay una pantalla nueva en la Staff
+   (`app/(staff)/validar-pedido/page.tsx`) que resuelve el token con el GET publico y entra al
+   detalle (`/pedidos/<id>`), que es donde viven las acciones y el WS.
+3. **El chequeo de "un pedido activo por cliente" era read-then-write, sin atomicidad**: dos POST
+   concurrentes del mismo telefono (doble tap, o el reintento del checkout) pasaban los dos y
+   quedaban DOS activos; el 409 reporta uno solo, asi que cancelarlo dejaba al otro bloqueando (el
+   loop "cancelar y reintentar" intermitente que reporto el usuario). Ahora el chequeo y el `create`
+   van en la MISMA transaccion, detras de
+   `pg_advisory_xact_lock(hashtext(negocioId + ':' + (clienteId ?? telefono)))`, y el 409 devuelve
+   `activos: N`. Detalle y diagnostico en `TROUBLESHOOTING.md`.
+
 ### 2 bugs reales encontrados
 
 1. **`cancelarPedido` reusaba la tabla de transiciones del staff**, donde

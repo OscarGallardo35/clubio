@@ -157,10 +157,23 @@ export class PedidosController {
     return this.pedidos.obtenerPedido(emp.negocioId, id);
   }
 
+  /**
+   * Corre a mano la limpieza de PENDIENTE abandonados (la misma que el cron horario).
+   *
+   * Existe para poder verificarla/ejecutarla sin esperar a la hora en punto (la usa
+   * `test:auto-cancelar`) y como palanca de operacion si un pedido quedo colgado. Es idempotente,
+   * y corre SOLO el negocio del que llama (el cron si es global).
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO)
+  @Post('mantenimiento/auto-cancelar')
+  autoCancelarAbandonados(@CurrentEmpleado() emp: EmpleadoAuth) {
+    return this.pedidos.autoCancelarPendientesAbandonados(new Date(), emp.negocioId);
+  }
+
   // ==========================================================================
   // CLIENTE
   // ==========================================================================
-
   @UseGuards(JwtClienteGuard, TenantGuard)
   @Patch(':id/cancelar')
   cancelar(@CurrentCliente() cli: ClienteAuth, @Param('id') id: string) {

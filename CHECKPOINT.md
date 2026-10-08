@@ -70,13 +70,20 @@ aba2391 docs: regla de los tokens de color
   ignora. `withTenant()` no se llama nunca y `DATABASE_URL_ADMIN` no existe. **El aislamiento
   multi-tenant depende SOLO de los `where negocioId` del codigo.** TODO post-MVP: activar RLS de
   verdad (`app_user` + `withTenant` + `AdminPrismaService`). Detalle y evidencia en `BACKEND_PLAN.md`.
-- **TODO post-MVP (opcion C del bug del 409): auto-cancelar los pedidos activos cuyo link vencio
-  hace >X horas.** Hoy un PENDIENTE con el link vencido (>4 h) sigue contando como "activo": bloquea
-  pedidos nuevos y el unico camino es cancelarlo. NO se auto-cancela por ahora porque el pedido
-  puede estar vivo de verdad (el link vence a las 4 h, la cocina puede seguir con el pedido); un job
-  que cierre los PENDIENTE/CONFIRMADO con el link vencido hace N horas evita el "me quede trabado y
-  no puedo pedir". Ojo con ENVIADO: cancelar un delivery en curso solo seria peor.
-  Mientras tanto el 409 devuelve `linkVigente` y el checkout esconde "Ver mi pedido" si esta vencido.
+- ✅ **Auto-cancelado de PENDIENTE abandonados (opcion C del bug del 409): IMPLEMENTADO.** Un `@Cron`
+  horario (`pedidos-auto-cancelar`) cierra los PENDIENTE con `creadoEn` de mas de 6 h: `CANCELADO` +
+  `motivoRechazo: 'Auto-cancelado por inactividad'`, con el MISMO evento WS que el cancel manual
+  (`pedido:cancelado`) y auditoria `pedido.auto_cancelado`. SOLO PENDIENTE, a proposito: `CONFIRMADO`
+  significa que el local ya lo acepto (moverlo es su responsabilidad) y cancelar un ENVIADO en curso
+  seria peor. Idempotente: cada pedido se cierra con un `updateMany` que exige `estado: PENDIENTE` en
+  el WHERE, y sin candidatos no escribe ni loguea. El mismo metodo se corre a mano con
+  `POST /pedidos/mantenimiento/auto-cancelar` (DUENO, y solo su negocio) — es lo que usa
+  `test:auto-cancelar`. El 409 sigue devolviendo `linkVigente` y el checkout esconde "Ver mi pedido"
+  si esta vencido (link vencido != pedido muerto).
+  - **Deuda que queda (decision, no implementacion):** que hacer con un CONFIRMADO que quedo colgado
+    >12 h. Hoy NO se toca: cerrarlo tendria que salir de una decision de negocio, no de un cron.
+  - **Enhancement:** avisar al cliente ANTES de auto-cancelar (push/WhatsApp). Hoy se cancela en
+    silencio porque el link ya vencio y no hay canal saliente.
 - **Stubs exportados y sin implementar** en `@repo/ui`: `radio-group`, `checkbox`, `textarea`. El
   import compila y el fallo aparece en runtime. Se implementan en la Fase 0 (los necesita la Staff).
 - `endpoints` de `@repo/api-client` **no tiene**: `auth.meEmpleado`, `pedidos.list/estado/tomar/

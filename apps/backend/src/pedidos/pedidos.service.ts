@@ -29,6 +29,10 @@ import type { FiltrarPedidosDto } from './dto/filtrar-pedidos.dto';
 
 const MAX_REINTENTOS_LINK = 3;
 
+/** Horas que un pedido puede quedar en PENDIENTE sin que el local lo confirme antes de auto-cancelarlo. */
+const AUTO_CANCELAR_HORAS = 6;
+const MOTIVO_AUTO_CANCELADO = 'Auto-cancelado por inactividad';
+
 @Injectable()
 export class PedidosService {
   private readonly logger = new Logger('Pedidos');
@@ -641,6 +645,87 @@ export class PedidosService {
     });
 
     return { ok: true, pedidoId: pedido.id, estado: EstadoPedido.CANCELADO };
+  }
+
+  /**
+   * Auto-cancelar los pedidos PENDIENTE abandonados (mas de 6 h sin que el local los confirme).
+   *
+   * SOLO PENDIENTE. `CONFIRMADO` significa que el local ACEPTO el pedido: moverlo es su
+   * responsabilidad, y cancelar un delivery ENVIADO en curso seria peor que dejarlo. Por eso no
+   * se toca ningun otro estado.
+   *
+   * Se recorre negocio por negocio en vez de una query global: hoy RLS NO esta activo (ver la nota
+   * de RLS en BACKEND_PLAN), asi que el `negocioId` explicito en cada where es la unica barrera
+   * real de aislamiento — y ademas da el conteo por negocio para el log.
+   *
+   * Idempotente: cada pedido se cierra con un `updateMany` que exige `estado: PENDIENTE` en el
+   * WHERE (operacion atomica). Si el local lo confirmo un instante antes, `count` es 0 y no se
+   * emite ni se audita nada. Si no hay candidatos, no se escribe ni se loguea.
+   *
+   * La logica vive aca y no en el `@Cron` para poder invocarla con cualquier `ahora` sin esperar a
+   * la hora en punto (mismo criterio que los crons del #2.9).
+   *
+   * El cliente NO se notifica: no hay canal saliente y, si el pedido es viejo, su link ya vencio.
+   * Queda como enhancement (avisar por push/WhatsApp antes de cancelar).
+   */
+  async autoCancelarPendientesAbandonados(
+    ahora = new Date(),
+    soloNegocioId?: string,
+  ): Promise<{ negocios: number; cancelados: number }> {
+    const corte = new Date(ahora.getTime() - AUTO_CANCELAR_HORAS * 3_600_000);
+    const negocios = await this.prisma.negocio.findMany({
+      where: { activo: true, ...(soloNegocioId ? { id: soloNegocioId } : {}) },
+      select: { id: true },
+    });
+
+    let total = 0;
+    const porNegocio: Array<{ negocioId: string; cancelados: number }> = [];
+
+    for (const negocio of negocios) {
+      const candidatos = await this.prisma.pedido.findMany({
+        where: { negocioId: negocio.id, estado: EstadoPedido.PENDIENTE, creadoEn: { lt: corte } },
+        select: { id: true, sucursalId: true },
+      });
+      if (!candidatos.length) continue;
+
+      let cancelados = 0;
+      for (const candidato of candidatos) {
+        const r = await this.prisma.pedido.updateMany({
+          where: { id: candidato.id, negocioId: negocio.id, estado: EstadoPedido.PENDIENTE },
+          data: { estado: EstadoPedido.CANCELADO, motivoRechazo: MOTIVO_AUTO_CANCELADO },
+        });
+        if (r.count !== 1) continue; // el local lo movio en el medio: ya no es nuestro
+
+        cancelados += 1;
+        // Mismo evento que el cancel manual: el staff lo ve caer en vivo.
+        this.gateway.emitirCancelado(negocio.id, candidato.sucursalId, {
+          pedidoId: candidato.id,
+          estado: EstadoPedido.CANCELADO,
+          actualizadoEn: ahora.toISOString(),
+          motivo: MOTIVO_AUTO_CANCELADO,
+        });
+        await this.auditoria.registrar({
+          negocioId: negocio.id, accion: 'pedido.auto_cancelado',
+          detalle: {
+            pedidoId: candidato.id, desde: EstadoPedido.PENDIENTE,
+            motivo: MOTIVO_AUTO_CANCELADO, horasInactividad: AUTO_CANCELAR_HORAS,
+          },
+        });
+      }
+
+      if (cancelados) {
+        total += cancelados;
+        porNegocio.push({ negocioId: negocio.id, cancelados });
+      }
+    }
+
+    if (porNegocio.length) {
+      this.logger.log(
+        `Auto-cancelados ${total} PENDIENTE con mas de ${AUTO_CANCELAR_HORAS} h: ` +
+          porNegocio.map((n) => `${n.negocioId}=${n.cancelados}`).join(' '),
+      );
+    }
+    return { negocios: porNegocio.length, cancelados: total };
   }
 
   /**

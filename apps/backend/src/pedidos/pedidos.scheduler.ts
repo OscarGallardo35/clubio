@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { EstadoPedido } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
+import { PedidosService } from './pedidos.service';
 
 /**
  * Tareas de mantenimiento de pedidos. Cada una se aisla con try/catch para que
@@ -16,6 +17,7 @@ export class PedidosScheduler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly push: PushService,
+    private readonly pedidos: PedidosService,
   ) {}
 
   /** 4 AM: borra pedidos CANCELADO/RECHAZADO con mas de 30 dias. */
@@ -93,6 +95,22 @@ export class PedidosScheduler {
       }
     } catch (e) {
       this.logger.error(`recordarPedidosTrabados fallo: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * Cada hora: auto-cancela los pedidos PENDIENTE abandonados (> 6 h sin que el local confirme).
+   *
+   * La logica vive en el servicio (`autoCancelarPendientesAbandonados`) por el mismo criterio que
+   * los crons del #2.9: asi se puede invocar con un `ahora` cualquiera sin esperar a la hora en
+   * punto (lo hace `test:auto-cancelar` a traves del endpoint de mantenimiento).
+   */
+  @Cron('0 * * * *', { name: 'pedidos-auto-cancelar' })
+  async autoCancelarAbandonados() {
+    try {
+      await this.pedidos.autoCancelarPendientesAbandonados();
+    } catch (e) {
+      this.logger.error(`autoCancelarAbandonados fallo: ${(e as Error).message}`);
     }
   }
 }

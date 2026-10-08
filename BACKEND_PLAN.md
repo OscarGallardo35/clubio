@@ -803,6 +803,18 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
    `negocioSlug` (que la API exige) y tiene `email`/`fechaNacimiento` que
    `RegistrarClienteDto` no acepta. Hay que revisar los 21 esquemas contra
    `apps/backend/src/**/dto/*.dto.ts`.
+4. **AlertDialog: se cierra con Escape.** Radix compone su propio handler de Escape
+   (`DialogContent`: `onClose()` + `preventDefault()`) DESPUES del que pasa el consumidor, y
+   `composeEventHandlers` no consulta `event.defaultPrevented`, asi que un
+   `onEscapeKeyDown` con `preventDefault` no alcanza (verificado en el bundle desplegado).
+   El fix real es interceptar el keydown en `window` con fase de captura, antes del listener
+   que Radix registra en `ownerDocument`. **Afecta a las 3 PWAs** (`@repo/ui` es compartido):
+   queda diferido por decision, no por olvido. El docblock de `alert-dialog.tsx` ya lo dice.
+5. **Config por sucursal sin "horarios" ni "mensaje del local"**: el override que la PWA Admin
+   ofrece son los campos reales de `CAMPOS_OVERRIDE` (`premioTexto`, sellos, limites, envio,
+   transferencia...). Lo que se parezca a horarios de atencion o un mensaje propio del local
+   necesita **columna + migracion** y no se invento en el front. Si el dueno lo pide, es una
+   feature nueva (no un campo que falte mostrar).
 
 ## TODO antes de la demo con un cliente real
 

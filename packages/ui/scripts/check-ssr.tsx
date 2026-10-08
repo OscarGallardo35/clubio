@@ -155,5 +155,42 @@ chk(
   'listbox + navegacion con teclado los aporta Radix al montar',
 )
 
+// ---------------------------------------------------------------- DropdownMenu
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from '../src/index'
+
+console.log('\nDropdownMenu')
+const ddCerrado = renderToStaticMarkup(
+  <DropdownMenu>
+    <DropdownMenuTrigger>Acciones</DropdownMenuTrigger>
+    <DropdownMenuContent>
+      <DropdownMenuLabel>Empleado</DropdownMenuLabel>
+      <DropdownMenuItem>Editar</DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem>Dar de baja</DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>,
+)
+
+chk('DropdownMenu ES el Root de Radix', DropdownMenu === DropdownMenuPrimitive.Root)
+chk('DropdownMenuTrigger ES el Trigger de Radix', DropdownMenuTrigger === DropdownMenuPrimitive.Trigger)
+chk('DropdownMenuGroup ES el Group de Radix', DropdownMenuPrimitive.Group !== undefined)
+chk('el trigger es un <button type="button">', ddCerrado.includes('<button type="button"'))
+chk('el trigger declara aria-haspopup="menu"', ddCerrado.includes('aria-haspopup="menu"'), ddCerrado.trim())
+chk('cerrado: aria-expanded="false" + data-state="closed"',
+  ddCerrado.includes('aria-expanded="false"') && ddCerrado.includes('data-state="closed"'))
+chk(
+  'el menu (role="menu") NO viaja en el SSR (Radix usa Portal)',
+  !ddCerrado.includes('role="menu"'),
+  'menu/menuitem + flechas los aporta Radix al montar',
+)
+
 console.log(fallos === 0 ? '\nTOTAL OK' : `\nTOTAL FALLAS: ${fallos}`)
 proc?.exit?.(fallos === 0 ? 0 : 1)

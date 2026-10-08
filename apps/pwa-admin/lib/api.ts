@@ -10,6 +10,7 @@ import type {
   CrearEmpleadoBody,
   CrearItemCartaBody,
   CrearSucursalBody,
+  DashboardAdmin,
   DuenoSesion,
   EmpleadoAdmin,
   EmpleadosRespuesta,
@@ -19,11 +20,13 @@ import type {
   ItemOverrideAdmin,
   LoginDuenoRespuesta,
   NegocioAdmin,
+  PendientesRespuesta,
   QrInfo,
   ResultadoEliminarSucursal,
   SucursalAdmin,
   SucursalesRespuesta,
   UbicacionGoogle,
+  UsoMensualAdmin,
 } from '@/types/api';
 
 /**
@@ -233,7 +236,24 @@ export const planesApi = {
 };
 
 export const estadisticasApi = {
-  /** Cacheado en Redis del lado del backend. */
-  dashboard: () => api.get<Record<string, unknown>>(endpoints.estadisticas.dashboard),
+  /** Cacheado en Redis del lado del backend: `cacheado: true` cuando lo sirvio la cache. */
+  dashboard: () => api.get<DashboardAdmin>(endpoints.estadisticas.dashboard),
   topClientes: () => api.get<{ data: unknown[] }>(endpoints.estadisticas.topClientes),
+};
+
+export const usoApi = {
+  /** Uso del periodo (actual o el que se pida) con el limite de cada recurso. */
+  usoMensual: (periodo?: string) =>
+    api.get<UsoMensualAdmin>(
+      `${endpoints.planes.usoMensual}${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ''}`,
+    ),
+  miPlan: () => api.get<Record<string, unknown>>(endpoints.planes.miPlan),
+};
+
+export const visitasApi = {
+  /**
+   * La cola de solicitudes VIVAS (`usado: false` + sin vencer). No es lo mismo que
+   * `mis-aprobaciones`, que devuelve lo que el empleado ya aprobo hoy.
+   */
+  pendientes: () => api.get<PendientesRespuesta>(endpoints.visitas.pendientes),
 };

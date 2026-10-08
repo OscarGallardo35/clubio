@@ -316,6 +316,8 @@ export interface ActualizarConfiguracionBody {
   permiteRegaloManual?: boolean | undefined
   mostrarResenaPostVisita?: boolean | undefined
   menuActivo?: boolean | undefined
+  /** Estaba en el modelo pero no en el DTO: se agrego al backend y ahora la pantalla lo guarda. */
+  mensajeBienvenida?: string | undefined
   tiposPedidoHabilitados?: TipoPedido[] | undefined
   modosPagoHabilitados?: ModoPago[] | undefined
   modoPagoPorDefecto?: ModoPago | undefined
@@ -360,4 +362,75 @@ export interface UbicacionGoogle {
   locationId: string
   locationName: string | null
   direccion: string | null
+}
+
+// ------------------------------------------------------------------- Fase 2: Dashboard --
+
+/** KPIs del dia, ya con la comparacion contra ayer resuelta por el backend. */
+export interface KpisDashboard {
+  visitasHoy: number
+  visitasAyer: number
+  /** % contra ayer; `null` si ayer fue 0 y hoy no. */
+  variacionVisitas: number | null
+  clientesNuevosHoy: number
+  clientesNuevosAyer: number
+  variacionClientes: number | null
+  sellosOtorgadosHoy: number
+  sellosOtorgadosAyer: number
+  puntosOtorgadosHoy: number
+  /** Ya redondeado a 2 decimales por el backend. */
+  ticketPromedio: number
+  solicitudesPendientes: number
+}
+
+/**
+ * `GET /estadisticas/dashboard` (cacheado en Redis: `cacheado: true` cuando lo sirvio la cache).
+ * Los agregados los hace el backend con `groupBy` + un `date_trunc`: la pantalla solo dibuja.
+ */
+export interface DashboardAdmin {
+  fecha: string
+  kpis: KpisDashboard
+  porSucursal: Array<{ sucursalId: string; nombre: string; slug: string | null; visitas: number; sellos: number }>
+  clientesPorEtiqueta: Array<{ etiqueta: string; total: number }>
+  serie7Dias: Array<{ dia: string; visitas: number }>
+  cacheado?: boolean
+}
+
+/** Una fila de `GET /planes/uso-mensual` (el `UsoMensual` del periodo, con sus limites). */
+export interface UsoRecurso {
+  id: string
+  recurso: string
+  periodo: string
+  /** Consumo del periodo. */
+  cantidad: number
+  limiteBase: number
+  /** limiteBase + colchon de gracia (lo que se cobra por uso por encima). */
+  limiteGracia: number
+  estado: string
+  payPerUse: boolean
+  excedente: number
+}
+
+export interface UsoMensualAdmin {
+  periodo: string
+  data: UsoRecurso[]
+  total: number
+}
+
+/**
+ * `GET /visitas/pendientes`: la cola de solicitudes vivas.
+ * El alcance lo decide el backend (multi-sucursal o la propia), no la pantalla.
+ */
+export interface VisitaPendiente {
+  token: string
+  expiraEn: string
+  /** Lo calcula el backend: dos dispositivos con relojes distintos no muestran vencimientos distintos. */
+  segundosRestantes: number
+  cliente: { id: string; nombre: string | null; telefonoEnmascarado: string }
+  sucursal: { id: string; nombre: string; slug: string } | null
+}
+
+export interface PendientesRespuesta {
+  data: VisitaPendiente[]
+  total: number
 }

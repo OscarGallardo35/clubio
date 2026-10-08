@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { requireEnv } from '../utils/env.util';
-import { COOKIE_EMPLEADO, leerCookie } from '../utils/cookie.util';
+import { COOKIE_DUENO, COOKIE_EMPLEADO, leerCookie } from '../utils/cookie.util';
 
 /**
  * Guard de endpoints de GESTION del negocio.
@@ -35,6 +35,11 @@ export class StaffGuard implements CanActivate {
     const tokens: string[] = [];
     const tokenCookie = leerCookie(req.headers?.cookie, COOKIE_EMPLEADO);
     if (tokenCookie) tokens.push(tokenCookie);
+    // La PWA Admin manda su PROPIA cookie (`dueno_token`). El guard ya aceptaba el TOKEN de dueno
+    // por Bearer, pero no la cookie: los endpoints de gestion que la PWA Admin consume (carta,
+    // empleados, sucursales, configuracion...) le respondian 401 aunque tuviera sesion.
+    const tokenDueno = leerCookie(req.headers?.cookie, COOKIE_DUENO);
+    if (tokenDueno) tokens.push(tokenDueno);
     const [scheme, tokenHeader] = String(req.headers.authorization ?? '').split(' ');
     if (scheme === 'Bearer' && tokenHeader) tokens.push(tokenHeader);
     if (tokens.length === 0) {

@@ -218,6 +218,14 @@ export interface MiTarjetaRespuesta extends Omit<EstadoVisitaRespuesta, 'estado'
   cliente: ClienteBasico
   sucursal: SucursalPublica
   tarjetas: TarjetaSucursal[]
+  /**
+   * Modo del club. Con `HIBRIDO` la tarjeta muestra DOS barras (sellos + puntos); con los otros
+   * modos, una sola. Opcionales para no romper a los consumidores que ya tenian la respuesta vieja
+   * (un `fetch` cacheado, un fixture de test).
+   */
+  modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
+  premioPorPuntos?: number | undefined
+  premioTextoPuntos?: string | null | undefined
 }
 
 export interface VisitaHistorial {

@@ -231,10 +231,11 @@ const RESPUESTA = {
   sellosActuales: 1, sellosParaPremio: 10, premioTexto: 'Cafe gratis', premioDesbloqueado: false,
   faltantes: 9, porcentaje: 10, mostrarResena: true, puntosActuales: 250, totalVisitas: 1,
 } as unknown as MiTarjetaRespuesta
-igual('SOLO_PUNTOS -> PUNTOS', tipoDeTarjeta('SOLO_PUNTOS'), 'PUNTOS')
-igual('SOLO_VISITAS -> VISITAS', tipoDeTarjeta('SOLO_VISITAS'), 'VISITAS')
-igual('HIBRIDO cae a VISITAS (una sola tarjeta)', tipoDeTarjeta('HIBRIDO'), 'VISITAS')
-igual('sin modo tambien VISITAS', tipoDeTarjeta(undefined), 'VISITAS')
+igual('SOLO_PUNTOS -> solo puntos', tipoDeTarjeta('SOLO_PUNTOS'), { tipo: 'PUNTOS', mostrarSellos: false, mostrarPuntos: true })
+igual('SOLO_VISITAS -> solo visitas', tipoDeTarjeta('SOLO_VISITAS'), { tipo: 'VISITAS', mostrarSellos: true, mostrarPuntos: false })
+// HIBRIDO ya NO se colapsa: muestra las dos barras (sellos + puntos).
+igual('HIBRIDO -> las dos barras', tipoDeTarjeta('HIBRIDO'), { tipo: 'HIBRIDO', mostrarSellos: true, mostrarPuntos: true })
+igual('sin modo -> solo visitas', tipoDeTarjeta(undefined), { tipo: 'VISITAS', mostrarSellos: true, mostrarPuntos: false })
 const v = vistaDeTarjeta(RESPUESTA, 'SOLO_VISITAS')
 igual('toma sellos y meta del backend', [v.actuales, v.meta], [1, 10])
 igual('recalcula faltantes y porcentaje', [v.faltantes, v.porcentaje], [9, 10])

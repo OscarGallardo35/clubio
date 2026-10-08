@@ -4,7 +4,7 @@ dockerfilePath = "apps/pwa-admin/Dockerfile"
 
 [deploy]
 startCommand = "node apps/pwa-admin/server.js"
-healthcheckPath = "/"
+healthcheckPath = "/login"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5

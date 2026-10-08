@@ -209,6 +209,14 @@ export const endpoints = {
     update: (id: string) => `/api/sucursales/${id}`,
     principal: (id: string) => `/api/sucursales/${id}/principal`,
     delete: (id: string) => `/api/sucursales/${id}`,
+    /** Config propia de la sucursal: override crudo (con nulls), un POST por cambio. */
+    configuracion: (id: string) => `/api/sucursales/${id}/configuracion`,
+    configuracionEfectiva: (id: string) => `/api/sucursales/${id}/configuracion/efectiva`,
+    /** Los campos que una sucursal PUEDE overridear (lo dice el backend, no nosotros). */
+    configuracionCampos: (id: string) => `/api/sucursales/${id}/configuracion/campos`,
+    /** Precio/disponibilidad propios de esta sucursal para un item de carta. */
+    itemsOverride: (id: string) => `/api/sucursales/${id}/items-override`,
+    itemOverride: (id: string, itemCartaId: string) => `/api/sucursales/${id}/items-override/${itemCartaId}`,
   },
   empleados: {
     list: '/api/empleados',

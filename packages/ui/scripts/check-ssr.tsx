@@ -192,5 +192,64 @@ chk(
   'menu/menuitem + flechas los aporta Radix al montar',
 )
 
+// ---------------------------------------------------------------- DataTable
+import { DataTable, Checkbox } from '../src/index'
+import type { DataTableColumn } from '../src/index'
+
+console.log('\nDataTable')
+interface FilaPrueba {
+  id: string
+  nombre: string
+  sellos: number
+  activo: boolean
+  nota: string | null
+}
+const FILAS: FilaPrueba[] = [
+  { id: 'e1', nombre: 'Maria', sellos: 12, activo: true, nota: null },
+  { id: 'e2', nombre: 'Juan', sellos: 3, activo: false, nota: 'nuevo' },
+]
+const COLUMNAS: DataTableColumn<FilaPrueba>[] = [
+  { key: 'id', header: 'Sel.', render: (f) => <Checkbox aria-label={`Elegir ${f.nombre}`} /> },
+  { key: 'nombre', header: 'Nombre' },
+  { key: 'sellos', header: 'Sellos' },
+  { key: 'activo', header: 'Activo' },
+  { key: 'nota', header: 'Nota' },
+]
+
+const tabla = renderToStaticMarkup(<DataTable data={FILAS} columns={COLUMNAS} rowKey={(f) => f.id} />)
+const tablaVacia = renderToStaticMarkup(<DataTable data={[]} columns={COLUMNAS} />)
+const tablaVaciaCustom = renderToStaticMarkup(
+  <DataTable data={[]} columns={COLUMNAS} empty="Todavia no hay empleados." />,
+)
+const tablaCargando = renderToStaticMarkup(<DataTable data={[]} columns={COLUMNAS} loading />)
+const tablaClickeable = renderToStaticMarkup(
+  <DataTable data={FILAS} columns={COLUMNAS} onRowClick={() => undefined} />,
+)
+const ths = (tabla.match(/<th scope="col"/g) ?? []).length
+const trs = (tabla.match(/<tr/g) ?? []).length
+
+chk('es una <table> de verdad', tabla.includes('<table'))
+chk('un <th scope="col"> por columna', ths === COLUMNAS.length, `${ths} th`)
+chk('una fila por dato (+ la del header)', trs === FILAS.length + 1, `${trs} tr`)
+chk('la celda con `render` dibuja el Checkbox (input type=checkbox)', tabla.includes('type="checkbox"'))
+chk('la columna sin `render` muestra el valor crudo', tabla.includes('Maria') && tabla.includes('">12<'))
+chk('booleano -> Si / No', tabla.includes('>Si<') && tabla.includes('>No<'))
+chk('null (o vacio) -> em dash', tabla.includes('—'))
+chk('vacio: mensaje por defecto', tablaVacia.includes('No hay datos para mostrar.'))
+chk('vacio: el mensaje es configurable', tablaVaciaCustom.includes('Todavia no hay empleados.'))
+chk(
+  'loading: 4 filas de skeleton y ningun dato',
+  (tablaCargando.match(/data-carga/g) ?? []).length === 4 && !tablaCargando.includes('Maria'),
+  `${(tablaCargando.match(/data-carga/g) ?? []).length} filas`,
+)
+chk(
+  'onRowClick -> fila con role="button" y tabindex=0 (teclado)',
+  tablaClickeable.includes('role="button"') && tablaClickeable.includes('tabindex="0"'),
+)
+chk(
+  'sin onRowClick la fila NO es un boton',
+  !tabla.includes('role="button"') && !tabla.includes('cursor-pointer'),
+)
+
 console.log(fallos === 0 ? '\nTOTAL OK' : `\nTOTAL FALLAS: ${fallos}`)
 proc?.exit?.(fallos === 0 ? 0 : 1)

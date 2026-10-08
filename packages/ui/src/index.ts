@@ -25,6 +25,7 @@ export { Skeleton } from './components/skeleton'
 export { Separator } from './components/separator'
 export { Toaster, toast } from './components/toaster'
 export { DataTable } from './components/data-table'
+export type { DataTableColumn, DataTableProps } from './components/data-table'
 
 // Componentes personalizados para el SaaS
 export { TarjetaSellos } from './components/tarjeta-sellos'

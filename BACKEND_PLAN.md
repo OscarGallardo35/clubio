@@ -818,6 +818,19 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 
 ## TODO antes de la demo con un cliente real
 
+### Lista corta pre-deploy (estado al cerrar el MVP-Admin, 2026-10-08)
+
+| TODO | Estado | Quien |
+|---|---|---|
+| `ADMIN_URL` + `GOOGLE_OAUTH_REDIRECT_URI` en Railway | **HECHO** | — |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` en Railway + la redirect URI registrada en Google Cloud | Pendiente | usuario |
+| Limpiar los datos de prueba (`apps/backend/scripts/limpiar-datos-test.cjs`) | **HECHO** (y re-ejecutable: es idempotente) | — |
+| Verificacion de los harness contra prod (`test:pedido-activo`, `test:cancelar`, `test:auto-cancelar`, `test:ws-cancelado`) | **HECHO** (los 4 en `TOTAL OK`) | — |
+| Rotar la contrasena del rol `admin_role` de Neon | Pendiente — **decision del usuario: no por ahora** | usuario |
+| Rotar los secretos `JWT_*` / `ENCRYPTION_KEY` | **Decision del usuario: NO.** `ENCRYPTION_KEY` no se toca NUNCA: cifra los tokens de Google ya guardados y rotarla los invalida | — |
+| `AlertDialog` se cierra con Escape | Diferido (deuda tecnica #4 de este archivo) | — |
+| "Horarios" / "mensaje propio del local" por sucursal | Diferido (deuda tecnica #5) | — |
+
 ### Google Business (OAuth): setup completo
 
 El codigo esta listo y desplegado, pero la integracion **no es operable** hasta cargar esto.

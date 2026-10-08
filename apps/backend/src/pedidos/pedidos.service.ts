@@ -4,9 +4,10 @@ import {
   Logger, NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { EstadoPedido, Prisma } from '@prisma/client';
+import { EstadoPedido, Prisma, TipoVisita } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
+import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { PushService } from '../push/push.service';
@@ -47,6 +48,7 @@ export class PedidosService {
     private readonly jwt: JwtService,
     private readonly asignacion: AsignacionPedidosService,
     private readonly limites: LimitesService,
+    private readonly fidelizacion: FidelizacionService,
   ) {}
 
   /**
@@ -544,16 +546,38 @@ export class PedidosService {
     }
 
     const ahora = new Date();
-    const actualizado = await this.prisma.pedido.update({
-      where: { id: pedidoId },
-      data: {
-        estado: dto.estado,
-        ...(dto.estado === EstadoPedido.RECHAZADO ? { motivoRechazo: dto.motivo?.trim() ?? null } : {}),
-        ...(dto.estado === EstadoPedido.CONFIRMADO ? { confirmadoEn: ahora } : {}),
-        ...(dto.estado === EstadoPedido.ENVIADO ? { enviadoEn: ahora } : {}),
-        ...(dto.estado === EstadoPedido.ENTREGADO ? { entregadoEn: ahora } : {}),
-      },
-      include: { sucursal: { select: { id: true, nombre: true, slug: true } } },
+    const actualizado = await this.prisma.$transaction(async (tx) => {
+      const ped = await tx.pedido.update({
+        where: { id: pedidoId },
+        data: {
+          estado: dto.estado,
+          ...(dto.estado === EstadoPedido.RECHAZADO ? { motivoRechazo: dto.motivo?.trim() ?? null } : {}),
+          ...(dto.estado === EstadoPedido.CONFIRMADO ? { confirmadoEn: ahora } : {}),
+          ...(dto.estado === EstadoPedido.ENVIADO ? { enviadoEn: ahora } : {}),
+          ...(dto.estado === EstadoPedido.ENTREGADO ? { entregadoEn: ahora } : {}),
+        },
+        include: { sucursal: { select: { id: true, nombre: true, slug: true } } },
+      });
+
+      // El pedido digital (QR #1) es la OTRA puerta por la que entra el consumo: al pasar a
+      // ENTREGADO acredita sellos/puntos con el MISMO servicio que usa la visita aprobada.
+      // Solo si el pedido tiene cliente: un invitado (clienteId null) no tiene a quien acreditarle.
+      // ENTREGADO es terminal en la tabla de transiciones, asi que no se puede acreditar dos veces.
+      if (dto.estado === EstadoPedido.ENTREGADO && ped.clienteId && ped.sucursalId) {
+        await this.fidelizacion.acreditar(tx, {
+          negocioId,
+          clienteId: ped.clienteId,
+          sucursalId: ped.sucursalId,
+          empleadoId: ctx.empleadoId ?? null,
+          monto: Number(ped.total),
+          tipo: TipoVisita.VISITA,
+          metodo: 'PEDIDO',
+          origen: 'PEDIDO',
+          notas: null,
+        });
+      }
+
+      return ped;
     });
 
     await this.auditoria.registrar({

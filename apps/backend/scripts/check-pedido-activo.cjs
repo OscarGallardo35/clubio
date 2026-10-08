@@ -89,12 +89,18 @@ function buscarItem(obj, acc) {
       `status=${c.status} ${JSON.stringify(c.data?.message ?? '')}`);
     if (c.data?.linkToken) creados.add(c.data.linkToken);
 
-    // 4) RACE: dos POST del mismo telefono EN PARALELO. El chequeo de activo y el create van
-    // dentro de la misma transaccion, detras de un advisory lock por identidad, asi que uno
-    // crea y el otro choca. Sin el lock los dos pasaban el chequeo y quedaban DOS activos: el
-    // 409 reportaba uno solo, se cancelaba ese y el otro seguia bloqueando -> el loop
-    // "cancelar y reintentar" intermitente.
-    const [r1, r2] = await Promise.all([crear('Harness Race A'), crear('Harness Race B')]);
+    // 4) RACE: dos POST del mismo telefono EN PARALELO, y con un telefono SIN pedidos (si ya
+    // hubiera un activo, los dos darian 409 y no probariamos nada). El chequeo de activo y el
+    // create van dentro de la misma transaccion, detras de un advisory lock por identidad, asi
+    // que uno crea y el otro choca. Sin el lock los dos pasaban el chequeo y quedaban DOS
+    // activos: el 409 reportaba uno solo, se cancelaba ese y el otro seguia bloqueando -> el
+    // loop "cancelar y reintentar" intermitente.
+    const telRace = `+54911${String(Date.now() + 7).slice(-6)}${String(Math.floor(Math.random() * 900) + 100)}`;
+    const crearCon = (nombre, telefono) => req('POST', '/api/pedidos', {
+      tipo: 'TAKEAWAY', modoPago: 'EFECTIVO', nombreCliente: nombre, telefono,
+      items: [{ itemId: coca.id, cantidad: 1 }],
+    });
+    const [r1, r2] = await Promise.all([crearCon('Harness Race A', telRace), crearCon('Harness Race B', telRace)]);
     const ganadores = [r1, r2].filter((r) => r.status === 201);
     const choques = [r1, r2].filter((r) => r.status === 409);
     chk('dos POST simultaneos -> uno crea y el otro choca', ganadores.length === 1 && choques.length === 1,

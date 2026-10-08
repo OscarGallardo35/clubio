@@ -103,18 +103,19 @@ function buscarItem(obj, acc) {
     const confirmado = await crear('Harness AutoCancel confirmado', telUnico());
     chk('los 3 pedidos de prueba se crean (201)', [viejo, fresco, confirmado].every((r) => r.status === 201),
       `${viejo.status}/${fresco.status}/${confirmado.status}`);
-    for (const p of [viejo, fresco, confirmado]) if (p.data?.id) ids.push(p.data.id);
-    if (ids.length !== 3) { console.log('No pude crear los 3 pedidos; abandono.'); process.exit(2); }
+    for (const p of [viejo, fresco, confirmado]) if (p.data?.pedidoId) ids.push(p.data.pedidoId);
+    // `throw` y no `process.exit`: exit saltea el `finally` y deja los pedidos de prueba en la DB.
+    if (ids.length !== 3) throw new Error('No pude resolver los ids de los 3 pedidos; abandono.');
 
-    const confirma = await req('PATCH', `/api/pedidos/${confirmado.data.id}/estado`, { estado: 'CONFIRMADO' }, token);
+    const confirma = await req('PATCH', `/api/pedidos/${confirmado.data.pedidoId}/estado`, { estado: 'CONFIRMADO' }, token);
     chk('el 3ro pasa a CONFIRMADO (via API)', [200, 201].includes(confirma.status), `status=${confirma.status}`);
 
     // Retrocedo el reloj de los dos "viejos": uno PENDIENTE y uno CONFIRMADO.
     const hace7h = new Date(Date.now() - 7 * 3_600_000);
     await prisma.pedido.updateMany({
-      where: { id: { in: [viejo.data.id, confirmado.data.id] } }, data: { creadoEn: hace7h },
+      where: { id: { in: [viejo.data.pedidoId, confirmado.data.pedidoId] } }, data: { creadoEn: hace7h },
     });
-    const retro = await leer(viejo.data.id);
+    const retro = await leer(viejo.data.pedidoId);
     chk(`el PENDIENTE quedo con creadoEn de hace mas de ${HORAS} h`,
       Date.now() - retro.creadoEn.getTime() > HORAS * 3_600_000, `${retro.creadoEn.toISOString()}`);
 
@@ -124,20 +125,20 @@ function buscarItem(obj, acc) {
     chk('reporta al menos 1 cancelado', Number(r1.data?.cancelados) >= 1, JSON.stringify(r1.data));
 
     // (2) Quien se cancela y quien no.
-    const pViejo = await leer(viejo.data.id);
+    const pViejo = await leer(viejo.data.pedidoId);
     chk('PENDIENTE viejo -> CANCELADO', pViejo.estado === 'CANCELADO', `estado=${pViejo.estado}`);
     chk('con motivoRechazo explicativo', pViejo.motivoRechazo === MOTIVO, JSON.stringify(pViejo.motivoRechazo));
-    const pFresco = await leer(fresco.data.id);
+    const pFresco = await leer(fresco.data.pedidoId);
     chk('PENDIENTE fresco -> NO se toca', pFresco.estado === 'PENDIENTE', `estado=${pFresco.estado}`);
-    const pConf = await leer(confirmado.data.id);
+    const pConf = await leer(confirmado.data.pedidoId);
     chk('CONFIRMADO viejo -> NO se toca', pConf.estado === 'CONFIRMADO', `estado=${pConf.estado}`);
 
     // (3) Idempotencia.
     const r2 = await req('POST', '/api/pedidos/mantenimiento/auto-cancelar', {}, token);
     chk('segunda corrida -> 200/201', [200, 201].includes(r2.status), `status=${r2.status}`);
-    chk('el cancelado sigue CANCELADO', (await leer(viejo.data.id)).estado === 'CANCELADO');
-    chk('el fresco sigue PENDIENTE', (await leer(fresco.data.id)).estado === 'PENDIENTE');
-    chk('el CONFIRMADO sigue CONFIRMADO', (await leer(confirmado.data.id)).estado === 'CONFIRMADO');
+    chk('el cancelado sigue CANCELADO', (await leer(viejo.data.pedidoId)).estado === 'CANCELADO');
+    chk('el fresco sigue PENDIENTE', (await leer(fresco.data.pedidoId)).estado === 'PENDIENTE');
+    chk('el CONFIRMADO sigue CONFIRMADO', (await leer(confirmado.data.pedidoId)).estado === 'CONFIRMADO');
   } finally {
     if (ids.length) {
       const del = await prisma.pedido.deleteMany({ where: { id: { in: ids } } });

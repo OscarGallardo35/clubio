@@ -264,6 +264,13 @@ export class VisitasService {
       sellosCliente: resultado.sellosActuales,
       sellosTarjetaSucursal: resultado.sellosTarjetaSucursal,
       premioDesbloqueado: resultado.premioDesbloqueado,
+      // Lo que OTORGO esta visita + el saldo de puntos: la PWA Cliente los muestra en la
+      // confirmacion (con HIBRIDO son dos incrementos, no uno).
+      sellosOtorgados: resultado.sellos,
+      puntosOtorgados: resultado.puntos,
+      puntosActuales: resultado.puntosActuales,
+      modoFidelizacion: resultado.modoFidelizacion,
+      premioPuntosDesbloqueado: resultado.premioPuntosDesbloqueado,
       aprobadoEn: new Date().toISOString(),
     });
 
@@ -551,7 +558,11 @@ export class VisitasService {
       this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
       this.prisma.configuracionClub.findUnique({
         where: { negocioId },
-        select: { sellosParaPremio: true, premioTexto: true, mostrarResenaPostVisita: true },
+        select: {
+          sellosParaPremio: true, premioTexto: true, mostrarResenaPostVisita: true,
+          // Programa por puntos: el cliente necesita el modo y el premio para dibujar la 2da barra.
+          modoFidelizacion: true, premioPorPuntos: true, premioTextoPuntos: true,
+        },
       }),
       this.prisma.cliente.findFirst({
         where: { id: clienteId, eliminadoEn: null },
@@ -582,6 +593,10 @@ export class VisitasService {
       sellosTarjetaSucursal: tarjeta?.sellosActuales ?? 0,
       puntosActuales: porSucursal ? (tarjeta?.puntosActuales ?? 0) : (cliente?.puntosActuales ?? 0),
       totalVisitas: porSucursal ? (tarjeta?.totalVisitas ?? 0) : (cliente?.totalVisitas ?? 0),
+      // El modo y el premio por puntos: con HIBRIDO la PWA Cliente dibuja DOS barras.
+      modoFidelizacion: config?.modoFidelizacion ?? 'SOLO_VISITAS',
+      premioPorPuntos: config?.premioPorPuntos ?? 100,
+      premioTextoPuntos: config?.premioTextoPuntos ?? 'Postre gratis',
     };
   }
 

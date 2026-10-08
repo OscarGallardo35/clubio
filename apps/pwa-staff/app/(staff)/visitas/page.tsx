@@ -4,10 +4,10 @@ import * as React from 'react';
 import { Badge, Card, CardContent, Skeleton, Button, toast } from '@repo/ui';
 import { AccionesVisita } from '@/components/AccionesVisita';
 import { useVisitasSocket } from '@/hooks/useVisitasSocket';
-import { visitasApi } from '@/lib/api';
+import { configuracionApi, visitasApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import { formatearRestante, mergearPendiente, sinVencidos } from '@/lib/pendientes';
-import type { VisitaPendiente } from '@/types/api';
+import type { ConfiguracionEfectivaStaff, VisitaPendiente } from '@/types/api';
 
 /**
  * Cola de visitas pendientes (QR #2).
@@ -30,6 +30,25 @@ export default function VisitasPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [cargadoEn, setCargadoEn] = React.useState(() => Date.now());
   const [tick, setTick] = React.useState(0);
+  const [config, setConfig] = React.useState<ConfiguracionEfectivaStaff | null>(null);
+
+  // La config del club decide si la fila pide el monto del consumo y como se calcula el preview.
+  // Se pide UNA vez por pantalla (no por fila). Si falla, la fila degrada a "solo sello": es mejor
+  // aprobar sin monto que no poder aprobar.
+  React.useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      try {
+        const c = await configuracionApi.efectiva();
+        if (vivo) setConfig(c);
+      } catch {
+        // sin config se aprueba igual (1 sello)
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   const refetch = React.useCallback(async () => {
     try {
@@ -155,6 +174,7 @@ export default function VisitasPage() {
               <TarjetaPendiente
                 pendiente={p}
                 transcurrido={transcurrido}
+                config={config}
                 onResuelta={() => setLista((actual) => (actual ?? []).filter((x) => x.token !== p.token))}
               />
             </li>
@@ -168,10 +188,12 @@ export default function VisitasPage() {
 function TarjetaPendiente({
   pendiente,
   transcurrido,
+  config,
   onResuelta,
 }: {
   pendiente: VisitaPendiente;
   transcurrido: number;
+  config: ConfiguracionEfectivaStaff | null;
   onResuelta: () => void;
 }) {
   const restante = Math.max(0, Math.floor(pendiente.segundosRestantes - transcurrido));
@@ -194,7 +216,12 @@ function TarjetaPendiente({
           {pendiente.sucursal?.nombre ?? 'Sin sucursal'} · pedido hace un momento
         </p>
 
-        <AccionesVisita token={pendiente.token} onAprobada={onResuelta} onRechazada={onResuelta} />
+        <AccionesVisita
+          token={pendiente.token}
+          config={config}
+          onAprobada={onResuelta}
+          onRechazada={onResuelta}
+        />
       </CardContent>
     </Card>
   );

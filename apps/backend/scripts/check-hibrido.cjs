@@ -120,6 +120,21 @@ async function saldos(clienteId, sucursalId) {
     select: { modoFidelizacion: true, puntosPorMil: true, premioPorPuntos: true },
   });
   const duenoToken = firmarDueno(dueno.id, negocio.id);
+
+  // Limpieza PREVIA: si una corrida anterior murio a mitad (un `process.exit` no ejecuta el
+  // `finally`), el cliente de prueba quedo vivo y el unique (negocioId, telefono) rompe esta.
+  const previos = await prisma.cliente.findMany({
+    where: { negocioId: negocio.id, nombre: CLIENTE_PRUEBA }, select: { id: true },
+  });
+  for (const previo of previos) {
+    await prisma.pedido.deleteMany({ where: { clienteId: previo.id } }).catch(() => undefined);
+    await prisma.visita.deleteMany({ where: { clienteId: previo.id } }).catch(() => undefined);
+    await prisma.tarjetaClienteSucursal.deleteMany({ where: { clienteId: previo.id } }).catch(() => undefined);
+    await prisma.tokenValidacion.deleteMany({ where: { clienteId: previo.id } }).catch(() => undefined);
+    await prisma.cliente.deleteMany({ where: { id: previo.id } }).catch(() => undefined);
+  }
+  if (previos.length) console.log(`(limpie ${previos.length} cliente(s) de una corrida anterior)\n`);
+
   const cliente = await prisma.cliente.create({
     data: {
       negocioId: negocio.id, nombre: CLIENTE_PRUEBA, telefono: TEL_PRUEBA,
@@ -136,7 +151,25 @@ async function saldos(clienteId, sucursalId) {
     const r = await req('PATCH', '/api/configuracion', {
       modoFidelizacion: modo, puntosPorMil, premioPorPuntos,
     }, duenoToken);
-    if (r.status !== 200) { console.log(`  no pude configurar (${modo}): ${r.status} ${JSON.stringify(r.data)}`); process.exit(2); }
+    // `throw`, no `process.exit`: un exit aca se saltea el `finally` y deja el cliente de prueba
+    // vivo en la base (y la proxima corrida choca con el unique del telefono).
+    if (r.status !== 200) {
+      throw new Error(`no pude configurar (${modo}): ${r.status} ${JSON.stringify(r.data)}`);
+    }
+  }
+
+  /**
+   * Lleva un pedido por la maquina de estados REAL hasta ENTREGADO.
+   * OJO: `CONFIRMADO -> ENTREGADO` no existe (da 400): hay que pasar por EN_PREPARACION y LISTO.
+   */
+  async function llevarAEntregado(pedidoId) {
+    const pasos = ['CONFIRMADO', 'EN_PREPARACION', 'LISTO', 'ENTREGADO'];
+    const resultados = [];
+    for (const estado of pasos) {
+      const r = await req('PATCH', `/api/pedidos/${pedidoId}/estado`, { estado }, duenoToken);
+      resultados.push({ estado, status: r.status, message: r.data?.message ?? '' });
+    }
+    return resultados;
   }
 
   /** Aprueba una visita con un monto y devuelve el body de la respuesta. */
@@ -203,10 +236,11 @@ async function saldos(clienteId, sucursalId) {
         select: { id: true },
       });
       antes = await saldos(cliente.id, sucursal.id);
-      const conf = await req('PATCH', `/api/pedidos/${pedidoConCliente.id}/estado`, { estado: 'CONFIRMADO' }, duenoToken);
-      const entreg = await req('PATCH', `/api/pedidos/${pedidoConCliente.id}/estado`, { estado: 'ENTREGADO' }, duenoToken);
+      const pasos = await llevarAEntregado(pedidoConCliente.id);
       desp = await saldos(cliente.id, sucursal.id);
-      chk('el pedido llega a ENTREGADO', conf.status === 200 && entreg.status === 200, `conf=${conf.status} entregado=${entreg.status}`);
+      const todosOk = pasos.every((p) => p.status === 200);
+      chk('el pedido llega a ENTREGADO (por la maquina real)', todosOk,
+        pasos.map((p) => `${p.estado}=${p.status}${p.status !== 200 ? ' ' + p.message : ''}`).join(' '));
       chk('acredita 1 sello', desp.sellos - antes.sellos === 1, `sellos ${antes.sellos} -> ${desp.sellos}`);
       chk('acredita 34 puntos por el total', desp.puntos - antes.puntos === 34, `puntos ${antes.puntos} -> ${desp.puntos}`);
       const visitaPedido = await prisma.visita.findFirst({
@@ -226,10 +260,10 @@ async function saldos(clienteId, sucursalId) {
         select: { id: true },
       });
       antes = await saldos(cliente.id, sucursal.id);
-      await req('PATCH', `/api/pedidos/${pedidoGuest.id}/estado`, { estado: 'CONFIRMADO' }, duenoToken);
-      const g = await req('PATCH', `/api/pedidos/${pedidoGuest.id}/estado`, { estado: 'ENTREGADO' }, duenoToken);
+      const g = await llevarAEntregado(pedidoGuest.id);
       desp = await saldos(cliente.id, sucursal.id);
-      chk('el pedido de invitado se entrega igual', g.status === 200, `status=${g.status}`);
+      chk('el pedido de invitado se entrega igual', g.every((p) => p.status === 200),
+        g.map((p) => `${p.estado}=${p.status}`).join(' '));
       chk('no acredita nada (no hay a quien)', desp.sellos === antes.sellos && desp.puntos === antes.puntos,
         `sellos ${antes.sellos}->${desp.sellos} puntos ${antes.puntos}->${desp.puntos}`);
     }

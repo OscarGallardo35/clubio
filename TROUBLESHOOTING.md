@@ -214,6 +214,37 @@ Encadenar las salas (`server.to(a).to(b).emit(...)`) las une y Socket.IO entrega
 **una sola** copia por socket. Este bug estuvo en `/visitas` desde el Lote 4 y se
 corrigio junto con `/pedidos`.
 
+### Socket.IO: `operador.to(sala)` NO muta — devuelve un operador NUEVO
+
+`server.to(a)` devuelve un operador nuevo; **no** modifica el que ya se tenia. Este
+codigo tiraba la segunda sala a la basura, sin ningun error:
+
+    const destino = server.to(salaPedido);
+    if (clienteId) destino.to(salaCliente);   // el resultado se descarta
+    destino.emit('pedido:estado-actualizado', payload);
+
+El cliente recibia el evento **solo** si ademas estaba en `pedido:{id}`. Por eso el
+cancel del staff (que pasa por `cambiarEstado -> emitirEstado`) no le llegaba. Es
+la misma familia de la regla de arriba: hay que REASIGNAR
+(`destino = destino.to(salaCliente)`) o encadenar las salas en una sola expresion.
+
+Evidencia: `pedidos.gateway.ts` (`emitirEstado` / `emitirCancelado`) + el harness
+`test:ws-cancelado` (antes del fix: 3 aserciones en FALLA).
+
+### Un handler de WS no sirve si el socket nunca se ABRE: verificar la CONDICION de apertura
+
+Probar el gate del evento no alcanza. `Seguimiento.tsx` abria el socket con
+`if (!token)`, y el token vive en memoria: solo lo setea el login por QR de visita.
+Con sesion por cookie (carga en frio o F5) el cliente quedaba SIEMPRE en polling y
+el socket no se abria nunca — con el handler del evento perfecto y el backend
+emitiendo bien.
+
+Al verificar un flujo por WebSocket hay que probar las dos cosas: (a) que el evento
+se emite a la sala correcta y (b) que el socket del receptor esta ABIERTO y
+suscrito. El sintoma de (b) ("el toast llega igual") se ve igual que un bug de
+backend y manda a buscar en el lugar equivocado. Evidencia: `Seguimiento.tsx` +
+harness `test:ws-cancelado`, que imprime las salas del socket conectado.
+
 ### Rate limiting: limites configurables por env
 
 `POST /pedidos` limita a 10 por hora por IP y `GET /pedidos/publico/:linkToken` a

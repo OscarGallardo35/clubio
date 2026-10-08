@@ -2750,3 +2750,43 @@ Reglas:
   (`?ref=`) y no como segmento de path: el token no es la clave de la ruta.
 - Link vencido y link inexistente son estados distintos: el primero conserva el dato (buscalo en la
   lista), el segundo no.
+
+---
+
+## Un endpoint PUBLICO no se puede llamar desde la PWA Staff: no manda `X-Tenant-Slug`
+
+**El api-client de la PWA Staff omite `X-Tenant-Slug` a proposito ("negocio y sucursal salen del
+token"): los endpoints de staff resuelven el negocio con el `negocioId` del JWT. Si una pantalla del
+staff llama a un endpoint PUBLICO (que resuelve el negocio por slug), la request falla con
+`Falta el tenant (X-Tenant-Slug) para esta operacion` — y el usuario ve un error de negocio
+("Este link ya no sirve") por un problema de la request.**
+
+Caso real: `/validar-pedido?ref=<linkToken>` (la pantalla que abre el link que el mensaje manda al
+local) resolvia el token con `GET /pedidos/publico/:linkToken`. Typecheck, build y deploy pasaron; el
+fallo aparecio recien al abrir la URL en el navegador con una sesion real (el titulo decia "Este link
+ya no sirve" y el detalle decia la verdad: "Falta el tenant").
+
+Fix: endpoint de STAFF que resuelve por token con el negocio del token.
+
+    @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+    @Get('por-link/:linkToken')
+    porLink(@CurrentEmpleado() emp: EmpleadoAuth, @Param('linkToken') linkToken: string) {
+      return this.pedidos.obtenerPedidoPorLink(emp.negocioId, linkToken);
+    }
+
+Y es mas seguro que usar el publico: el publico deja que cualquiera con el token lea el pedido; el de
+staff acota la busqueda a SU local (un token de otro negocio no sirve).
+
+Reglas:
+
+- Antes de llamar un endpoint desde OTRA app del monorepo, verificar que esa app mande lo que el
+  endpoint necesita (header, cookie, tenant). Que el backend lo marque `@Public()` no implica que
+  cualquier front pueda llamarlo.
+- Una pantalla que se abre por LINK (arranque en frio, sin la SPA ya cargada) no puede depender de
+  nada que la app hidrate despues: por eso el endpoint de staff (autenticado por cookie) y no uno que
+  dependa de un header que arma la app.
+- El error que ve el usuario puede mentir sobre la causa: el titulo era "Este link ya no sirve" y la
+  causa real estaba en el detalle ("Falta el tenant"). Al diagnosticar, leer el mensaje COMPLETO.
+- Un cambio que toca DECORADORES de un controller (`@UseGuards`/`@Roles`) se verifica despues en
+  vivo: un patch mal ubicado los deja aplicados al metodo equivocado y el typecheck no lo ve. Chequeo
+  barato: `curl` sin token a la ruta que deberia estar protegida -> 401.

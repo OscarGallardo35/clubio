@@ -1,6 +1,14 @@
 import { io, Socket } from 'socket.io-client'
 
 /**
+ * Tipos de eventos WS. Viven en `@repo/types` (paquete puro) y se re-exportan aca
+ * para que las PWAs los importen junto al resto del cliente. NO se declaran en este
+ * paquete porque el backend tambien los necesita y `@repo/api-client` arrastra
+ * `socket.io-client` al build de Nest.
+ */
+export type { VisitaAprobadaPayload } from '@repo/types'
+
+/**
  * Cliente HTTP tipado + factory de sockets, compartido por las 3 PWAs.
  *
  * Notas de integracion con el backend real:

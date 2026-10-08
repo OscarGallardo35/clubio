@@ -1,8 +1,9 @@
 import { ApiError, createSocket, endpoints } from '@repo/api-client'
+import type { VisitaAprobadaPayload } from '@repo/api-client'
 import type { Socket } from 'socket.io-client'
 import type { ClienteMe, EstadoVisitaRespuesta, SolicitarVisitaRespuesta } from '@/types/api'
 import { api, clienteApi, WS_URL } from './api'
-import type { ClasificacionRechazo, EstadoVisitaToken } from './visita-maquina'
+import type { ClasificacionRechazo, EstadoVisitaToken, SellosTrasAprobar } from './visita-maquina'
 import { clasificarRechazoDeSolicitud } from './visita-maquina'
 
 /**
@@ -152,18 +153,11 @@ export interface ManejadoresWs {
   onReconectando?: () => void
   onDesconectado?: (motivo: string) => void
   /**
-   * Lo que otorgo la visita + el saldo. Los 4 ultimos son opcionales (un backend de una version
-   * vieja no los manda) pero HAY QUE PASARLOS: el handler que rearma el payload sin ellos los
-   * descarta en silencio, que es justo lo que dejo la confirmacion sin los incrementos.
+   * Lo que otorgo la visita + el saldo. El tipo sale de `VisitaAprobadaPayload` (@repo/types /
+   * @repo/api-client), el MISMO que usa el gateway para emitir: si un campo nuevo no llega al
+   * estado, el sospechoso es este tramo, no el tipo.
    */
-  onAprobada?: (p: {
-    sellosActuales: number
-    premioDesbloqueado: boolean
-    sellosOtorgados?: number
-    puntosOtorgados?: number
-    puntosActuales?: number
-    modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
-  }) => void
+  onAprobada?: (p: SellosTrasAprobar) => void
   onRechazada?: (p: { motivo: string }) => void
 }
 
@@ -183,14 +177,9 @@ export function crearSocketVisita(manejadores: ManejadoresWs, token?: string | n
   }
 
   // El gateway reemite con el nombre de la sala; el payload es la fuente de verdad.
-  socket.on('visita:aprobada', (p: {
-    sellosActuales?: number
-    premioDesbloqueado?: boolean
-    sellosOtorgados?: number
-    puntosOtorgados?: number
-    puntosActuales?: number
-    modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
-  }) => {
+  // El cable manda el payload completo, pero se tipa Partial: un backend de una version vieja no
+  // trae los campos nuevos (son opcionales) y el mapeo de abajo los normaliza sin romperse.
+  socket.on('visita:aprobada', (p: Partial<VisitaAprobadaPayload>) => {
     manejadores.onAprobada?.({
       sellosActuales: typeof p?.sellosActuales === 'number' ? p.sellosActuales : 0,
       premioDesbloqueado: p?.premioDesbloqueado === true,

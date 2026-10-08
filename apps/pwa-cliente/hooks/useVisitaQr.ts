@@ -5,7 +5,7 @@ import { useBrandingCtx } from '@/components/BrandingProvider'
 import { useClienteStore } from '@/stores/clienteStore'
 import { configurarNegocioDeVisita, useVisitaStore } from '@/stores/visitaStore'
 import { consultarEstado, crearSocketVisita, registrarCliente, sesionActual, solicitarVisita } from '@/lib/visita-service'
-import { esFinal, puedeReintentar, textoDelMotivo } from '@/lib/visita-maquina'
+import { esFinal, eventoDeAprobacion, puedeReintentar, textoDelMotivo } from '@/lib/visita-maquina'
 import type { EstadoFlujo } from '@/lib/visita-maquina'
 import type { EstadoWs } from '@/stores/visitaStore'
 import { leerParametrosQr } from '@/lib/tenant'
@@ -167,17 +167,9 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
         },
         onAprobada: (p) => {
           if (cerrado) return
-          // Pasamanos COMPLETO: el reducer ya sabe guardar los incrementos, pero si este handler
-          // rearma el payload sin ellos los pierde y la confirmacion cae al texto generico.
-          despachar({
-            tipo: 'WS_APROBADA',
-            sellosActuales: p.sellosActuales,
-            premioDesbloqueado: p.premioDesbloqueado,
-            ...(p.sellosOtorgados !== undefined ? { sellosOtorgados: p.sellosOtorgados } : {}),
-            ...(p.puntosOtorgados !== undefined ? { puntosOtorgados: p.puntosOtorgados } : {}),
-            ...(p.puntosActuales !== undefined ? { puntosActuales: p.puntosActuales } : {}),
-            ...(p.modoFidelizacion !== undefined ? { modoFidelizacion: p.modoFidelizacion } : {}),
-          })
+          // El pasamanos NO conoce la lista de campos: `eventoDeAprobacion` arma el evento desde el
+          // payload tipado, asi que un campo nuevo del WS llega al reducer sin tocar este hook.
+          despachar(eventoDeAprobacion(p))
         },
         onRechazada: (p) => {
           if (cerrado) return

@@ -49,18 +49,33 @@ export function resumenDeAprobacion(sellos: SellosTrasAprobar | null): string | 
   return partes.length > 0 ? `¡Sumaste ${partes.join(' y ')}!` : null
 }
 
-export interface SellosTrasAprobar {
-  sellosActuales: number
-  premioDesbloqueado: boolean
-  /**
-   * Lo que OTORGO esta visita (para el texto de la confirmacion) y el saldo de puntos. Opcionales:
-   * los eventos de una version vieja (y los fixtures de test) no los traen, y el reducer los
-   * guarda tal cual.
-   */
-  sellosOtorgados?: number | undefined
-  puntosOtorgados?: number | undefined
-  puntosActuales?: number | undefined
-  modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
+import type { VisitaAprobadaPayload } from '@repo/api-client'
+
+/**
+ * Lo que la confirmacion necesita del evento `visita:aprobada`: el saldo, si se desbloqueo el
+ * premio, y lo que OTORGO la visita (con HIBRIDO son dos incrementos, no uno).
+ *
+ * Derivado de `VisitaAprobadaPayload` a proposito: el tipo del evento vive en UN solo lugar
+ * (`@repo/types`, re-exportado por `@repo/api-client`) y agregar un campo es editar ese tipo.
+ */
+export type SellosTrasAprobar = Pick<
+  VisitaAprobadaPayload,
+  | 'sellosActuales'
+  | 'premioDesbloqueado'
+  | 'sellosOtorgados'
+  | 'puntosOtorgados'
+  | 'puntosActuales'
+  | 'modoFidelizacion'
+>
+
+/**
+ * Arma el evento del reducer a partir del payload del WS.
+ *
+ * Existe para que el hook NO conozca la lista de campos: agregar uno es editar
+ * `VisitaAprobadaPayload` (y el Pick de arriba), y este pasamanos lo arrastra solo.
+ */
+export function eventoDeAprobacion(p: SellosTrasAprobar): Extract<EventoFlujo, { tipo: 'WS_APROBADA' }> {
+  return { tipo: 'WS_APROBADA', ...p }
 }
 
 export interface EstadoFlujo {
@@ -100,15 +115,7 @@ export type EventoFlujo =
     }
   | { tipo: 'SOLICITUD_RECHAZADA'; motivo: 'esperaHoras' | 'yaSumadaHoy' | 'otro'; faltanHoras?: number; mensaje?: string }
   | { tipo: 'ESTADO_RECIBIDO'; estado: EstadoVisitaToken; motivo?: string; sellosActuales?: number; premioDesbloqueado?: boolean }
-  | {
-      tipo: 'WS_APROBADA'
-      sellosActuales: number
-      premioDesbloqueado: boolean
-      sellosOtorgados?: number | undefined
-      puntosOtorgados?: number | undefined
-      puntosActuales?: number | undefined
-      modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
-    }
+  | ({ tipo: 'WS_APROBADA' } & SellosTrasAprobar)
   | { tipo: 'WS_RECHAZADA'; motivo?: string }
   | { tipo: 'EXPIRAR' }
   | { tipo: 'REINTENTAR' }

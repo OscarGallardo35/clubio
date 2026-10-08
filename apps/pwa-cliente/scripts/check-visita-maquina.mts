@@ -18,7 +18,9 @@ import {
   textoDelMotivo,
   visitaReducir,
   resumenDeAprobacion,
+  eventoDeAprobacion,
 } from '../lib/visita-maquina.ts'
+import type { VisitaAprobadaPayload } from '@repo/api-client'
 import { tipoDeTarjeta, vistaDeTarjeta } from '../lib/tarjeta.ts'
 import type { MiTarjetaRespuesta } from '../types/api.ts'
 import type { EstadoFlujo, EventoFlujo, Paso } from '../lib/visita-maquina.ts'
@@ -282,6 +284,31 @@ igual(
 )
 const sinExtras = visitaReducir(ESTADO_INICIAL, { tipo: 'WS_APROBADA', sellosActuales: 4, premioDesbloqueado: false })
 igual('un evento sin los campos nuevos no los inventa', [sinExtras.sellos?.puntosOtorgados, sinExtras.sellos?.modoFidelizacion], [undefined, undefined])
+
+// --- Pasamanos COMPLETO: payload del WS -> evento -> estado (un solo tipo) --------
+const payloadCompleto: VisitaAprobadaPayload = {
+  visitaId: 'v1', sucursalId: 's1', sellosActuales: 4, sellosCliente: 4, sellosTarjetaSucursal: 4,
+  premioDesbloqueado: false, sellosOtorgados: 1, puntosOtorgados: 34, puntosActuales: 124,
+  modoFidelizacion: 'HIBRIDO', premioPuntosDesbloqueado: false, aprobadoEn: '2026-10-08T00:00:00.000Z',
+}
+const porElPasamanos = visitaReducir(ESTADO_INICIAL, eventoDeAprobacion(payloadCompleto))
+igual(
+  'el evento armado desde el payload conserva los campos del estado',
+  [porElPasamanos.sellos?.sellosActuales, porElPasamanos.sellos?.puntosOtorgados, porElPasamanos.sellos?.puntosActuales, porElPasamanos.sellos?.modoFidelizacion],
+  [4, 34, 124, 'HIBRIDO'],
+)
+igual(
+  'y la confirmacion arma los dos incrementos',
+  [resumenDeAprobacion(porElPasamanos.sellos), resumenDeAprobacion(sinExtras.sellos)],
+  ['¡Sumaste +1 sello y +34 puntos!', null],
+)
+// Compat: un payload PARCIAL (backend viejo) no rompe: los opcionales quedan undefined.
+const conParcial = visitaReducir(ESTADO_INICIAL, eventoDeAprobacion({ sellosActuales: 7, premioDesbloqueado: true }))
+igual(
+  'payload parcial: opcionales undefined y sin crash',
+  [conParcial.paso, conParcial.sellos?.sellosActuales, conParcial.sellos?.puntosOtorgados, resumenDeAprobacion(conParcial.sellos)],
+  ['aprobada', 7, undefined, null],
+)
 const sinMeta = vistaDeTarjeta({ ...RESPUESTA, sellosParaPremio: 0 } as MiTarjetaRespuesta, 'SOLO_VISITAS')
 igual('sin meta cae a 10 (nunca divide por cero)', [sinMeta.meta, sinMeta.porcentaje], [10, 10])
 

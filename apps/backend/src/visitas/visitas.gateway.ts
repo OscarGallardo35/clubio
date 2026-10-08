@@ -111,6 +111,16 @@ export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return cuerpo;
   }
 
+  /**
+   * Payload de `visita:aprobada`.
+   *
+   * OJO: NO se tipa con `VisitaAprobadaPayload` todavia. El tsconfig del backend tiene
+   * `rootDir: ./src` y el paquete vive fuera, asi que importarlo rompe el build con TS6059 — y el
+   * Dockerfile construye SOLO el backend (`pnpm --filter backend build`, sin el `^build` de turbo),
+   * asi que la ruta por `dist` tampoco esta disponible. Ver BACKEND_PLAN.md: requiere construir
+   * @repo/types en el Dockerfile. Del lado del cliente el tipo SI esta single-sourced: los 2 tramos
+   * que rearmaban el payload usan `VisitaAprobadaPayload`.
+   */
   emitirAprobada(clienteId: string, payload: Record<string, unknown>) {
     this.server.to(VisitasGateway.salaCliente(clienteId)).emit('visita:aprobada', payload);
   }

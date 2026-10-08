@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Button, TarjetaSellos, toast } from '@repo/ui'
 import { resumenDeAprobacion } from '@/lib/visita-maquina'
+import type { SellosTrasAprobar } from '@/lib/visita-maquina'
 import { BloqueResena } from './BloqueResena'
 import { IconoCheck } from './iconos'
 
@@ -18,12 +19,15 @@ export interface PasoConfirmadoProps {
   colorSecundario: string
   mostrarResena: boolean
   placeId?: string | null
-  /** Lo que OTORGO la visita. Con HIBRIDO son dos incrementos; el modo decide cual se muestra. */
-  modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
-  sellosOtorgados?: number | undefined
-  puntosOtorgados?: number | undefined
+  /**
+   * Lo que OTORGO la visita. Con HIBRIDO son dos incrementos; el modo decide cual se muestra.
+   * Los tipos salen del payload del WS (`SellosTrasAprobar`), no se re-declaran aca.
+   */
+  modoFidelizacion?: SellosTrasAprobar['modoFidelizacion']
+  sellosOtorgados?: SellosTrasAprobar['sellosOtorgados']
+  puntosOtorgados?: SellosTrasAprobar['puntosOtorgados']
   /** Saldo de puntos DESPUES de la visita (para el "ahora tenes N puntos"). */
-  puntosActuales?: number | undefined
+  puntosActuales?: SellosTrasAprobar['puntosActuales']
   onVerTarjeta: () => void
   onVolver: () => void
 }

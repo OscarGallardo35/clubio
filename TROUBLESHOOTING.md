@@ -2964,6 +2964,18 @@ Reglas:
 - Cuando una sala recibe eventos de varios pedidos del mismo cliente, el handler filtra por
   `pedidoId` antes de tocar el store: sin ese guard, el evento de otro pedido pisa el actual.
 
+### Un `process.exit()` dentro de un `try` NO ejecuta el `finally`
+
+En un script con limpieza (`finally`), salir con `process.exit()` es lo peor que se puede hacer: el
+proceso termina en el acto y la limpieza no corre. El harness del modo HIBRIDO murio en su primer
+paso (un 400 de la configuracion) y dejo el cliente de prueba vivo en la base; la corrida siguiente
+choco con el unique `(negocioId, telefono)` y el error parecia del harness, no de la corrida
+anterior.
+
+Regla: adentro del `try`, los errores se **tiran** (`throw`), no se sale. Y si el script crea datos
+con un nombre fijo, que limpie los restos de corridas anteriores al arrancar (una corrida cortada a
+mitad -Ctrl-C, timeout, un `exit`- deja basura que rompe la siguiente).
+
 ### Los enums de Postgres tambien tienen dueño: transferir las tablas NO alcanza
 
 `ALTER TABLE ... OWNER TO admin_role` arregla las tablas, pero un `ALTER TYPE ... ADD VALUE`

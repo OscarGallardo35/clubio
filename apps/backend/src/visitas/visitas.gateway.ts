@@ -6,6 +6,7 @@ import { Server, Socket } from 'socket.io';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { COOKIE_CLIENTE, COOKIE_EMPLEADO, leerCookie } from '../common/utils/cookie.util';
+import type { VisitaAprobadaPayload } from '@repo/types';
 
 /**
  * WebSocket de visitas (namespace /visitas).
@@ -112,16 +113,11 @@ export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   /**
-   * Payload de `visita:aprobada`.
-   *
-   * OJO: NO se tipa con `VisitaAprobadaPayload` todavia. El tsconfig del backend tiene
-   * `rootDir: ./src` y el paquete vive fuera, asi que importarlo rompe el build con TS6059 — y el
-   * Dockerfile construye SOLO el backend (`pnpm --filter backend build`, sin el `^build` de turbo),
-   * asi que la ruta por `dist` tampoco esta disponible. Ver BACKEND_PLAN.md: requiere construir
-   * @repo/types en el Dockerfile. Del lado del cliente el tipo SI esta single-sourced: los 2 tramos
-   * que rearmaban el payload usan `VisitaAprobadaPayload`.
+   * Payload de `visita:aprobada`, tipado con el MISMO tipo que usa el cliente
+   * (`VisitaAprobadaPayload`, @repo/types). El backend lo consume desde `dist` (ver tsconfig:
+   * `rootDir: ./src` prohibe imports fuera de src) y el Dockerfile construye @repo/types antes.
    */
-  emitirAprobada(clienteId: string, payload: Record<string, unknown>) {
+  emitirAprobada(clienteId: string, payload: VisitaAprobadaPayload) {
     this.server.to(VisitasGateway.salaCliente(clienteId)).emit('visita:aprobada', payload);
   }
 

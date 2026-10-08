@@ -24,8 +24,8 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "paths": {
-      "@repo/types": ["../../packages/types/src"],
-      "@repo/types/*": ["../../packages/types/src/*"],
+      "@repo/types": ["../../packages/types/dist"],
+      "@repo/types/*": ["../../packages/types/dist/*"],
       "@repo/validators": ["../../packages/validators/src"],
       "@repo/validators/*": ["../../packages/validators/src/*"],
       "@repo/utils": ["../../packages/utils/src"],

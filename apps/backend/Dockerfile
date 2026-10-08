@@ -25,6 +25,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/backend/node_modules ./apps/backend/node_modules
 COPY . .
 RUN pnpm --filter backend db:generate
+# @repo/types PRIMERO: el backend lo consume desde dist (su tsconfig tiene rootDir: ./src, asi que
+# no puede importar los .ts de otro package). Si esto se saca, el build del backend falla con TS6059.
+RUN pnpm --filter @repo/types build
 RUN pnpm --filter backend build
 
 # ============ Deploy ============

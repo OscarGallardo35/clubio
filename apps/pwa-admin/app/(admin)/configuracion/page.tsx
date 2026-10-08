@@ -38,7 +38,8 @@ import type {
  *
  * Lo que NO esta en el formulario, y por que:
  * - `mensajeBienvenida` existe en el modelo pero **no** en `ActualizarConfiguracionDto`: el
- *   `ValidationPipe` con `whitelist` lo descartaria en silencio y el dueno creeria que guardo.
+ *   `ValidationPipe` (con `forbidNonWhitelisted`) devolveria **400** y el guardado fallaria entero.
+ *   (Verificado: mandar un campo desconocido responde 400 "property ... should not exist".)
  * - `transferenciaNotas` esta en el mismo caso.
  * - `puntosPorPeso` / `premioPorPuntos` son del programa de puntos, que es otro flujo.
  */

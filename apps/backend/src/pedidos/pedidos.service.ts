@@ -596,10 +596,13 @@ export class PedidosService {
       select: { id: true, clienteId: true, estado: true, sucursalId: true, linkExpiraEn: true },
     });
     if (!pedido) throw new NotFoundException('Pedido no encontrado');
-    // Un link vencido ya no es credencial (mismo criterio que el GET publico).
-    if (linkVencido(pedido.linkExpiraEn)) {
-      throw new GoneException('Link expirado. Pedile al local que te lo reenvie.');
-    }
+    // OJO: a proposito NO se exige que el link este vigente (a diferencia del GET publico, que
+    // devuelve 410). El vencimiento a las 4 h limita el SEGUIMIENTO publico, no la cancelacion: el
+    // caso tipico —y el que motivo este codigo— es un pedido activo cuyo link ya vencio, donde
+    // cancelar es la UNICA salida del cliente (el 409 del checkout lo lleva justo aca).
+    // Las protecciones siguen: el `linkToken` (128 bits) es la credencial, el cron lo borra a los
+    // 7 dias de vencido (despues -> 404) y el estado tiene que ser PENDIENTE o CONFIRMADO, asi que
+    // un pedido ya en preparacion no se cae ni con el link vivo.
     return this.cancelarYNotificar(negocioId, pedido, { clienteId: pedido.clienteId, origen: 'link' });
   }
 

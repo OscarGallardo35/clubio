@@ -83,6 +83,31 @@ async function crearPedido(itemId, sufijo) {
     chk('el pedido quedo CANCELADO (GET publico)', ver.data?.estado === 'CANCELADO', `estado=${ver.data?.estado}`);
   }
 
+  // ---- 1b) un link VENCIDO tambien se puede cancelar -----
+  // Es la salida del 409 del checkout: con el pedido activo y el link vencido (>4 h) no se puede
+  // SEGUIR el pedido, pero si cancelarlo. El GET publico si da 410 (el vencimiento limita el
+  // seguimiento, no la cancelacion).
+  const vencido = await crearPedido(coca.id, '3');
+  if (vencido.data?.linkToken) {
+    const { PrismaClient } = require('@prisma/client');
+    const prisma = new PrismaClient();
+    try {
+      await prisma.pedido.update({
+        where: { linkToken: vencido.data.linkToken },
+        data: { linkExpiraEn: new Date(Date.now() - 3_600_000) },
+      });
+      const get = await req('GET', `/api/pedidos/publico/${vencido.data.linkToken}`);
+      chk('GET publico con el link vencido -> 410', get.status === 410, `status=${get.status}`);
+
+      const cancel = await req('POST', `/api/pedidos/publico/${vencido.data.linkToken}/cancelar`);
+      chk('pero CANCELAR con el link vencido -> 200/201', cancel.status === 200 || cancel.status === 201,
+        `status=${cancel.status} ${JSON.stringify(cancel.data?.message ?? '')}`);
+      chk('quedo CANCELADO', cancel.data?.estado === 'CANCELADO', JSON.stringify(cancel.data));
+    } finally {
+      await prisma.$disconnect();
+    }
+  }
+
   // ---- 2) el link vencido/inexistente no cancela ----
   const trucho = await req('POST', '/api/pedidos/publico/00000000000000000000000000000000/cancelar');
   chk('linkToken inexistente -> 404', trucho.status === 404, `status=${trucho.status}`);

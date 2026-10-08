@@ -151,7 +151,19 @@ export interface ManejadoresWs {
   onConectado?: () => void
   onReconectando?: () => void
   onDesconectado?: (motivo: string) => void
-  onAprobada?: (p: { sellosActuales: number; premioDesbloqueado: boolean }) => void
+  /**
+   * Lo que otorgo la visita + el saldo. Los 4 ultimos son opcionales (un backend de una version
+   * vieja no los manda) pero HAY QUE PASARLOS: el handler que rearma el payload sin ellos los
+   * descarta en silencio, que es justo lo que dejo la confirmacion sin los incrementos.
+   */
+  onAprobada?: (p: {
+    sellosActuales: number
+    premioDesbloqueado: boolean
+    sellosOtorgados?: number
+    puntosOtorgados?: number
+    puntosActuales?: number
+    modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
+  }) => void
   onRechazada?: (p: { motivo: string }) => void
 }
 

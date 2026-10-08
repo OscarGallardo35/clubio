@@ -167,7 +167,17 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
         },
         onAprobada: (p) => {
           if (cerrado) return
-          despachar({ tipo: 'WS_APROBADA', sellosActuales: p.sellosActuales, premioDesbloqueado: p.premioDesbloqueado })
+          // Pasamanos COMPLETO: el reducer ya sabe guardar los incrementos, pero si este handler
+          // rearma el payload sin ellos los pierde y la confirmacion cae al texto generico.
+          despachar({
+            tipo: 'WS_APROBADA',
+            sellosActuales: p.sellosActuales,
+            premioDesbloqueado: p.premioDesbloqueado,
+            ...(p.sellosOtorgados !== undefined ? { sellosOtorgados: p.sellosOtorgados } : {}),
+            ...(p.puntosOtorgados !== undefined ? { puntosOtorgados: p.puntosOtorgados } : {}),
+            ...(p.puntosActuales !== undefined ? { puntosActuales: p.puntosActuales } : {}),
+            ...(p.modoFidelizacion !== undefined ? { modoFidelizacion: p.modoFidelizacion } : {}),
+          })
         },
         onRechazada: (p) => {
           if (cerrado) return

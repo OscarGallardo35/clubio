@@ -333,7 +333,8 @@ export default function CartaPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminar {aEliminar?.nombre}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Desaparece de la carta del cliente. No se puede deshacer.
+              Deja de verse en la carta del cliente (el sistema lo marca como agotado: los pedidos ya
+              hechos lo referencian). Podes volver a prenderlo cuando quieras.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

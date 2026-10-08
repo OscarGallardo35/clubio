@@ -29,9 +29,38 @@ export type MotivoNoSumada = 'rechazada' | 'expirada' | 'yaSumadaHoy' | 'esperaH
 /** Lo que devuelve GET /visitas/estado/:token. */
 export type EstadoVisitaToken = 'PENDIENTE' | 'APROBADA' | 'RECHAZADA' | 'EXPIRADA'
 
+/**
+ * Texto de la confirmacion: "¡Sumaste +1 sello y +34 puntos!".
+ *
+ * Vive aca (y no en el componente) para poder testearlo sin renderizar. El modo manda: con
+ * `HIBRIDO` son DOS incrementos, con `SOLO_VISITAS` solo el sello y con `SOLO_PUNTOS` solo los
+ * puntos. Sin incrementos (un evento de una version vieja que no los trae) devuelve `null`, y la
+ * pantalla usa su texto generico.
+ */
+export function resumenDeAprobacion(sellos: SellosTrasAprobar | null): string | null {
+  if (!sellos) return null
+  const modo = sellos.modoFidelizacion ?? 'SOLO_VISITAS'
+  const partes = [
+    modo !== 'SOLO_PUNTOS' && sellos.sellosOtorgados
+      ? `+${sellos.sellosOtorgados} sello${sellos.sellosOtorgados === 1 ? '' : 's'}`
+      : null,
+    modo !== 'SOLO_VISITAS' && sellos.puntosOtorgados ? `+${sellos.puntosOtorgados} puntos` : null,
+  ].filter((x): x is string => Boolean(x))
+  return partes.length > 0 ? `¡Sumaste ${partes.join(' y ')}!` : null
+}
+
 export interface SellosTrasAprobar {
   sellosActuales: number
   premioDesbloqueado: boolean
+  /**
+   * Lo que OTORGO esta visita (para el texto de la confirmacion) y el saldo de puntos. Opcionales:
+   * los eventos de una version vieja (y los fixtures de test) no los traen, y el reducer los
+   * guarda tal cual.
+   */
+  sellosOtorgados?: number | undefined
+  puntosOtorgados?: number | undefined
+  puntosActuales?: number | undefined
+  modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
 }
 
 export interface EstadoFlujo {
@@ -71,7 +100,15 @@ export type EventoFlujo =
     }
   | { tipo: 'SOLICITUD_RECHAZADA'; motivo: 'esperaHoras' | 'yaSumadaHoy' | 'otro'; faltanHoras?: number; mensaje?: string }
   | { tipo: 'ESTADO_RECIBIDO'; estado: EstadoVisitaToken; motivo?: string; sellosActuales?: number; premioDesbloqueado?: boolean }
-  | { tipo: 'WS_APROBADA'; sellosActuales: number; premioDesbloqueado: boolean }
+  | {
+      tipo: 'WS_APROBADA'
+      sellosActuales: number
+      premioDesbloqueado: boolean
+      sellosOtorgados?: number | undefined
+      puntosOtorgados?: number | undefined
+      puntosActuales?: number | undefined
+      modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
+    }
   | { tipo: 'WS_RECHAZADA'; motivo?: string }
   | { tipo: 'EXPIRAR' }
   | { tipo: 'REINTENTAR' }
@@ -209,7 +246,16 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
         paso: 'aprobada',
         motivo: null,
         mensaje: null,
-        sellos: { sellosActuales: evento.sellosActuales, premioDesbloqueado: evento.premioDesbloqueado },
+        sellos: {
+          sellosActuales: evento.sellosActuales,
+          premioDesbloqueado: evento.premioDesbloqueado,
+          // Lo que OTORGO la visita + el saldo de puntos: la confirmacion los muestra (con HIBRIDO
+          // son dos incrementos, no uno). Se copian solo si vinieron: no se inventan.
+          ...(evento.sellosOtorgados !== undefined ? { sellosOtorgados: evento.sellosOtorgados } : {}),
+          ...(evento.puntosOtorgados !== undefined ? { puntosOtorgados: evento.puntosOtorgados } : {}),
+          ...(evento.puntosActuales !== undefined ? { puntosActuales: evento.puntosActuales } : {}),
+          ...(evento.modoFidelizacion !== undefined ? { modoFidelizacion: evento.modoFidelizacion } : {}),
+        },
       }
 
     case 'WS_RECHAZADA':

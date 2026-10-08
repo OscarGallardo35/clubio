@@ -171,10 +171,23 @@ export function crearSocketVisita(manejadores: ManejadoresWs, token?: string | n
   }
 
   // El gateway reemite con el nombre de la sala; el payload es la fuente de verdad.
-  socket.on('visita:aprobada', (p: { sellosActuales?: number; premioDesbloqueado?: boolean }) => {
+  socket.on('visita:aprobada', (p: {
+    sellosActuales?: number
+    premioDesbloqueado?: boolean
+    sellosOtorgados?: number
+    puntosOtorgados?: number
+    puntosActuales?: number
+    modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
+  }) => {
     manejadores.onAprobada?.({
       sellosActuales: typeof p?.sellosActuales === 'number' ? p.sellosActuales : 0,
       premioDesbloqueado: p?.premioDesbloqueado === true,
+      // Lo que OTORGO la visita y el saldo de puntos: con HIBRIDO la confirmacion muestra los dos
+      // incrementos. Spreads condicionales por `exactOptionalPropertyTypes`.
+      ...(typeof p?.sellosOtorgados === 'number' ? { sellosOtorgados: p.sellosOtorgados } : {}),
+      ...(typeof p?.puntosOtorgados === 'number' ? { puntosOtorgados: p.puntosOtorgados } : {}),
+      ...(typeof p?.puntosActuales === 'number' ? { puntosActuales: p.puntosActuales } : {}),
+      ...(p?.modoFidelizacion ? { modoFidelizacion: p.modoFidelizacion } : {}),
     })
   })
   socket.on('visita:rechazada', (p: { motivo?: string }) => {

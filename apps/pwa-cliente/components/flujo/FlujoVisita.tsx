@@ -100,6 +100,20 @@ export function FlujoVisita() {
         nombreCliente={cliente?.nombre ?? null}
         mostrarResena={configuracion?.mostrarResenaPostVisita === true}
         placeId={negocio?.placeId ?? null}
+        // Lo que OTORGO la visita (viene del WS): con HIBRIDO la confirmacion muestra los dos
+        // incrementos. Spreads condicionales por `exactOptionalPropertyTypes`.
+        {...(visita.flujo.sellos?.modoFidelizacion !== undefined
+          ? { modoFidelizacion: visita.flujo.sellos.modoFidelizacion }
+          : {})}
+        {...(visita.flujo.sellos?.sellosOtorgados !== undefined
+          ? { sellosOtorgados: visita.flujo.sellos.sellosOtorgados }
+          : {})}
+        {...(visita.flujo.sellos?.puntosOtorgados !== undefined
+          ? { puntosOtorgados: visita.flujo.sellos.puntosOtorgados }
+          : {})}
+        {...(visita.flujo.sellos?.puntosActuales !== undefined
+          ? { puntosActuales: visita.flujo.sellos.puntosActuales }
+          : {})}
         onVerTarjeta={() => router.push(RUTAS.tarjeta(negocio?.slug ?? ''))}
         onVolver={() => router.push(`/${negocio?.slug ?? ''}/menu`)}
       />

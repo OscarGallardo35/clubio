@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { Button, TarjetaSellos, toast } from '@repo/ui'
+import { resumenDeAprobacion } from '@/lib/visita-maquina'
 import { BloqueResena } from './BloqueResena'
 import { IconoCheck } from './iconos'
 
@@ -17,6 +18,12 @@ export interface PasoConfirmadoProps {
   colorSecundario: string
   mostrarResena: boolean
   placeId?: string | null
+  /** Lo que OTORGO la visita. Con HIBRIDO son dos incrementos; el modo decide cual se muestra. */
+  modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
+  sellosOtorgados?: number | undefined
+  puntosOtorgados?: number | undefined
+  /** Saldo de puntos DESPUES de la visita (para el "ahora tenes N puntos"). */
+  puntosActuales?: number | undefined
   onVerTarjeta: () => void
   onVolver: () => void
 }
@@ -33,16 +40,37 @@ export function PasoConfirmado({
   colorSecundario,
   mostrarResena,
   placeId,
+  modoFidelizacion,
+  sellosOtorgados,
+  puntosOtorgados,
+  puntosActuales,
   onVerTarjeta,
   onVolver,
 }: PasoConfirmadoProps) {
   const completo = premioDesbloqueado || actuales >= meta
 
+  // El texto de "que sumaste" sale de una funcion PURA (testeable sin renderizar). El modo manda:
+  // con SOLO_VISITAS no se nombran puntos, y con SOLO_PUNTOS no se nombran sellos.
+  const resumen = resumenDeAprobacion({
+    sellosActuales: actuales,
+    premioDesbloqueado: completo,
+    ...(modoFidelizacion !== undefined ? { modoFidelizacion } : {}),
+    ...(sellosOtorgados !== undefined ? { sellosOtorgados } : {}),
+    ...(puntosOtorgados !== undefined ? { puntosOtorgados } : {}),
+  })
+  const modo = modoFidelizacion ?? 'SOLO_VISITAS'
+  const saldoPuntos =
+    modo !== 'SOLO_VISITAS' && typeof puntosActuales === 'number'
+      ? `Ahora tenes ${puntosActuales} puntos`
+      : null
+
   // Aviso no bloqueante al confirmar (la pantalla ya lo dice; el toast es el
   // "ya esta" para quien no esta mirando).
   React.useEffect(() => {
-    toast.success(completo ? '¡Completaste la tarjeta!' : '¡Sumaste tu visita!', {
-      description: completo ? `Ya podés canjear: ${premioTexto}` : `Vas ${actuales} de ${meta} sellos`,
+    toast.success(resumen ?? (completo ? '¡Completaste la tarjeta!' : '¡Sumaste tu visita!'), {
+      description: completo
+        ? `Ya podés canjear: ${premioTexto}`
+        : saldoPuntos ?? `Vas ${actuales} de ${meta} sellos`,
     })
     // vibracion si el equipo la soporta (no hay sonido a proposito)
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -59,8 +87,14 @@ export function PasoConfirmado({
       </div>
 
       <h1 className="text-center text-2xl font-bold text-white drop-shadow">
-        {completo ? '¡Tarjeta completa!' : '¡Listo, sumaste tu visita!'}
+        {resumen ?? (completo ? '¡Tarjeta completa!' : '¡Listo, sumaste tu visita!')}
       </h1>
+
+      {saldoPuntos ? (
+        <p role="status" className="text-center text-sm font-medium text-white/90">
+          {saldoPuntos}
+        </p>
+      ) : null}
 
       <TarjetaSellos
         tamaño="medium"

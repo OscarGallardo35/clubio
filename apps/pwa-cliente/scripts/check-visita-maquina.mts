@@ -17,6 +17,7 @@ import {
   puedeReintentar,
   textoDelMotivo,
   visitaReducir,
+  resumenDeAprobacion,
 } from '../lib/visita-maquina.ts'
 import { tipoDeTarjeta, vistaDeTarjeta } from '../lib/tarjeta.ts'
 import type { MiTarjetaRespuesta } from '../types/api.ts'
@@ -249,6 +250,38 @@ chk('en PUNTOS el porcentaje es el de puntos', vp.porcentaje === 100)
 // Blindaje: si el backend dice que NO hay premio pero los sellos ya alcanzan, el premio gana.
 const conPremio = vistaDeTarjeta({ ...RESPUESTA, sellosActuales: 10 } as MiTarjetaRespuesta, 'SOLO_VISITAS')
 igual('con los sellos completos el premio se marca solo', [conPremio.premioDesbloqueado, conPremio.faltantes, conPremio.porcentaje], [true, 0, 100])
+
+// --- Confirmacion: QUE sumaste (con HIBRIDO son dos incrementos) -------------
+const base = { sellosActuales: 4, premioDesbloqueado: false }
+igual(
+  'HIBRIDO dice sello + puntos',
+  resumenDeAprobacion({ ...base, modoFidelizacion: 'HIBRIDO', sellosOtorgados: 1, puntosOtorgados: 34 }),
+  '¡Sumaste +1 sello y +34 puntos!',
+)
+igual(
+  'SOLO_VISITAS dice solo el sello',
+  resumenDeAprobacion({ ...base, modoFidelizacion: 'SOLO_VISITAS', sellosOtorgados: 1, puntosOtorgados: 34 }),
+  '¡Sumaste +1 sello!',
+)
+igual(
+  'SOLO_PUNTOS dice solo los puntos',
+  resumenDeAprobacion({ ...base, modoFidelizacion: 'SOLO_PUNTOS', sellosOtorgados: 1, puntosOtorgados: 34 }),
+  '¡Sumaste +34 puntos!',
+)
+igual('sin incrementos (evento viejo) devuelve null', resumenDeAprobacion(base), null)
+
+// El reducer guarda lo que vino del WS (y no inventa lo que no vino).
+const conPuntos = visitaReducir(ESTADO_INICIAL, {
+  tipo: 'WS_APROBADA', sellosActuales: 4, premioDesbloqueado: false,
+  modoFidelizacion: 'HIBRIDO', sellosOtorgados: 1, puntosOtorgados: 34, puntosActuales: 124,
+})
+igual(
+  'el reducer guarda los incrementos',
+  [conPuntos.sellos?.puntosOtorgados, conPuntos.sellos?.puntosActuales, conPuntos.sellos?.modoFidelizacion],
+  [34, 124, 'HIBRIDO'],
+)
+const sinExtras = visitaReducir(ESTADO_INICIAL, { tipo: 'WS_APROBADA', sellosActuales: 4, premioDesbloqueado: false })
+igual('un evento sin los campos nuevos no los inventa', [sinExtras.sellos?.puntosOtorgados, sinExtras.sellos?.modoFidelizacion], [undefined, undefined])
 const sinMeta = vistaDeTarjeta({ ...RESPUESTA, sellosParaPremio: 0 } as MiTarjetaRespuesta, 'SOLO_VISITAS')
 igual('sin meta cae a 10 (nunca divide por cero)', [sinMeta.meta, sinMeta.porcentaje], [10, 10])
 

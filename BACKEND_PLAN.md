@@ -831,6 +831,13 @@ tenant inexistente, y `/sucursales/mis-sucursales` sigue dando 401 sin token.
 | `AlertDialog` se cierra con Escape | Diferido (deuda tecnica #4 de este archivo) | — |
 | "Horarios" / "mensaje propio del local" por sucursal | Diferido (deuda tecnica #5) | — |
 
+### TODO post-MVP: pantalla de busqueda/detalle de cliente (para canjear en cualquier momento)
+
+Hoy el badge "Premio desbloqueado" y el boton de canje viven en la fila de la cola de visitas
+pendientes, y esa fila desaparece al aprobar (el token queda usado). O sea: solo se puede canjear si
+el cliente YA llega con el premio desbloqueado. Falta una pantalla de busqueda/detalle de cliente en
+el staff para canjear cuando el cliente lo pida, con el saldo a la vista.
+
 ### BLOQUEANTE: `admin_role` no es dueño de las tablas -> no se puede migrar
 
 Medido (no supuesto): la app se conecta como `admin_role` y **las 41 tablas de `public` pertenecen a

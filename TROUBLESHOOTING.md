@@ -297,6 +297,32 @@ WARN `Local package.json exists, but node_modules missing`: el `tsc` del paquete
 `extends` ni su propio binario. Ojo con el alcance: los packages que el backend solo IMPORTA (via
 `paths` a su `src`, como @repo/validators) no lo necesitan; solo los que se BUILDEAN en ese stage.
 
+### Un linkToken puede estar VENCIDO aunque el pedido exista en el store
+
+El seguimiento del pedido tiene **dos fallos terminales, no uno**: el 404 real ("Pedido no
+encontrado") y el **410 ("Este link ya vencio")**. El 404 suelta el pedido guardado desde el primer
+fix; el 410 no, y eso armaba un loop visible para el cliente:
+
+```
+/menu (banner "Ver estado de tu pedido") -> /pedido/<token> -> 410 "Este link ya vencio"
+   -> "Volver al menu" -> /menu -> ... el banner sigue ahi (el store nunca solto el pedido)
+```
+
+Tres guardas, en capas (cualquiera de las tres corta el loop, y juntas cubren los bordes):
+
+1. **410 suelta el pedido**: `debeOlvidarPedido` (en `lib/checkout-maquina.ts`) decide con que
+   fallos se despacha `OLVIDAR_PEDIDO`. Solo si el link guardado es EL MISMO que se estaba
+   siguiendo (un pedido nuevo no se borra por un link viejo).
+2. **El banner exige link vigente**: `pedidoVigente` (`lib/carrito-maquina.ts`) compara `expiraEn`
+   contra ahora. Para eso `PedidoEnCurso`/`PEDIDO_OK` **tienen que guardar `expiraEn`** (viene de la
+   respuesta del POST): sin el dato, el banner no tiene como saber que vencio.
+3. **Limpieza oportunista**: el banner, al montar con un pedido ya vencido, despacha
+   `OLVIDAR_PEDIDO` el solo.
+
+Ojo con la compatibilidad: un pedido guardado ANTES de que se persistiera `expiraEn` no lo tiene, y
+`pedidoVigente` lo trata como vigente a proposito (mejor ofrecer un link que puede fallar una vez
+que esconder el seguimiento de un pedido vivo); ese caso lo cierra la guarda (1) por el 410.
+
 ### Rate limiting: limites configurables por env
 
 `POST /pedidos` limita a 10 por hora por IP y `GET /pedidos/publico/:linkToken` a

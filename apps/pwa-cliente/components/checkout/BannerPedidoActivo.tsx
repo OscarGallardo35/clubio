@@ -9,6 +9,8 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useCarritoStore } from '@/stores/carritoStore'
 import { pedidoVigente } from '@/lib/carrito-maquina'
+import { pedidosApi } from '@/lib/api'
+import { clasificarFalloPedido, debeOlvidarPedido, esFinal, normalizarError } from '@/lib/checkout-maquina'
 
 export function BannerPedidoActivo({ slugNegocio }: { slugNegocio: string }) {
   const pedido = useCarritoStore((s) => s.pedido)
@@ -24,6 +26,42 @@ export function BannerPedidoActivo({ slugNegocio }: { slugNegocio: string }) {
   React.useEffect(() => {
     if (linkToken && !vigente) despachar({ tipo: 'OLVIDAR_PEDIDO' })
   }, [linkToken, vigente, despachar])
+
+  /**
+   * Tercera guarda: el pedido guardado puede no tener estado SINCRONIZADO. Dos casos reales:
+   * una pestana vieja (el `estado` se agrego despues, asi que el carrito persistido no lo trae) y un
+   * pedido que el staff cancelo mientras el cliente no abria el seguimiento — ahi no hay WebSocket ni
+   * polling que avisen.
+   *
+   * Con `estado` en `undefined` el banner no tiene con que decidir, asi que se le pregunta al backend
+   * UNA vez: si el pedido ya esta cerrado se suelta. Una sola consulta por pedido: en cuanto el estado
+   * llega queda en el store (y persistido), y esta guarda no vuelve a dispararse.
+   */
+  const sinEstado = vigente && pedido?.estado === undefined
+  React.useEffect(() => {
+    if (!linkToken || !sinEstado) return undefined
+    let vivo = true
+    void (async () => {
+      try {
+        const r = await pedidosApi.publico(linkToken)
+        if (!vivo || !r?.estado) return
+        despachar({ tipo: 'PEDIDO_ESTADO', estado: r.estado })
+        if (esFinal(r.estado)) despachar({ tipo: 'OLVIDAR_PEDIDO' })
+      } catch (e) {
+        // Un fallo terminal (404/410) tambien suelta: mismo criterio que el seguimiento.
+        const { status, mensaje } = normalizarError(e)
+        if (
+          status !== 0 &&
+          debeOlvidarPedido(clasificarFalloPedido(status, mensaje), linkToken, linkToken)
+        ) {
+          despachar({ tipo: 'OLVIDAR_PEDIDO' })
+        }
+      }
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [linkToken, sinEstado, despachar])
 
   if (!linkToken || !vigente) return null
 

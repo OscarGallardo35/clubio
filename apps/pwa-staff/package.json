@@ -10,7 +10,8 @@
     "lint": "next lint",
     "format": "prettier --write \"app/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "check:auth": "node scripts/check-auth-staff.mts"
+    "check:auth": "node scripts/check-auth-staff.mts",
+    "test:tenant-aislamiento": "node scripts/check-tenant-aislamiento.cjs"
   },
   "dependencies": {
     "@repo/api-client": "workspace:*",

@@ -23,6 +23,7 @@
  * para los extras. Es un harness SIN efectos: no crea ni borra nada (firmar no sube nada).
  */
 const { createHmac, randomUUID } = require('crypto');
+const { v2: cloudinary } = require('cloudinary');
 const { PrismaClient } = require('@prisma/client');
 
 const API = process.env.API_URL || 'https://api.clubio.lat';
@@ -127,9 +128,15 @@ function parsearCloudinaryUrl(url) {
     chk('cloudName == el de CLOUDINARY_URL', f.cloudName === cloud.cloudName);
 
     // Extra: la firma es VALIDA (recomputa con el secret; no se imprime el secret).
+    // Vigila que el backend firme EXACTAMENTE los params que devuelve, recomputando con el MISMO
+    // algoritmo del SDK (no a mano). Dos trampas que este chequeo ya cazo, las dos hacian fallar la
+    // comparacion por razones ajenas al backend:
+    //   1. Cloudinary firma `sha1(string_a_firmar + api_secret)`: el secret va AL FINAL. Con
+    //      `createHmac('sha1', secret)` (secret primero) el hash es otro.
+    //   2. Desde el `signature_version` 2 (el default del SDK) los valores se URL-encodean antes de
+    //      firmar: una cadena armada a mano con las comas literales de la transformacion no coincide.
     const params = { folder: f.folder, timestamp: f.timestamp, transformation: f.transformation };
-    const ordenados = Object.keys(params).sort().map((k) => `${k}=${params[k]}`).join('&');
-    const esperada = createHmac('sha1', cloud.apiSecret).update(ordenados).digest('hex');
+    const esperada = cloudinary.utils.api_sign_request(params, cloud.apiSecret);
     chk('la signature recomputada con el secret coincide', esperada === f.signature);
   } else {
     console.log('  (skip) sin CLOUDINARY_URL local: no se puede recomputar ni confirmar el secret');

@@ -3282,3 +3282,16 @@ ya es menor).
 **Regresion a vigilar**: los items del seed NO tienen foto y el menu los muestra con el placeholder
 de color de marca (`ImagenOptimizada` con `data-estado="placeholder"` y la inicial del item). Subir
 la foto de un item no puede cambiar ese comportamiento para los demas.
+
+**Como se verifica una firma** (dos trampas que costaron un harness en rojo). Recomputar la firma "a
+mano" falla por dos razones AJENAS al backend, y hay que descartarlas antes de culparlo:
+
+1. Cloudinary firma `sha1(string_a_firmar + api_secret)`: el secret va **al final**. Con
+   `createHmac('sha1', secret)` (el secret primero) el hash es otro.
+2. Desde el `signature_version` 2 (el default del SDK) los valores se **URL-encodean** antes de
+   firmar: una cadena armada a mano con las comas literales de la transformacion no coincide.
+
+Lo correcto es recomputar con el MISMO algoritmo del SDK (`cloudinary.utils.api_sign_request`) y
+comparar contra lo que devolvio el backend: eso valida que el backend firme exactamente los
+parametros que entrega, que es lo unico que importa. La prueba de fuego, igual, es una subida real:
+si Cloudinary acepta el multipart, la firma estaba bien.

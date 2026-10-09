@@ -3,17 +3,22 @@ import type {
   ActualizarConfiguracionBody,
   ActualizarEmpleadoBody,
   ActualizarItemCartaBody,
+  ActualizarPlantillaBody,
   ActualizarSucursalBody,
   CartaAdminRespuesta,
+  CatalogoPlantillas,
   ConfiguracionAdmin,
   ConfiguracionSucursalBody,
   CrearEmpleadoBody,
   CrearItemCartaBody,
+  CrearPlantillaBody,
   CrearSucursalBody,
   DashboardAdmin,
+  DatosEjemploPlantilla,
   DuenoSesion,
   EmpleadoAdmin,
   EmpleadosRespuesta,
+  EnviarPlantillaBody,
   FeaturePlan,
   FirmaSubida,
   GoogleEstado,
@@ -22,8 +27,10 @@ import type {
   LoginDuenoRespuesta,
   NegocioAdmin,
   PendientesRespuesta,
+  PlantillaPush,
   QrInfo,
   ResultadoEliminarSucursal,
+  ResultadoEnvioPlantilla,
   SucursalAdmin,
   SucursalesRespuesta,
   UbicacionGoogle,
@@ -267,4 +274,25 @@ export const mediaApi = {
    */
   firmarSubida: (body: { tipo?: 'carta' } = {}) =>
     api.post<FirmaSubida>(endpoints.media.firmarSubida, body),
+};
+
+/**
+ * Plantillas de push y envio (`/push/plantillas`, `/push/enviar`).
+ *
+ * Todo esto vive detras de `@RequiereFeature('push')` en el backend: si el plan no
+ * la incluye, el backend responde 403 y la pantalla lo muestra tal cual.
+ */
+export const pushApi = {
+  listar: () => api.get<PlantillaPush[]>(endpoints.push.plantillas),
+  /** Variables soportadas + plantillas default sugeridas. */
+  catalogo: () => api.get<CatalogoPlantillas>(`${endpoints.push.plantillas}/sugeridas`),
+  /** Datos de un cliente real (o placeholders) para la previsualizacion. */
+  ejemplo: () => api.get<DatosEjemploPlantilla>(`${endpoints.push.plantillas}/ejemplo`),
+  crear: (body: CrearPlantillaBody) => api.post<PlantillaPush>(endpoints.push.plantillas, body),
+  actualizar: (id: string, body: ActualizarPlantillaBody) =>
+    api.patch<PlantillaPush>(endpoints.push.plantilla(id), body),
+  eliminar: (id: string) => api.delete<{ ok: boolean }>(endpoints.push.plantilla(id)),
+  /** Campana por segmento o prueba a un dispositivo (`endpoint`). */
+  enviar: (body: EnviarPlantillaBody) =>
+    api.post<ResultadoEnvioPlantilla>(endpoints.push.enviar, body),
 };

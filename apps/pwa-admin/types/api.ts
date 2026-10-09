@@ -469,3 +469,74 @@ export interface RespuestaSubidaCloudinary {
   height?: number
   bytes?: number
 }
+
+// ------------------------------------------------------------------ Push (plantillas) --
+
+/** Plantilla de notificacion reutilizable (`/push/plantillas`). */
+export interface PlantillaPush {
+  id: string
+  negocioId: string
+  nombre: string
+  titulo: string
+  cuerpo: string
+  icono: string | null
+  url: string | null
+  activa: boolean
+  creadoEn: string
+  actualizadoEn: string
+}
+
+export interface PlantillaSugerida {
+  nombre: string
+  titulo: string
+  cuerpo: string
+  url: string
+}
+
+/** `GET /push/plantillas/sugeridas`: variables soportadas + plantillas de arranque. */
+export interface CatalogoPlantillas {
+  variables: string[]
+  sugeridas: PlantillaSugerida[]
+}
+
+/** `GET /push/plantillas/ejemplo`: datos de un cliente real para la previsualizacion. */
+export interface DatosEjemploPlantilla {
+  nombre: string
+  negocio: string
+  premio: string
+  actuales: number
+  meta: number
+  faltantes: number
+  numero: string
+}
+
+export interface CrearPlantillaBody {
+  nombre: string
+  titulo: string
+  cuerpo: string
+  icono?: string
+  url?: string
+  activa?: boolean
+}
+
+export type ActualizarPlantillaBody = Partial<CrearPlantillaBody>
+
+/** Segmentos de envio por plantilla. */
+export type SegmentoEnvio = 'TODOS' | 'PREMIO_DESBLOQUEADO' | 'INACTIVO_30'
+
+export interface EnviarPlantillaBody {
+  plantillaId: string
+  segmento?: SegmentoEnvio
+  /** Prueba a un dispositivo concreto. */
+  endpoint?: string
+  titulo?: string
+  cuerpo?: string
+  url?: string
+}
+
+export interface ResultadoEnvioPlantilla {
+  encolados?: number
+  destinatarios?: number
+  prueba?: boolean
+  enviados?: number
+}

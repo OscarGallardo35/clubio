@@ -23,6 +23,7 @@ export const SECCIONES = [
   { ruta: '/personal', etiqueta: 'Personal', listo: true },
   { ruta: '/sucursales', etiqueta: 'Sucursales', listo: true },
   { ruta: '/configuracion', etiqueta: 'Configuracion', listo: true },
+  { ruta: '/notificaciones', etiqueta: 'Notificaciones', listo: true },
   { ruta: '/qr', etiqueta: 'QR', listo: true },
 ] as const;
 

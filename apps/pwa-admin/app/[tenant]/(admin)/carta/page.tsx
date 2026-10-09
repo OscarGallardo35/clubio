@@ -258,7 +258,11 @@ export default function CartaPage() {
           className="max-w-xs"
         />
         {categorias.length > 1 ? (
-          <Tabs value={categoria} onValueChange={setCategoria}>
+          // `min-w-0` en el Root: dentro de un `flex flex-wrap` el div de Radix es un flex item con
+          // `min-width:auto`, asi que se estiraba al max-content de los tabs (~379px) y ensanchaba el
+          // documento a 375. Con min-w-0 se achica al ancho del contenedor y el TabsList scrollea
+          // adentro (no hay overflow horizontal de la pagina).
+          <Tabs value={categoria} onValueChange={setCategoria} className="min-w-0">
             <TabsList className="gap-1">
               <TabsTrigger value="todas">Todas</TabsTrigger>
               {categorias.map((c) => (

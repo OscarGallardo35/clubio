@@ -633,12 +633,17 @@ export class PedidosService {
       motivoRechazo: actualizado.motivoRechazo,
     });
 
-    // Push al cliente (si tiene suscripcion): encola, no bloquea
+    // Push al cliente (si tiene suscripcion): encola, no bloquea.
+    // La ruta es la del SEGUIMIENTO del cliente: `/<slug>/pedido/<linkToken>`, la MISMA que se
+    // comparte por WhatsApp (ver `construirUrlCorta`). `/pedidos/<id>` NO existe en la PWA
+    // Cliente (esa forma es la del Staff) y por eso el tap no abria ninguna vista. El slug lo
+    // agrega `PushService.urlDePush` al encolar.
     if (actualizado.clienteId && TITULO_POR_ESTADO[dto.estado]) {
+      const urlPedido = actualizado.linkToken ? `pedido/${actualizado.linkToken}` : 'tarjeta';
       await this.push.enviarACliente(actualizado.clienteId, {
         title: TITULO_POR_ESTADO[dto.estado] as string,
         body: MENSAJE_POR_ESTADO[dto.estado] ?? '',
-        url: `/pedidos/${pedidoId}`,
+        url: urlPedido,
         tag: `pedido-${pedidoId}`,
       }).catch((e) => this.logger.warn(`Push de estado fallo: ${(e as Error).message}`));
     }

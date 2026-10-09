@@ -55,13 +55,18 @@ import type {
  * responde 403 y el toast lo muestra.
  */
 
+/**
+ * Ayuda del selector "Cuando se dispara": dice EXPLICITAMENTE cuando sale cada tipo
+ * y si es automatico o no, para que un MANUAL (que solo manda al apretar Probar/Enviar)
+ * no se confunda nunca con uno que se dispara solo.
+ */
 const TIPOS: { valor: TipoDisparo; etiqueta: string; ayuda: string }[] = [
-  { valor: 'COMPRA', etiqueta: 'Por compra', ayuda: 'Cuando un pedido llega a cierto estado (y cada cuantas compras).' },
-  { valor: 'SELLOS', etiqueta: 'Por sellos', ayuda: 'Cuando suma un sello, o cuando le faltan N para el premio.' },
-  { valor: 'DIA', etiqueta: 'Por dia', ayuda: 'Un dia de la semana a una hora, o una fecha puntual.' },
-  { valor: 'INACTIVIDAD', etiqueta: 'Por inactividad', ayuda: 'Cuando el cliente no vuelve hace N dias.' },
-  { valor: 'BIENVENIDA', etiqueta: 'Bienvenida', ayuda: 'Cuando el cliente se registra.' },
-  { valor: 'MANUAL', etiqueta: 'Manual', ayuda: 'No se dispara solo: se manda a mano (por ejemplo desde "Probar").' },
+  { valor: 'COMPRA', etiqueta: 'Por compra', ayuda: 'Automatico: cuando un pedido pasa al estado elegido (por defecto ENTREGADO).' },
+  { valor: 'SELLOS', etiqueta: 'Por sellos', ayuda: 'Automatico: cada vez que el cliente suma un sello, o cuando le faltan N para el premio.' },
+  { valor: 'DIA', etiqueta: 'Por dia', ayuda: 'Automatico: ese dia a esa hora (dia de la semana o fecha puntual).' },
+  { valor: 'INACTIVIDAD', etiqueta: 'Por inactividad', ayuda: 'Automatico: si el cliente no viene hace N dias.' },
+  { valor: 'BIENVENIDA', etiqueta: 'Bienvenida', ayuda: 'Automatico: al registrarse el cliente.' },
+  { valor: 'MANUAL', etiqueta: 'Manual', ayuda: 'NO es automatico: solo se manda cuando apretas Enviar/Probar.' },
 ];
 
 const ETIQUETA_TIPO: Record<TipoDisparo, string> = {
@@ -71,6 +76,16 @@ const ETIQUETA_TIPO: Record<TipoDisparo, string> = {
   INACTIVIDAD: 'Inactividad',
   BIENVENIDA: 'Bienvenida',
   MANUAL: 'Manual',
+};
+
+/** MANUAL es el UNICO que no se dispara solo. */
+const ES_MANUAL: Record<TipoDisparo, boolean> = {
+  COMPRA: false,
+  SELLOS: false,
+  DIA: false,
+  INACTIVIDAD: false,
+  BIENVENIDA: false,
+  MANUAL: true,
 };
 
 const ESTADOS: { valor: EstadoPedidoDisparo; etiqueta: string }[] = [
@@ -140,6 +155,39 @@ function descripcionConfig(d: DisparoPush): string {
       return 'Al registrarse';
     case 'MANUAL':
       return 'Solo a mano';
+  }
+}
+
+/**
+ * Texto explicito de CUANDO se dispara, el que se muestra en la lista. Deja claro
+ * el momento y si es automatico (o no, en MANUAL). No se puede confundir un MANUAL
+ * —que solo manda al apretar Enviar/Probar— con uno que se dispara solo.
+ */
+function cuandoSeDispara(d: DisparoPush): string {
+  switch (d.tipo) {
+    case 'COMPRA': {
+      const estado = etiquetaEstado(String(leerConfig(d.config, 'estado') ?? 'ENTREGADO'));
+      return `Automatico: cuando un pedido pasa a ${estado}`;
+    }
+    case 'SELLOS': {
+      const cuando = String(leerConfig(d.config, 'cuando') ?? 'CADA_SELLO');
+      if (cuando === 'FALTAN_N') {
+        return `Automatico: cuando le faltan ${numeroDe(leerConfig(d.config, 'n'), 1)} sellos para el premio`;
+      }
+      return 'Automatico: cada vez que suma un sello';
+    }
+    case 'DIA': {
+      const dia = nombreDia(String(leerConfig(d.config, 'dia') ?? ''));
+      const hora = String(leerConfig(d.config, 'hora') ?? '');
+      const cuando = `${dia} ${hora}`.trim();
+      return cuando ? `Automatico: ese dia a esa hora (${cuando})` : 'Automatico: ese dia a esa hora';
+    }
+    case 'INACTIVIDAD':
+      return `Automatico: si no viene hace ${numeroDe(leerConfig(d.config, 'dias'), 30)} dias`;
+    case 'BIENVENIDA':
+      return 'Automatico: al registrarse';
+    case 'MANUAL':
+      return 'NO es automatico: solo cuando apretas Enviar/Probar';
   }
 }
 
@@ -256,6 +304,7 @@ export function Disparos({
           const planta = listaPlantillas.find((p) => p.id === d.plantillaId);
           const regalo = etiquetaRegalo(d.regalo);
           const limite = etiquetaLimite(d.limitePorCliente);
+          const manual = ES_MANUAL[d.tipo];
           return (
             <article key={d.id} className="space-y-3 rounded-2xl border bg-card p-5">
               <div className="flex items-start justify-between gap-3">
@@ -265,6 +314,21 @@ export function Disparos({
                     <Badge variant="outline" className="shrink-0">
                       {ETIQUETA_TIPO[d.tipo]}
                     </Badge>
+                    {manual ? (
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 border-amber-400 bg-amber-50 text-amber-900"
+                      >
+                        MANUAL
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 border-emerald-400 bg-emerald-50 text-emerald-800"
+                      >
+                        AUTOMATICO
+                      </Badge>
+                    )}
                     {d.activa ? (
                       <Badge variant="secondary" className="shrink-0">
                         activo
@@ -275,7 +339,9 @@ export function Disparos({
                       </Badge>
                     )}
                   </div>
-                  <p className="text-sm text-muted-foreground">{descripcionConfig(d)}</p>
+                  <p className={manual ? 'text-sm text-amber-800' : 'text-sm text-foreground'}>
+                    {cuandoSeDispara(d)}
+                  </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Switch
@@ -288,11 +354,18 @@ export function Disparos({
 
               <ul className="space-y-1 text-xs text-muted-foreground">
                 <li>
+                  Configuracion:{' '}
+                  <span className="text-foreground">{descripcionConfig(d)}</span>
+                </li>
+                <li>
                   Plantilla:{' '}
                   <span className="text-foreground">{planta?.nombre ?? 'plantilla eliminada'}</span>
                 </li>
                 {regalo ? (
-                  <li className="text-emerald-700">Regalo: {regalo} (acredita saldo real)</li>
+                  <li className={manual ? 'text-amber-700' : 'text-emerald-700'}>
+                    Regalo: {regalo}
+                    {manual ? ' (no se acredita: un MANUAL no toca saldos)' : ' (acredita saldo real)'}
+                  </li>
                 ) : (
                   <li>Sin regalo</li>
                 )}
@@ -321,8 +394,11 @@ export function Disparos({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Un disparo con <strong>regalo</strong> acredita sellos o puntos de verdad al cliente. Los
-        topes son <strong>por cliente</strong>, para que no acumule de mas.
+        Los disparos <strong>AUTOMATICOS</strong> salen solos cuando pasa lo que dicen (una compra,
+        un sello, el dia/hora, la inactividad, el registro); si tienen <strong>regalo</strong>,
+        acreditan sellos o puntos de verdad al cliente. Un disparo <strong>MANUAL</strong> no sale
+        solo: solo se manda al apretar Probar/Enviar, y <strong>Probar nunca acredita saldo</strong>.
+        Los topes son <strong>por cliente</strong>, para que no acumule de mas.
       </p>
 
       <BottomSheet
@@ -697,8 +773,8 @@ function FormularioDisparo({
       {tipo === 'BIENVENIDA' || tipo === 'MANUAL' ? (
         <p className="rounded-xl border border-dashed bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           {tipo === 'BIENVENIDA'
-            ? 'Se manda cuando el cliente se registra. No necesita configuracion.'
-            : 'Este disparo no se manda solo: se usa a mano (por ejemplo desde "Probar").'}
+            ? 'Automatico: se manda cuando el cliente se registra. No necesita configuracion.'
+            : 'NO es automatico: este disparo no se manda solo. Se manda unicamente cuando apretas Probar (o Enviar).'}
         </p>
       ) : null}
 
@@ -752,7 +828,9 @@ function FormularioDisparo({
         <div>
           <Label>Regalo (opcional)</Label>
           <p className="text-xs text-amber-700">
-            Si completas sellos o puntos, el disparo <strong>acredita saldo real</strong> al cliente.
+            {tipo === 'MANUAL'
+              ? 'En un MANUAL el regalo no se aplica nunca: no se dispara solo y Probar no toca saldos.'
+              : 'Si completas sellos o puntos, el disparo acredita saldo real al cliente al dispararse.'}
           </p>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -888,7 +966,9 @@ function ProbarDisparo({ disparo, onCerrar }: { disparo: DisparoPush; onCerrar: 
   return (
     <div className="space-y-3 pb-2">
       <p className="text-sm text-muted-foreground">
-        Se manda <strong>solo a un cliente</strong> de prueba, para ver como llega.
+        Se manda <strong>solo a un cliente</strong> de prueba, para ver como llega.{' '}
+        <strong className="text-foreground">No acredita saldo</strong>: aunque el disparo tenga
+        regalo, la prueba no le suma sellos ni puntos.
       </p>
       <div className="space-y-2">
         <Label htmlFor="d-buscar">Buscar cliente</Label>

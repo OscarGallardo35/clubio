@@ -441,6 +441,12 @@ export function TarjetaSellos({
   const completa = estadoReal === 'completa' || estadoReal === 'canjeada'
   const themed = Boolean(theme)
 
+  // Icono del header CON theme: escala con el tamano de la tarjeta para que el flujo
+  // (medium/small) muestre el MISMO diseno que /tarjeta (full, 76/64), no un avatar chico.
+  const circuloThemed = tamaño === 'full' ? 'size-[76px]' : tamaño === 'medium' ? 'size-14' : 'size-11'
+  const iconoThemed = tamaño === 'full' ? 'size-16' : tamaño === 'medium' ? 'size-12' : 'size-9'
+  const inicialThemed = tamaño === 'full' ? 'text-3xl' : tamaño === 'medium' ? 'text-xl' : 'text-lg'
+
   // --- secuencia de animacion (fases 1 a 6 de la especificacion) ----------
   const previos = React.useRef(llenos)
   const [etapa, setEtapa] = React.useState(0) // 0 quieto | 1 pop | 2 confeti | 3 barra | 4 texto | 5 premio
@@ -678,15 +684,15 @@ export function TarjetaSellos({
           <header className="relative flex flex-col items-center gap-2 text-center">
             <span
               aria-hidden="true"
-              className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full', tamaño === 'full' ? 'size-[76px]' : 'size-9')}
+              className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full', circuloThemed)}
               style={{ backgroundColor: theme.colores.accent }}
             >
               <IconoEsquina
                 slug={slugTenant ?? ''}
-                className={cn('rounded-full object-cover', tamaño === 'full' ? 'size-16' : 'size-7')}
+                className={cn('rounded-full object-cover', iconoThemed)}
                 fallback={
                   <span
-                    className={cn('flex size-full items-center justify-center rounded-full font-bold', tamaño === 'full' ? 'text-3xl' : 'text-sm')}
+                    className={cn('flex size-full items-center justify-center rounded-full font-bold', inicialThemed)}
                     style={{ color: theme.colores.brandDark }}
                   >
                     {nombreNegocio.slice(0, 1).toUpperCase()}

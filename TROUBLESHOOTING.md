@@ -458,6 +458,18 @@ compartido), asi que el hook va en la funcion que CONTIENE el link, no en la pri
 verificar que cada archivo IMPORTE lo que usa (buscar el string `useTenant` da falso OK cuando el
 nombre ya aparece en el cuerpo).
 
+### Los links al staff llevan el slug del NEGOCIO, nunca uno hardcodeado
+
+El link del WhatsApp que abre el staff un pedido (`/{slug}/validar-pedido?ref=…`) y el de una visita
+(`/{slug}/validar?ref=…`) se arman con el slug **del negocio del pedido/visita**: sale de la fila (o de
+un lookup por `negocioId`), nunca de una variable global ni de un slug fijo.
+
+Con la PWA Staff multi-tenant, un link sin slug lo agarra el middleware y lo manda al **tenant por
+defecto**: el pedido de otro local aparece como **"pedido no encontrado"**, porque el backend lo busca
+en el negocio equivocado. Sintoma tipico y enganoso: **funciona en `bar-la-esquina`** (el local por
+defecto, donde el hardcode coincidia por casualidad) **y rompe en cualquier otro tenant**. Regla: el
+tenant destino sale del DATO (el pedido / la visita), no de una var de entorno ni de un valor fijo.
+
 ### Un wildcard a DOS niveles no lo cubre el SSL universal de Cloudflare
 
 `*.app.clubio.lat` (dos niveles) resuelve bien en DNS, pero el handshake TLS FALLA: el certificado

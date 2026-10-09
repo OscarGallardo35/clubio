@@ -45,8 +45,23 @@ const nextConfig = {
    * en el WhatsApp del cliente para siempre, y el browser cachea el redirect.
    */
   async redirects() {
+    /**
+     * Compatibilidad de las URLs SIN tenant. La Staff es multi-tenant: cada pantalla vive en
+     * `/<tenant>/...`, asi que los bookmarks y los links ya compartidos (WhatsApp, QR impreso) siguen
+     * entrando por el path viejo y aterrizan en el tenant por defecto. Los `redirects` del config
+     * corren ANTES del middleware y del render, asi que el 308 viaja como header (tambien en un HEAD);
+     * el middleware queda como red de seguridad para cualquier ruta no listada.
+     *
+     * El default sale de `NEXT_PUBLIC_DEFAULT_TENANT`: el dia que haya 2+ locales activos, estas
+     * entradas se pueden borrar (nadie deberia estar entrando sin slug).
+     */
+    const D = process.env.NEXT_PUBLIC_DEFAULT_TENANT || 'bar-la-esquina';
+    const SIN_TENANT = ['login', 'turnos', 'visitas', 'pedidos', 'perfil', 'carta', 'validar', 'validar-pedido'];
     return [
-      { source: '/pedido/:token', destination: '/validar-pedido?ref=:token', permanent: true },
+      { source: '/pedido/:token', destination: `/${D}/validar-pedido?ref=:token`, permanent: true },
+      { source: '/', destination: `/${D}/turnos`, permanent: false },
+      ...SIN_TENANT.map((r) => ({ source: `/${r}`, destination: `/${D}/${r}`, permanent: true })),
+      { source: '/pedidos/:id', destination: `/${D}/pedidos/:id`, permanent: true },
     ];
   },
 };

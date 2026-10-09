@@ -1,6 +1,8 @@
 'use client'
 
 import * as React from 'react';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 import Link from 'next/link';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Skeleton, buttonVariants } from '@repo/ui';
 import { AccionesVisita } from '@/components/AccionesVisita';
@@ -18,6 +20,8 @@ type Estado = 'cargando' | 'ok' | 'sin-token' | 'no-sirve' | 'otra-sucursal' | '
  * 404 y 403 son cosas distintas y se dicen distinto.
  */
 export function PantallaValidar({ tokenRef }: { tokenRef: string }) {
+  const tenant = useTenant();
+
   const [estado, setEstado] = React.useState<Estado>(tokenRef ? 'cargando' : 'sin-token');
   const [visita, setVisita] = React.useState<VisitaValidable | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -78,7 +82,7 @@ export function PantallaValidar({ tokenRef }: { tokenRef: string }) {
             ? 'El cliente ya ve el sello en su tarjeta.'
             : 'El cliente va a ver el motivo que escribiste.'}
         </p>
-        <Link href="/visitas" className={buttonVariants({ className: 'min-h-12' })}>
+        <Link href={rutaDe(tenant, '/visitas')} className={buttonVariants({ className: 'min-h-12' })}>
           Ir a visitas
         </Link>
       </main>
@@ -105,7 +109,7 @@ export function PantallaValidar({ tokenRef }: { tokenRef: string }) {
             </p>
           </CardContent>
         </Card>
-        <Link href="/visitas" className={buttonVariants({ variant: 'outline', className: 'min-h-12 w-full' })}>
+        <Link href={rutaDe(tenant, '/visitas')} className={buttonVariants({ variant: 'outline', className: 'min-h-12 w-full' })}>
           Ir a visitas
         </Link>
       </main>
@@ -145,11 +149,12 @@ export function PantallaValidar({ tokenRef }: { tokenRef: string }) {
 }
 
 function Aviso({ titulo, detalle }: { titulo: string; detalle: string }) {
+  const tenant = useTenant();
   return (
     <main className="flex flex-col items-center gap-3 p-6 text-center">
       <p className="text-lg font-semibold">{titulo}</p>
       <p className="text-sm text-muted-foreground">{detalle}</p>
-      <Link href="/visitas" className={buttonVariants({ variant: 'outline', className: 'min-h-12' })}>
+      <Link href={rutaDe(tenant, '/visitas')} className={buttonVariants({ variant: 'outline', className: 'min-h-12' })}>
         Ir a visitas
       </Link>
     </main>

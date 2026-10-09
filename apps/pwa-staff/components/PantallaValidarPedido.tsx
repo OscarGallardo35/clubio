@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Skeleton, buttonVariants } from '@repo/ui';
@@ -25,6 +27,8 @@ type Estado = 'cargando' | 'sin-token' | 'no-sirve' | 'vencido' | 'error';
  * que se lo manda a la lista de activos en vez de ofrecerle reintentar.
  */
 export function PantallaValidarPedido({ tokenRef }: { tokenRef: string }) {
+  const tenant = useTenant();
+
   const router = useRouter();
   const [estado, setEstado] = React.useState<Estado>(tokenRef ? 'cargando' : 'sin-token');
   const [error, setError] = React.useState<string | null>(null);
@@ -36,7 +40,7 @@ export function PantallaValidarPedido({ tokenRef }: { tokenRef: string }) {
     void (async () => {
       try {
         const pedido = await pedidosApi.porLink(tokenRef);
-        if (vivo) router.replace(`/pedidos/${pedido.id}`);
+        if (vivo) router.replace(rutaDe(tenant, `/pedidos/${pedido.id}`));
       } catch (e) {
         if (!vivo) return;
         const { status, mensaje } = normalizarError(e);
@@ -50,7 +54,7 @@ export function PantallaValidarPedido({ tokenRef }: { tokenRef: string }) {
     return () => {
       vivo = false;
     };
-  }, [tokenRef, router]);
+  }, [tokenRef, router, tenant]);
 
   if (estado === 'cargando') {
     return (
@@ -79,11 +83,12 @@ export function PantallaValidarPedido({ tokenRef }: { tokenRef: string }) {
 }
 
 function Aviso({ titulo, detalle }: { titulo: string; detalle: string }) {
+  const tenant = useTenant();
   return (
     <main className="flex flex-col items-center gap-3 p-6 text-center">
       <p className="text-lg font-semibold">{titulo}</p>
       <p className="text-sm text-muted-foreground">{detalle}</p>
-      <Link href="/pedidos" className={buttonVariants({ variant: 'outline', className: 'min-h-12' })}>
+      <Link href={rutaDe(tenant, '/pedidos')} className={buttonVariants({ variant: 'outline', className: 'min-h-12' })}>
         Ver pedidos activos
       </Link>
     </main>

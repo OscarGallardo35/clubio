@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { staffApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import { useEmpleadoStore } from '@/stores/empleadoStore';
+import { rutaLogin, tenantDePath } from '@/lib/tenant';
+import { DEFAULT_TENANT } from '@/lib/constants';
 import type { EmpleadoMe, EmpleadoStaff, NegocioStaff, SucursalStaff } from '@/types/api';
 
 export interface UsoEmpleado {
@@ -29,6 +31,14 @@ export interface UsoEmpleado {
  * - Cualquier otro error (red, 500) => NO se cierra la sesion. Un backend caido no
  *   puede eyectar al empleado que esta trabajando.
  */
+/** Login del tenant que se esta mirando, con el destino actual (para no perder un `?ref=`). */
+function loginActual(): string {
+  if (typeof window === 'undefined') return rutaLogin(DEFAULT_TENANT);
+  const tenant = tenantDePath(window.location.pathname) ?? DEFAULT_TENANT;
+  const destino = encodeURIComponent(window.location.pathname + window.location.search);
+  return `${rutaLogin(tenant)}?volver=${destino}`;
+}
+
 export function useEmpleado(): UsoEmpleado {
   const { tipo, empleado, negocio, sucursal, autenticado, cargando } = useEmpleadoStore();
   const fijarSesion = useEmpleadoStore((s) => s.fijarSesion);
@@ -49,9 +59,7 @@ export function useEmpleado(): UsoEmpleado {
         // Se vuelve al destino ACTUAL (con query) para no perder un `?ref=` en
         // curso. window y no useSearchParams: este hook vive en el layout y
         // useSearchParams obligaria a un <Suspense> para prerenderizar.
-        const actual =
-          typeof window === 'undefined' ? '/login' : `/login?volver=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-        router.replace(actual);
+        router.replace(loginActual());
       } else {
         setError(mensaje);
       }
@@ -72,7 +80,8 @@ export function useEmpleado(): UsoEmpleado {
       // borra el backend cuando puede, y si no, vence sola.
     }
     limpiar();
-    router.replace('/login');
+    const tenantAhora = typeof window === 'undefined' ? DEFAULT_TENANT : tenantDePath(window.location.pathname) ?? DEFAULT_TENANT;
+    router.replace(rutaLogin(tenantAhora));
   }, [limpiar, router]);
 
   return { tipo, empleado, negocio, sucursal, autenticado, cargando, resuelto, error, refetch, logout };

@@ -1,11 +1,15 @@
 'use client'
 
 import Link from 'next/link';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Separator, buttonVariants } from '@repo/ui';
 import { useEmpleado } from '@/hooks/useEmpleado';
 
 /** Quien soy, donde trabajo, con que plan, y como salir. */
 export default function PerfilPage() {
+  const tenant = useTenant();
+
   const { empleado, negocio, sucursal, tipo, logout } = useEmpleado();
 
   const features = Object.entries(negocio?.features ?? {}).filter(([, v]) => v?.habilitada);
@@ -67,7 +71,7 @@ export default function PerfilPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
           <p>Prender/apagar items y cambiar precios. Vive aca y no es una tab.</p>
-          <Link href="/carta" className={buttonVariants({ variant: 'outline', className: 'min-h-12 w-full' })}>
+          <Link href={rutaDe(tenant, '/carta')} className={buttonVariants({ variant: 'outline', className: 'min-h-12 w-full' })}>
             Abrir la carta
           </Link>
         </CardContent>

@@ -4,6 +4,8 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Input, Label } from '@repo/ui';
 import { staffApi } from '@/lib/api';
+import { rutaDe } from '@/lib/tenant';
+import { RUTA_INICIO } from '@/lib/constants';
 import { normalizarError } from '@/lib/errores';
 import { useEmpleadoStore } from '@/stores/empleadoStore';
 
@@ -20,15 +22,14 @@ import { useEmpleadoStore } from '@/stores/empleadoStore';
  */
 // exactOptionalPropertyTypes: un opcional que puede recibir `undefined` se declara
 // `?: T | undefined` (regla de la casa).
-export function FormularioLogin({ volver }: { volver?: string | undefined }) {
+export function FormularioLogin({ tenant, volver }: { tenant: string; volver?: string | undefined }) {
   const router = useRouter();
   const fijarToken = useEmpleadoStore((st) => st.fijarToken);
-  const [slug, setSlug] = React.useState(process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? '');
   const [pin, setPin] = React.useState('');
   const [enviando, setEnviando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const puedeEnviar = slug.trim().length > 0 && /^\d{4,8}$/.test(pin) && !enviando;
+  const puedeEnviar = tenant.trim().length > 0 && /^\d{4,8}$/.test(pin) && !enviando;
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
@@ -36,11 +37,12 @@ export function FormularioLogin({ volver }: { volver?: string | undefined }) {
     setEnviando(true);
     setError(null);
     try {
-      const r = await staffApi.login({ negocioSlug: slug.trim(), pin });
+      // El local ya NO se pide en el form: viene del path (`/<tenant>/login`).
+      const r = await staffApi.login({ negocioSlug: tenant, pin });
       // El token queda en memoria para el handshake del WS; la cookie (HttpOnly) ya
       // viajo en la respuesta y es la que autentica el resto.
       fijarToken(r.accessToken);
-      router.replace(volver && volver.startsWith('/') ? volver : '/turnos');
+      router.replace(volver && volver.startsWith('/') ? volver : rutaDe(tenant, RUTA_INICIO));
     } catch (err) {
       const { status, mensaje } = normalizarError(err);
       // 0 = no se pudo hablar con el backend: se dice distinto que un PIN mal.
@@ -51,21 +53,6 @@ export function FormularioLogin({ volver }: { volver?: string | undefined }) {
 
   return (
     <form onSubmit={enviar} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="negocio">Local</Label>
-        <Input
-          id="negocio"
-          name="negocio"
-          value={slug}
-          onChange={(e) => setSlug(e.target.value)}
-          autoComplete="organization"
-          autoCapitalize="none"
-          spellCheck={false}
-          placeholder="bar-la-esquina"
-          required
-        />
-      </div>
-
       <div className="space-y-2">
         <Label htmlFor="pin">PIN</Label>
         <Input

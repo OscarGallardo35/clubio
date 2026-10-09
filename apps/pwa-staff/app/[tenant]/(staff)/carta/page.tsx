@@ -1,6 +1,8 @@
 'use client'
 
 import * as React from 'react';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 import Link from 'next/link';
 import {
   Badge, BottomSheet, Button, Input, Label, Skeleton, Switch, Tabs, TabsList, TabsTrigger,
@@ -301,11 +303,12 @@ function FormularioItem({ item, onGuardado }: { item: ItemCarta; onGuardado: () 
 }
 
 function Aviso({ titulo, detalle }: { titulo: string; detalle: string }) {
+  const tenant = useTenant();
   return (
     <main className="flex flex-col items-center gap-3 p-6 text-center">
       <p className="font-medium">{titulo}</p>
       <p className="text-sm text-muted-foreground">{detalle}</p>
-      <Link href="/turnos" className={buttonVariants({ variant: 'outline', className: 'min-h-12' })}>
+      <Link href={rutaDe(tenant, '/turnos')} className={buttonVariants({ variant: 'outline', className: 'min-h-12' })}>
         Volver a turnos
       </Link>
     </main>

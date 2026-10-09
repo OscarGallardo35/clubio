@@ -1,6 +1,8 @@
 'use client'
 
 import Link from 'next/link';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 import { Badge, Card, CardContent } from '@repo/ui';
 import { AccionesPedido } from '@/components/AccionesPedido';
 import {
@@ -28,12 +30,14 @@ export function TarjetaPedido({
   empleadoId: string | null;
   onCambio: () => void | Promise<void>;
 }) {
+  const tenant = useTenant();
+
   const tomadoPorOtro = Boolean(pedido.empleadoAsignadoId) && pedido.empleadoAsignadoId !== empleadoId;
 
   return (
     <Card>
       <CardContent className="space-y-3 pt-4">
-        <Link href={`/pedidos/${pedido.id}`} className="block">
+        <Link href={rutaDe(tenant, `/pedidos/${pedido.id}`)} className="block">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="flex items-center gap-2 font-medium">

@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@repo/ui';
 import { TABS, tabActiva, type TabStaff } from '@/lib/nav-tabs';
+import { rutaDe } from '@/lib/tenant';
+import { useTenant } from '@/hooks/useTenant';
 
 /**
  * Barra de navegacion inferior de la Staff.
@@ -58,6 +60,7 @@ function Icono({ nombre, className }: { nombre: TabStaff['icono']; className?: s
 
 export function BottomNav() {
   const pathname = usePathname();
+  const tenant = useTenant();
   const activa = tabActiva(pathname ?? '');
 
   return (
@@ -72,7 +75,7 @@ export function BottomNav() {
           return (
             <li key={tab.clave} className="flex-1">
               <Link
-                href={tab.href}
+                href={rutaDe(tenant, tab.ruta)}
                 aria-current={activo ? 'page' : undefined}
                 className={cn(
                   'flex min-h-14 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium',

@@ -1,6 +1,8 @@
 'use client'
 
 import * as React from 'react';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
@@ -27,6 +29,8 @@ import {
  * PWA Cliente: el id sale de la URL y el estado del fetch, no de un store.
  */
 export default function PedidoDetallePage() {
+  const tenant = useTenant();
+
   const params = useParams<{ id?: string }>();
   const id = params?.id ?? '';
   const { empleado, negocio } = useEmpleado();
@@ -56,7 +60,7 @@ export default function PedidoDetallePage() {
         <p className="text-sm text-muted-foreground">
           {error ?? 'Puede que sea de otra sucursal o que ya no exista.'}
         </p>
-        <Link href="/pedidos" className={buttonVariants({ variant: 'outline', className: 'min-h-12' })}>
+        <Link href={rutaDe(tenant, '/pedidos')} className={buttonVariants({ variant: 'outline', className: 'min-h-12' })}>
           Volver a la lista
         </Link>
       </main>
@@ -84,7 +88,7 @@ export default function PedidoDetallePage() {
   return (
     <main className="space-y-3 p-4">
       <div className="flex items-center justify-between gap-2">
-        <Link href="/pedidos" className="text-sm text-muted-foreground underline">
+        <Link href={rutaDe(tenant, '/pedidos')} className="text-sm text-muted-foreground underline">
           Volver a la lista
         </Link>
         <Badge variant="outline" className={COLOR_ESTADO[pedido.estado]}>

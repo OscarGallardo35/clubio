@@ -358,6 +358,34 @@ que `main.ts` valida con un callback (lista estatica + regex de `*.app.clubio.la
 Ojo con el `matcher` del middleware: va MINIMO (el filtro fino de assets en el codigo) por la regla
 de mas arriba sobre `\\.` dentro del matcher.
 
+### Un wildcard a DOS niveles no lo cubre el SSL universal de Cloudflare
+
+`*.app.clubio.lat` (dos niveles) resuelve bien en DNS, pero el handshake TLS FALLA: el certificado
+universal de la zona cubre `clubio.lat` y `*.clubio.lat` — un solo nivel —, asi que
+`bar-la-esquina.app.clubio.lat` recibe un certificado que no matchea (el cliente ve un fatal alert:
+`curl: (35) schannel: SEC_E_ILLEGAL_MESSAGE`). El DNS puede estar perfecto y el sitio igual no abrir;
+son dos cosas distintas.
+
+Dos salidas:
+- **Total TLS / Advanced Certificate Manager** (Cloudflare, pago): emite certificados por hostname
+  proxyado, incluidos los de dos niveles.
+- **Un subdominio de UN nivel** (`bar-la-esquina.clubio.lat`): el certificado actual ya lo cubre, es
+  gratis e inmediato. Requiere un CNAME wildcard `*.clubio.lat` (los registros exactos —`api`, `staff`,
+  `admin`— tienen prioridad sobre el wildcard, asi que no se pisan).
+
+### Verificar DNS: el resolver local miente y el negativo se cachea
+
+Dos trampas al comprobar que un registro nuevo existe (me pasaron juntas, y por poco reporto lo
+contrario a la realidad):
+
+1. Un `nslookup` contra el **resolver local** puede contestar "Non-existent domain" por un cache
+   negativo propio, no porque la zona no tenga el registro. La verdad la da la **autoridad**:
+   `nslookup <host> <ns-de-la-zona>` (para clubio.lat: `lynn.ns.cloudflare.com`) o la API de
+   Cloudflare (`GET /zones/<id>/dns_records`).
+2. Un NXDOMAIN ya consultado queda cacheado en `1.1.1.1` / `8.8.8.8` un buen rato: recien creado el
+   registro, hay que esperar o probar **directo contra la IP** (`curl --resolve <host>:443:<ip>`) en
+   vez de concluir que no propago.
+
 ### Rate limiting: limites configurables por env
 
 `POST /pedidos` limita a 10 por hora por IP y `GET /pedidos/publico/:linkToken` a

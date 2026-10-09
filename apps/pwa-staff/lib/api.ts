@@ -11,6 +11,7 @@ import type {
   LoginEmpleadoRespuesta,
   RespuestaAprobacion,
   RespuestaCanje,
+  RespuestaEditarMonto,
   RespuestaRechazo,
   TipoCanje,
   VisitaAprobada,
@@ -51,7 +52,7 @@ export const visitasApi = {
   /** Detalle de una solicitud por token. 404 si no existe; 403 si es de otra sucursal. */
   validar: (token: string) => api.get<VisitaValidable>(endpoints.visitas.validar(token)),
 
-  aprobar: (token: string, body: { origen?: string; montoConsumido?: number } = {}) =>
+  aprobar: (token: string, body: { origen?: string; montoConsumido?: number; pedidoId?: string } = {}) =>
     api.post<RespuestaAprobacion>(endpoints.visitas.aprobar(token), { origen: 'pwa_staff', ...body }),
 
   /**
@@ -74,6 +75,13 @@ export const visitasApi = {
   /** La cola de solicitudes vivas: la fuente de verdad de la lista del staff. */
   pendientes: () =>
     api.get<{ data: VisitaPendiente[]; total: number }>(endpoints.visitas.pendientes),
+
+  /**
+   * Fase 2: corrige el monto de una visita ya aprobada. El backend recalcula los puntos con la
+   * tasa vigente y ajusta el saldo; responde 400 con el motivo si el cliente ya gasto esos puntos.
+   */
+  editarMonto: (visitaId: string, montoConsumido: number) =>
+    api.patch<RespuestaEditarMonto>(endpoints.visitas.editarMonto(visitaId), { montoConsumido }),
 
   historial: (filtros: { page?: string; pageSize?: string } = {}) => {
     const qs = new URLSearchParams(

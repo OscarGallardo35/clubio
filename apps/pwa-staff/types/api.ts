@@ -63,6 +63,19 @@ export interface LoginEmpleadoRespuesta {
 // Visitas (staff). Formas REALES leidas de visitas.service.ts.
 // ---------------------------------------------------------------------------
 
+/** Item de `pedidosCandidatos` en `GET /visitas/validar/:token` (Fase 1: vinculo visita-pedido). */
+export interface PedidoCandidato {
+  id: string
+  total: number
+  estado: string
+  creadoEn: string
+  entregadoEn: string | null
+  mesa: string | null
+  items: unknown
+  /** true = pedido de invitado que coincide por telefono: SUGERENCIA, no vinculo seguro. */
+  porTelefono: boolean
+}
+
 /** GET /visitas/validar/:token */
 export interface VisitaValidable {
   token: string
@@ -81,6 +94,8 @@ export interface VisitaValidable {
     etiqueta: string | null
     ultimaVisita: string | null
   }
+  /** Pedidos del menu del mismo cliente (o del mismo telefono si es invitado) en las ultimas 3 h. */
+  pedidosCandidatos: PedidoCandidato[]
 }
 
 /** POST /visitas/aprobar/:token */
@@ -160,8 +175,22 @@ export interface VisitaAprobada {
   sucursalId: string | null
   aprobadoEn: string | null
   sellosOtorgados: number
+  /** Fase 2: lo que se le acredito a esta visita (editable con PATCH /visitas/:id/monto). */
+  puntosOtorgados: number
+  montoConsumido: number | null
   cliente: { id: string; nombre: string }
   sucursal: { id: string; nombre: string; slug: string } | null
+}
+
+/** Respuesta de `PATCH /visitas/:id/monto` (Fase 2). */
+export interface RespuestaEditarMonto {
+  ok: true
+  visitaId: string
+  montoAntes: number | null
+  montoDespues: number
+  puntosAntes: number
+  puntosDespues: number
+  saldoDespues: number
 }
 
 /** Payload del WS `visita:solicitada` (a la sala de la sucursal + duenos). */

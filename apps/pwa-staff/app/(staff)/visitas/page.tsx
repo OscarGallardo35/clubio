@@ -3,11 +3,12 @@
 import * as React from 'react';
 import { Badge, Card, CardContent, Skeleton, Button, toast } from '@repo/ui';
 import { AccionesVisita } from '@/components/AccionesVisita';
+import { CorregirMontoDialog } from '@/components/CorregirMontoDialog';
 import { useVisitasSocket } from '@/hooks/useVisitasSocket';
 import { configuracionApi, visitasApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import { formatearRestante, mergearPendiente, sinVencidos } from '@/lib/pendientes';
-import type { ConfiguracionEfectivaStaff, VisitaPendiente } from '@/types/api';
+import type { ConfiguracionEfectivaStaff, VisitaAprobada, VisitaPendiente } from '@/types/api';
 
 /**
  * Cola de visitas pendientes (QR #2).
@@ -31,6 +32,9 @@ export default function VisitasPage() {
   const [cargadoEn, setCargadoEn] = React.useState(() => Date.now());
   const [tick, setTick] = React.useState(0);
   const [config, setConfig] = React.useState<ConfiguracionEfectivaStaff | null>(null);
+  // Fase 3b: lo que YO aprobe hoy (con monto y puntos), para poder corregir el consumo.
+  const [aprobadas, setAprobadas] = React.useState<VisitaAprobada[] | null>(null);
+  const [aCorregir, setACorregir] = React.useState<VisitaAprobada | null>(null);
 
   // La config del club decide si la fila pide el monto del consumo y como se calcula el preview.
   // Se pide UNA vez por pantalla (no por fila). Si falla, la fila degrada a "solo sello": es mejor
@@ -67,6 +71,24 @@ export default function VisitasPage() {
   React.useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  /**
+   * "Aprobadas hoy" (`GET /visitas/mis-aprobaciones`): NO es la cola de pendientes, son las visitas
+   * que ESE empleado ya aprobo hoy. Se pide aparte para que un fallo suyo no rompa la cola.
+   */
+  const refetchAprobadas = React.useCallback(async () => {
+    try {
+      const r = await visitasApi.misAprobaciones();
+      setAprobadas(r.data);
+    } catch (e) {
+      const { status } = normalizarError(e);
+      if (status !== 401) setAprobadas([]);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refetchAprobadas();
+  }, [refetchAprobadas]);
 
   // Heartbeat: al conectar (y al RECONECTAR) se recupera lo perdido.
   React.useEffect(() => {
@@ -175,12 +197,59 @@ export default function VisitasPage() {
                 pendiente={p}
                 transcurrido={transcurrido}
                 config={config}
-                onResuelta={() => setLista((actual) => (actual ?? []).filter((x) => x.token !== p.token))}
+                onResuelta={() => {
+                  setLista((actual) => (actual ?? []).filter((x) => x.token !== p.token));
+                  // Una aprobacion recien hecha tiene que aparecer en "Aprobadas hoy".
+                  void refetchAprobadas();
+                }}
               />
             </li>
           ))}
         </ul>
       )}
+
+      <section className="space-y-3 pt-2">
+        <h2 className="text-base font-semibold">Aprobadas hoy</h2>
+        {aprobadas === null ? (
+          <Skeleton className="h-16 w-full" />
+        ) : aprobadas.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Todavia no aprobaste visitas hoy.</p>
+        ) : (
+          <ul className="space-y-2">
+            {aprobadas.map((v) => (
+              <li key={v.id}>
+                <Card>
+                  <CardContent className="flex items-center justify-between gap-3 pt-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{v.cliente?.nombre ?? 'Cliente'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {v.montoConsumido === null
+                          ? 'Sin monto'
+                          : `$${v.montoConsumido.toLocaleString('es-AR')}`}{' '}
+                        · {v.puntosOtorgados} puntos · +{v.sellosOtorgados} sello
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="min-h-10 shrink-0"
+                      onClick={() => setACorregir(v)}
+                    >
+                      Corregir monto
+                    </Button>
+                  </CardContent>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <CorregirMontoDialog
+        visita={aCorregir}
+        abierto={aCorregir !== null}
+        onCerrar={() => setACorregir(null)}
+        onCorregido={() => void refetchAprobadas()}
+      />
     </main>
   );
 }

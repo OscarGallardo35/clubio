@@ -20,11 +20,20 @@ import {
 } from '@repo/ui';
 import { visitasApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
-import type { ConfiguracionEfectivaStaff, TipoCanje, VisitaValidable } from '@/types/api';
+import type { ConfiguracionEfectivaStaff, PedidoCandidato, TipoCanje, VisitaValidable } from '@/types/api';
 
 /** Mismos defaults que el backend (`FidelizacionService`): si no, el preview mentiria. */
 const PUNTOS_POR_MIL_DEFAULT = 5;
 const PUNTOS_PARA_PREMIO_DEFAULT = 100;
+
+/** "21:14" en hora local, para la lista de pedidos candidatos. */
+function horaDe(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '--:--';
+  }
+}
 
 /**
  * Aprobar / rechazar una visita, y canjear un premio ya desbloqueado.
@@ -61,6 +70,7 @@ export function AccionesVisita({
   const [sheetAbierto, setSheet] = React.useState(false);
   const [motivo, setMotivo] = React.useState('');
   const [monto, setMonto] = React.useState('');
+  const [pedidoId, setPedidoId] = React.useState<string | null>(null);
   const [detalle, setDetalle] = React.useState<VisitaValidable | null>(null);
   const [canjeando, setCanjeando] = React.useState(false);
   const [aCanjear, setACanjear] = React.useState<TipoCanje | null>(null);
@@ -93,12 +103,19 @@ export function AccionesVisita({
   }, [token]);
 
   const montoNumero = monto.trim() === '' ? null : Number(monto.replace(',', '.'));
-  const montoValido = montoNumero === null || (Number.isFinite(montoNumero) && montoNumero >= 0);
+
+  // Fase 1: pedidos del menu que pueden ser el consumo. Si el staff elige uno, el monto ES su total
+  // (lo impone el backend), asi que el input manual se aparta para no mandar dos verdades distintas.
+  const candidatos: PedidoCandidato[] = detalle?.pedidosCandidatos ?? [];
+  const elegido = candidatos.find((c) => c.id === pedidoId) ?? null;
+  const montoEfectivo = elegido ? elegido.total : montoNumero;
+  const montoValido =
+    elegido !== null || montoNumero === null || (Number.isFinite(montoNumero) && montoNumero >= 0);
   const sellosPreview = modo === 'SOLO_PUNTOS' ? 0 : 1;
   const puntosPreview =
-    montoNumero === null || !Number.isFinite(montoNumero)
+    montoEfectivo === null || !Number.isFinite(montoEfectivo)
       ? 0
-      : Math.floor((montoNumero / 1000) * (Number.isFinite(puntosPorMil) ? puntosPorMil : 0));
+      : Math.floor((montoEfectivo / 1000) * (Number.isFinite(puntosPorMil) ? puntosPorMil : 0));
 
   const partes = [
     sellosPreview ? '+1 sello' : null,
@@ -115,9 +132,10 @@ export function AccionesVisita({
     if (!montoValido) return;
     setAprobando(true);
     try {
+      // Con un pedido elegido el backend usa SU total: mandar montoConsumido ademas seria ambiguo.
       const r = await visitasApi.aprobar(
         token,
-        montoNumero !== null ? { montoConsumido: montoNumero } : {},
+        elegido ? { pedidoId: elegido.id } : montoNumero !== null ? { montoConsumido: montoNumero } : {},
       );
       const otorgado = [
         r.sellosOtorgados ? `+${r.sellosOtorgados} sello` : null,
@@ -206,7 +224,54 @@ export function AccionesVisita({
         </div>
       ) : null}
 
-      {usaPuntos ? (
+      {candidatos.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Pedidos del menu (ultimas 3 h)</Label>
+          <ul className="space-y-2">
+            {candidatos.map((c) => {
+              const activo = c.id === pedidoId;
+              return (
+                <li
+                  key={c.id}
+                  className={`rounded-xl border px-3 py-2 ${activo ? 'border-emerald-400 bg-emerald-50' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">
+                        Pedido de las {horaDe(c.creadoEn)} · ${c.total.toLocaleString('es-AR')}
+                      </p>
+                      <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                        <span>{c.estado.toLowerCase()}</span>
+                        {c.porTelefono ? (
+                          <Badge variant="outline" className="text-[10px]">
+                            por teléfono (invitado)
+                          </Badge>
+                        ) : null}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={activo ? 'outline' : 'default'}
+                      className="min-h-10 shrink-0"
+                      disabled={ocupado}
+                      onClick={() => setPedidoId(activo ? null : c.id)}
+                    >
+                      {activo ? 'Quitar' : 'Usar este'}
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {elegido ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              El monto sale del pedido: <strong>${elegido.total.toLocaleString('es-AR')}</strong>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {usaPuntos && !elegido ? (
         <div className="space-y-2">
           <Label htmlFor={`monto-${token}`}>Consumo (opcional)</Label>
           <Input
@@ -216,15 +281,18 @@ export function AccionesVisita({
             inputMode="decimal"
             placeholder="Ej: 6800"
           />
-          <p className="text-xs text-muted-foreground" role="status">
-            Vas a otorgar: <strong>{preview}</strong>
-          </p>
           {!montoValido ? (
             <p role="alert" className="text-xs text-destructive">
               El monto tiene que ser un numero.
             </p>
           ) : null}
         </div>
+      ) : null}
+
+      {usaPuntos ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          Vas a otorgar: <strong>{preview}</strong>
+        </p>
       ) : null}
 
       <div className="flex gap-2">

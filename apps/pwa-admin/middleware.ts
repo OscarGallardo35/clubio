@@ -71,7 +71,11 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (cookie) {
+  // Sesion de OTRO negocio -> al slug del token, PERO NUNCA en una ruta de login: el login es
+  // justamente donde se cambia de cuenta. Si no se excluye, alguien con una sesion vieja de otro
+  // local queda rebotado de `/<tenantB>/login` a `/<tenantA>/login` y no puede entrar nunca
+  // (bug real: dueno de que-lomitos con cookie de bar-la-esquina -> 307 a bar-la-esquina).
+  if (cookie && !esLogin) {
     const slug = slugDelToken(cookie);
     if (slug && slug !== tenant) {
       const url = req.nextUrl.clone();

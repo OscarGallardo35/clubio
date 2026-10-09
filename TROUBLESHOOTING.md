@@ -3220,3 +3220,40 @@ no en `click`. Un `t.click()` deja la pestana anterior activa y el chequeo lee e
 equivocado ("el campo no esta"). Se verifica con la misma secuencia. Regla general: si el estado de
 la UI se lee distinto despues del `click()`, sospechar del evento que escucha la primitiva antes de
 sospechar de la app.
+
+### Firma de subida a Cloudinary: el binario va del navegador a Cloudinary, no pasa por el backend
+
+La foto de un item de carta se sube con una **firma**. El admin pide
+`POST /api/media/firmar-subida` y el backend responde `timestamp`, `signature`, `apiKey`,
+`cloudName`, `folder` y `transformation`; despues el **navegador** manda el multipart directo a
+`https://api.cloudinary.com/v1_1/<cloudName>/image/upload` y guarda el `secure_url` que vuelve.
+
+**Por que el archivo NO pasa por el backend**: el backend tiene el `CLOUDINARY_API_SECRET` para
+firmar. Hacerlo pasar obligaria a recibir el binario, guardarlo en disco/tmp y cuidar que ningun log
+lo escriba, ademas de gastar ancho de banda del servidor. Con la firma, el secreto nunca sale del
+proceso que firma y el archivo va por el camino mas corto.
+
+Tres cosas que no se pueden aflojar:
+
+1. **Se firma EXACTAMENTE lo que el navegador manda.** Cloudinary recalcula el HMAC-SHA1 sobre los
+   parametros (menos `file`, `api_key`, `cloud_name`, `resource_type`) ordenados alfabeticamente y
+   los compara. Si en la firma entra `folder`/`transformation`/`timestamp`, el `FormData` tiene que
+   mandar los mismos valores, con el MISMO string de transformacion. El `Content-Type` NO se setea a
+   mano: el browser pone el `boundary` del multipart.
+2. **La carpeta cuelga del negocio del TOKEN** (`clubio/<negocioId>/carta`), nunca de un id que venga
+   en el body. El DTO no declara `negocioId` y el `ValidationPipe` con `forbidNonWhitelisted`
+   rechaza con 400 cualquier intento: sin eso, un dueno podria firmar para el espacio de otro.
+3. **La config tiene dos formas, en orden**: el trio `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/
+   `CLOUDINARY_API_SECRET` y, si falta, el `CLOUDINARY_URL`
+   (`cloudinary://<api_key>:<api_secret>@<cloud_name>`) parseado a mano. Se parsea en vez de delegar
+   en `cloudinary.config()` porque la firma necesita `api_key` y `cloud_name` explicitos para
+   devolverlos al frontend; asi cada valor se verifica por separado y el codigo sigue andando cuando
+   esten las 3 vars explicitas. El `api_secret` no se loguea ni viaja en la respuesta.
+
+La transformacion firmada (`c_limit,w_800,h_800,q_auto,f_auto`) es una **derivada de entrega**: no
+recorta el original, solo limita el lado mayor a 800 px sin agrandar (`c_limit` respeta el tamaño si
+ya es menor).
+
+**Regresion a vigilar**: los items del seed NO tienen foto y el menu los muestra con el placeholder
+de color de marca (`ImagenOptimizada` con `data-estado="placeholder"` y la inicial del item). Subir
+la foto de un item no puede cambiar ese comportamiento para los demas.

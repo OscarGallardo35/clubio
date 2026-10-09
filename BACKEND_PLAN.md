@@ -1191,3 +1191,32 @@ respondia 200 desde otra red. Pasar el CNAME a DNS Only (nube gris) resolvio el 
 - Considerar dejarlo asi post-MVP. Si Cloudflare estabiliza el enrutamiento, volver a proxied con
   monitoreo de 522 (un 522 lo genera el edge, no el origen: si solo lo ve un operador, es su PoP).
 
+## Subida de imagenes (Cloudinary) — firma directa
+
+Las fotos de la carta se suben con **firma directa**: el backend solo firma y el **binario va del
+navegador a Cloudinary**. El endpoint es `POST /api/media/firmar-subida` (guard de dueno). El detalle
+de por que y las trampas esta en TROUBLESHOOTING; aca van las variables y la convencion de carpetas.
+
+### Las 3 variables (o `CLOUDINARY_URL`)
+
+`MediaService` resuelve la config en este orden:
+
+| Forma | Variables | Notas |
+|---|---|---|
+| Explicita | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | la que se cargara para debugging |
+| URL | `CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name>` | como se carga hoy en Railway (cloud name `ovnvdibw`); se parsea a mano |
+
+`CLOUDINARY_API_SECRET` NO se commitea ni se loguea: vive en el entorno de Railway (y en el `.env`
+local, gitignored). Sin credenciales, `POST /media/firmar-subida` responde **503** explicito en vez
+de firmar con un secreto vacio.
+
+### Convencion de carpetas
+
+```
+clubio/<negocioId>/carta/<public_id>
+```
+
+La carpeta se arma con el `negocioId` del **TOKEN** del dueno (nunca con uno del body), asi una firma
+no puede escribir en el espacio de otro tenant. La transformacion firmada
+(`c_limit,w_800,h_800,q_auto,f_auto`) es una **derivada de entrega**: no recorta el original.
+

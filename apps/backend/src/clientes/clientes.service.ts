@@ -1,9 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ModoClientes, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { LimitesService } from '../planes/limites.service';
+import { DisparosService } from '../push/disparos.service';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { enmascararTelefono, normalizarTelefonoE164 } from '../common/utils/phone.util';
 import { esRolPrivilegiado } from './dto/cliente-response.dto';
@@ -27,12 +28,15 @@ export interface AuthCtx {
 
 @Injectable()
 export class ClientesService {
+  private readonly logger = new Logger('Clientes');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly segmentos: SegmentosService,
     private readonly resolver: SucursalResolverService,
     private readonly limites: LimitesService,
+    private readonly disparos: DisparosService,
   ) {}
 
   /**
@@ -239,7 +243,17 @@ export class ClientesService {
       negocioId, accion: 'cliente.creado', empleadoId: ctx.empleadoId,
       clienteId: cliente.id, detalle: { telefono, revivido: !!existente }, ip: ctx.ip,
     });
-    if (esNuevo) await this.limites.incrementarUso(negocioId, 'CLIENTES');
+    if (esNuevo) {
+      await this.limites.incrementarUso(negocioId, 'CLIENTES');
+      // DISPAROS BIENVENIDA: solo en el alta REAL (no al revivir un soft-deleted).
+      try {
+        await this.disparos.onClienteNuevo({
+          negocioId, clienteId: cliente.id, sucursalId: sucursal.id as string,
+        });
+      } catch (e) {
+        this.logger.warn(`Disparos de bienvenida fallaron: ${(e as Error).message}`);
+      }
+    }
     return cliente;
   }
 

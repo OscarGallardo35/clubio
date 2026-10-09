@@ -1,5 +1,5 @@
 import {
-  BadRequestException, ForbiddenException, GoneException, Injectable, NotFoundException,
+  BadRequestException, ForbiddenException, GoneException, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
 import { EstadoPedido, Prisma, TipoVisita } from '@prisma/client';
@@ -12,6 +12,7 @@ import { enmascararTelefono } from '../common/utils/phone.util';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { VisitasGateway } from './visitas.gateway';
 import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
+import { DisparosService } from '../push/disparos.service';
 import type { SolicitarVisitaDto } from './dto/solicitar-visita.dto';
 import type { AprobarVisitaDto } from './dto/aprobar-visita.dto';
 import type { EditarMontoVisitaDto } from './dto/editar-monto-visita.dto';
@@ -54,6 +55,8 @@ const CLAVE_RECHAZO = (token: string) => `visita:rechazada:${token}`;
 
 @Injectable()
 export class VisitasService {
+  private readonly logger = new Logger('Visitas');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
@@ -62,6 +65,7 @@ export class VisitasService {
     private readonly segmentos: SegmentosService,
     private readonly gateway: VisitasGateway,
     private readonly fidelizacion: FidelizacionService,
+    private readonly disparos: DisparosService,
   ) {}
 
   /**
@@ -364,6 +368,21 @@ export class VisitasService {
       aprobadoEn: new Date().toISOString(),
     });
 
+    // DISPAROS SELLOS: cambio el saldo del cliente -> evaluar CADA_SELLO / FALTAN_N.
+    // Aislado: un fallo del motor no debe romper la aprobacion de la visita.
+    try {
+      await this.disparos.onSaldoCambia({
+        negocioId,
+        clienteId: fila.clienteId,
+        sucursalId,
+        visitaId: resultado.visitaId,
+        sellosActuales: resultado.sellosActuales,
+        sellosParaPremio: resultado.sellosParaPremio,
+      });
+    } catch (e) {
+      this.logger.warn(`Disparos de push fallaron en visita: ${(e as Error).message}`);
+    }
+
     return {
       success: true,
       visitaId: resultado.visitaId,
@@ -384,7 +403,6 @@ export class VisitasService {
       mostrarResena,
     };
   }
-
   /**
    * POST /visitas/canjear (staff).
    *

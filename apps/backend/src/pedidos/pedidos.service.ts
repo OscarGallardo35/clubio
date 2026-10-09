@@ -11,6 +11,8 @@ import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { PushService } from '../push/push.service';
+import { DisparosService } from '../push/disparos.service';
+import type { ResultadoAcreditacion } from '../fidelizacion/fidelizacion.service';
 import { AsignacionPedidosService } from '../turnos/asignacion-pedidos.service';
 import { LimitesService } from '../planes/limites.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
@@ -45,6 +47,7 @@ export class PedidosService {
     private readonly resolver: SucursalResolverService,
     private readonly configuracion: ConfiguracionService,
     private readonly push: PushService,
+    private readonly disparos: DisparosService,
     private readonly gateway: PedidosGateway,
     private readonly jwt: JwtService,
     private readonly asignacion: AsignacionPedidosService,
@@ -571,7 +574,7 @@ export class PedidosService {
     }
 
     const ahora = new Date();
-    const actualizado = await this.prisma.$transaction(async (tx) => {
+    const { actualizado, acreditado } = await this.prisma.$transaction(async (tx) => {
       const ped = await tx.pedido.update({
         where: { id: pedidoId },
         data: {
@@ -588,6 +591,7 @@ export class PedidosService {
       // ENTREGADO acredita sellos/puntos con el MISMO servicio que usa la visita aprobada.
       // Solo si el pedido tiene cliente: un invitado (clienteId null) no tiene a quien acreditarle.
       // ENTREGADO es terminal en la tabla de transiciones, asi que no se puede acreditar dos veces.
+      let acreditado: ResultadoAcreditacion | null = null;
       if (dto.estado === EstadoPedido.ENTREGADO && ped.clienteId && ped.sucursalId) {
         // Candado anti doble acreditacion (Fase 1): si una visita ya uso el total de ESTE pedido,
         // el consumo se acredito al aprobarla. Entregarlo no puede volver a acreditar.
@@ -599,7 +603,7 @@ export class PedidosService {
             `Pedido ${ped.id} ya acreditado por la visita ${yaVinculada.id}: no se acredita de nuevo`,
           );
         } else {
-          await this.fidelizacion.acreditar(tx, {
+          acreditado = await this.fidelizacion.acreditar(tx, {
             negocioId,
             clienteId: ped.clienteId,
             sucursalId: ped.sucursalId,
@@ -613,7 +617,7 @@ export class PedidosService {
         }
       }
 
-      return ped;
+      return { actualizado: ped, acreditado };
     });
 
     await this.auditoria.registrar({
@@ -637,6 +641,30 @@ export class PedidosService {
         url: `/pedidos/${pedidoId}`,
         tag: `pedido-${pedidoId}`,
       }).catch((e) => this.logger.warn(`Push de estado fallo: ${(e as Error).message}`));
+    }
+
+    // DISPAROS: SELLOS (si esta transicion cambio el saldo) y COMPRA (si llego al estado
+    // configurado). Van al final y aislados: un fallo del motor no debe revertir el pedido.
+    try {
+      if (acreditado && pedido.clienteId) {
+        await this.disparos.onSaldoCambia({
+          negocioId,
+          clienteId: pedido.clienteId,
+          sucursalId: pedido.sucursalId,
+          visitaId: acreditado.visitaId,
+          sellosActuales: acreditado.sellosActuales,
+          sellosParaPremio: acreditado.sellosParaPremio,
+        });
+      }
+      await this.disparos.onPedidoEstado({
+        negocioId,
+        pedidoId,
+        clienteId: actualizado.clienteId ?? pedido.clienteId,
+        sucursalId: actualizado.sucursalId,
+        estadoNuevo: dto.estado,
+      });
+    } catch (e) {
+      this.logger.warn(`Disparos de push fallaron para el pedido ${pedidoId}: ${(e as Error).message}`);
     }
 
     return {

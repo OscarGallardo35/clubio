@@ -6,6 +6,7 @@ import * as speakeasy from 'speakeasy';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
+import { DisparosService } from '../push/disparos.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
 import { requireEnv } from '../common/utils/env.util';
 import type { LoginEmpleadoDto } from './dto/login-empleado.dto';
@@ -38,6 +39,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly redis: RedisService,
     private readonly resolver: SucursalResolverService,
+    private readonly disparos: DisparosService,
   ) {}
 
   // =========================================================================
@@ -338,6 +340,19 @@ export class AuthService {
       update: {},
       create: { clienteId: cliente.id, sucursalId: sucursal.id as string },
     });
+
+    // DISPAROS BIENVENIDA: solo para el alta REAL (no cuando el cliente ya existia).
+    if (!existente) {
+      try {
+        await this.disparos.onClienteNuevo({
+          negocioId: negocio.id,
+          clienteId: cliente.id,
+          sucursalId: sucursal.id as string,
+        });
+      } catch (e) {
+        this.logger.warn(`Disparos de bienvenida fallaron: ${(e as Error).message}`);
+      }
+    }
 
     return {
       // El claim `sucursalId` solo se agrega con modoClientes = POR_SUCURSAL:

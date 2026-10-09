@@ -540,3 +540,116 @@ export interface ResultadoEnvioPlantilla {
   prueba?: boolean
   enviados?: number
 }
+
+// ------------------------------------------------------------------ Push (disparos) --
+
+/**
+ * Motivo que dispara la notificacion automatica (`/push/disparos`).
+ * Los literales son los del backend: cambiarlos aca rompe el `config` que espera el DTO.
+ */
+export type TipoDisparo = 'COMPRA' | 'SELLOS' | 'DIA' | 'INACTIVIDAD' | 'BIENVENIDA' | 'MANUAL'
+
+/** Espejo del enum `EstadoPedido` del backend (para el disparo por COMPRA). */
+export type EstadoPedidoDisparo =
+  | 'PENDIENTE'
+  | 'CONFIRMADO'
+  | 'EN_PREPARACION'
+  | 'LISTO'
+  | 'ENVIADO'
+  | 'ENTREGADO'
+  | 'CANCELADO'
+  | 'RECHAZADO'
+
+/** `config` cuando el disparo es por COMPRA. */
+export interface ConfigDisparoCompra {
+  estado: EstadoPedidoDisparo
+  cadaNCompras: number
+}
+
+/** `config` cuando el disparo es por SELLOS. */
+export interface ConfigDisparoSellos {
+  cuando: 'CADA_SELLO' | 'FALTAN_N'
+  n?: number
+}
+
+/** `config` cuando el disparo es por DIA: dia de la semana (`FRIDAY`) o fecha (`2026-10-15`). */
+export interface ConfigDisparoDia {
+  dia: string
+  /** Formato `HH:mm`. */
+  hora: string
+}
+
+/** `config` cuando el disparo es por INACTIVIDAD. */
+export interface ConfigDisparoInactividad {
+  dias: number
+}
+
+/** `config` de un disparo segun su tipo (BIENVENIDA y MANUAL no llevan config). */
+export type ConfigDisparo =
+  | ConfigDisparoCompra
+  | ConfigDisparoSellos
+  | ConfigDisparoDia
+  | ConfigDisparoInactividad
+  | Record<string, never>
+
+/** Saldo que acredita el disparo: sellos y/o puntos (es saldo REAL del cliente). */
+export interface RegaloDisparo {
+  sellos?: number
+  puntos?: number
+}
+
+/** Tope por cliente para que un disparo no acredite de mas. */
+export interface LimitePorCliente {
+  porDia?: number
+  porMes?: number
+}
+
+/** Disparo de push automatico (`GET /push/disparos`). */
+export interface DisparoPush {
+  id: string
+  negocioId: string
+  nombre: string
+  activa: boolean
+  tipo: TipoDisparo
+  config: ConfigDisparo
+  plantillaId: string
+  regalo: RegaloDisparo | null
+  limitePorCliente: LimitePorCliente | null
+  creadoEn: string
+  actualizadoEn: string
+}
+
+export interface CrearDisparoBody {
+  nombre: string
+  activa?: boolean
+  tipo: TipoDisparo
+  config: ConfigDisparo
+  plantillaId: string
+  regalo?: RegaloDisparo
+  limitePorCliente?: LimitePorCliente
+}
+
+export type ActualizarDisparoBody = Partial<CrearDisparoBody>
+
+/** `POST /push/disparos/:id/probar` con `{ clienteId }`. */
+export interface ResultadoProbarDisparo {
+  ok?: boolean
+  enviados?: number
+  mensaje?: string
+}
+
+/** Cliente del listado `GET /clientes` (proyeccion reducida: alcanza para elegir uno). */
+export interface ClienteResumen {
+  id: string
+  nombre: string
+  telefono?: string | null
+  sellosActuales?: number
+  puntosActuales?: number
+}
+
+export interface ClientesRespuesta {
+  data: ClienteResumen[]
+  total: number
+  page?: number
+  pageSize?: number
+}

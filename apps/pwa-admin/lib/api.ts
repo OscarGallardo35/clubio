@@ -1,20 +1,24 @@
 import { ApiClient, endpoints } from '@repo/api-client';
 import type {
   ActualizarConfiguracionBody,
+  ActualizarDisparoBody,
   ActualizarEmpleadoBody,
   ActualizarItemCartaBody,
   ActualizarPlantillaBody,
   ActualizarSucursalBody,
   CartaAdminRespuesta,
   CatalogoPlantillas,
+  ClientesRespuesta,
   ConfiguracionAdmin,
   ConfiguracionSucursalBody,
+  CrearDisparoBody,
   CrearEmpleadoBody,
   CrearItemCartaBody,
   CrearPlantillaBody,
   CrearSucursalBody,
   DashboardAdmin,
   DatosEjemploPlantilla,
+  DisparoPush,
   DuenoSesion,
   EmpleadoAdmin,
   EmpleadosRespuesta,
@@ -31,6 +35,7 @@ import type {
   QrInfo,
   ResultadoEliminarSucursal,
   ResultadoEnvioPlantilla,
+  ResultadoProbarDisparo,
   SucursalAdmin,
   SucursalesRespuesta,
   UbicacionGoogle,
@@ -295,4 +300,36 @@ export const pushApi = {
   /** Campana por segmento o prueba a un dispositivo (`endpoint`). */
   enviar: (body: EnviarPlantillaBody) =>
     api.post<ResultadoEnvioPlantilla>(endpoints.push.enviar, body),
+};
+
+/**
+ * Disparos de push (`/push/disparos`): notificaciones que se mandan solas cuando pasa algo
+ * (una compra, un sello, un dia, inactividad) o a mano (MANUAL).
+ *
+ * Detras de `@RequiereFeature('push')`: si el plan no la incluye, el backend responde 403.
+ * Un disparo con `regalo` acredita sellos/puntos REALES al cliente.
+ */
+export const disparosApi = {
+  listar: () => api.get<DisparoPush[]>(endpoints.push.disparos),
+  crear: (body: CrearDisparoBody) => api.post<DisparoPush>(endpoints.push.disparos, body),
+  actualizar: (id: string, body: ActualizarDisparoBody) =>
+    api.patch<DisparoPush>(endpoints.push.disparo(id), body),
+  eliminar: (id: string) => api.delete<{ ok: boolean }>(endpoints.push.disparo(id)),
+  /** Manda el disparo a UN cliente para ver como llega. */
+  probar: (id: string, clienteId: string) =>
+    api.post<ResultadoProbarDisparo>(endpoints.push.disparoProbar(id), { clienteId }),
+};
+
+/**
+ * Clientes del negocio (`/clientes`): se usa solo para elegir a quien probarle un disparo.
+ * El backend filtra por rol (el dueno ve todo) y devuelve `{ data, total, page, pageSize }`.
+ */
+export const clientesApi = {
+  listar: (filtros: { search?: string; page?: number; pageSize?: number } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filtros))
+      if (v !== undefined && v !== '') qs.set(k, String(v));
+    const q = qs.toString();
+    return api.get<ClientesRespuesta>(`${endpoints.clientes.list}${q ? `?${q}` : ''}`);
+  },
 };

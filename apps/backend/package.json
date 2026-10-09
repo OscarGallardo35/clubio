@@ -23,6 +23,7 @@
     "test:auto-cancelar": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-auto-cancelar.cjs",
     "test:ws-cancelado": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-ws-cancelado-cliente.cjs",
     "test:hibrido": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-hibrido.cjs",
+    "test:google": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-google.cjs",
     "test:config-admin": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-config-admin.cjs",
     "test:staff-hibrido": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-staff-hibrido.cjs",
     "test:auth-dueno": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-auth-dueno.cjs",

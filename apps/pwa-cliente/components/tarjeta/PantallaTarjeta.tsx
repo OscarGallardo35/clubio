@@ -79,6 +79,24 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
       ? 'Te falta 1 punto para tu premio'
       : `Te faltan ${v.puntos.faltantes} puntos para tu premio`
 
+  /**
+   * CTA de canje: con la tarjeta completa el cliente necesita UNA accion siguiente; el mensaje solo
+   * no alcanza. El canje sigue siendo PRESENCIAL (lo valida el staff), asi que el boton solo abre el
+   * chat con el local.
+   *
+   * Condiciones: con theme (la tarjeta historica de bar-la-esquina queda intacta), premio
+   * desbloqueado y numero de atencion configurado (config del club -> negocio, el mismo que usan
+   * PasoEspera y PasoConfirmado). Si no hay numero, no hay boton. Cuando el cliente ya canjeo (los
+   * sellos se restan y el premio deja de estar desbloqueado) el boton desaparece solo.
+   */
+  const numeroAtendiente = configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null
+  const waCanje =
+    theme && premiosDesbloqueados.length > 0 && numeroAtendiente
+      ? `https://wa.me/${numeroAtendiente.replace(/\D/g, '')}?text=${encodeURIComponent(
+          `Hola, soy ${v.nombreCliente}. Completé mi tarjeta en ${negocio?.nombre ?? 'el local'} y quiero canjear ${premiosDesbloqueados[0]}.`,
+        )}`
+      : null
+
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 px-4 py-6">
       <TarjetaSellos
@@ -173,6 +191,16 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
           {/* No hay canje en la app: el canje es presencial y lo valida el staff. Un boton que no
               hace nada seria peor que esta instruccion. */}
           <p className="mt-2 text-xs text-white/80">Mostrala en el local para canjearlo.</p>
+          {waCanje ? (
+            <a
+              href={waCanje}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 flex min-h-11 items-center justify-center rounded-xl bg-white/95 px-4 text-sm font-semibold text-emerald-900 shadow"
+            >
+              Avisarle al local por WhatsApp
+            </a>
+          ) : null}
         </section>
       ) : theme ? null : (
         // Con theme, la tarjeta YA dice el progreso en su mensaje unico: repetirlo aca era la

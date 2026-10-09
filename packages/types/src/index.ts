@@ -4,5 +4,6 @@
 
 export * from './enums';
 export * from './entities';
+export * from './theme';
 export * from './dto';
 export * from './ws-events';

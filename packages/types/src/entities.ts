@@ -3,6 +3,7 @@ import type {
   EtiquetaCliente, MetodoVisita, ModoAsignacionPedidos, ModoClientes, ModoFidelizacion,
   ModoPago, Plan, RecursoLimitado, RolEmpleado, TipoModificador, TipoPedido, TipoTurno, TipoVisita,
 } from './enums';
+import type { TenantTheme } from './theme';
 
 /** Las fechas viajan como ISO string en las respuestas JSON. */
 export type FechaISO = string;
@@ -27,6 +28,8 @@ export interface Negocio {
   modoClientes: ModoClientes;
   payPerUseActivo: boolean;
   activo: boolean;
+  /** Personalizacion visual de la tarjeta. null/ausente = diseno por defecto. */
+  theme?: TenantTheme | null;
   creadoEn: FechaISO;
   actualizadoEn: FechaISO;
   eliminadoEn?: FechaISO | null;

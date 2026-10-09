@@ -444,3 +444,28 @@ export interface PendientesRespuesta {
   data: VisitaPendiente[]
   total: number
 }
+
+// ------------------------------------------------------------------ Media (subida a Cloudinary) --
+
+/**
+ * `POST /media/firmar-subida`: lo que el navegador necesita para subir DIRECTO a Cloudinary.
+ * Nunca trae el api_secret (el backend firma y no lo expone).
+ */
+export interface FirmaSubida {
+  timestamp: number
+  signature: string
+  apiKey: string
+  cloudName: string
+  folder: string
+  transformation: string
+}
+
+/** Respuesta del upload directo a Cloudinary (el subconjunto que consumimos). */
+export interface RespuestaSubidaCloudinary {
+  secure_url: string
+  public_id: string
+  format?: string
+  width?: number
+  height?: number
+  bytes?: number
+}

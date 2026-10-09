@@ -15,6 +15,7 @@ import type {
   EmpleadoAdmin,
   EmpleadosRespuesta,
   FeaturePlan,
+  FirmaSubida,
   GoogleEstado,
   ItemCartaAdmin,
   ItemOverrideAdmin,
@@ -257,4 +258,13 @@ export const visitasApi = {
    * `mis-aprobaciones`, que devuelve lo que el empleado ya aprobo hoy.
    */
   pendientes: () => api.get<PendientesRespuesta>(endpoints.visitas.pendientes),
+};
+
+export const mediaApi = {
+  /**
+   * Pide la FIRMA al backend: el binario NO pasa por aca. El multipart va del navegador directo a
+   * `https://api.cloudinary.com/v1_1/<cloudName>/image/upload` (lo arma `SubirImagen`).
+   */
+  firmarSubida: (body: { tipo?: 'carta' } = {}) =>
+    api.post<FirmaSubida>(endpoints.media.firmarSubida, body),
 };

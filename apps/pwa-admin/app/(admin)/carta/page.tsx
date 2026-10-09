@@ -35,6 +35,7 @@ import {
 } from '@repo/ui';
 import type { DataTableColumn } from '@repo/ui';
 import { cartaApi } from '@/lib/api';
+import { SubirImagen } from '@/components/media/SubirImagen';
 import { useDueno } from '@/hooks/useDueno';
 import { normalizarError } from '@/lib/errores';
 import type { CartaAdminRespuesta, ItemCartaAdmin } from '@/types/api';
@@ -480,15 +481,7 @@ function FormularioItem({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="foto">URL de la foto (opcional)</Label>
-        <Input
-          id="foto"
-          value={fotoUrl}
-          onChange={(e) => setFotoUrl(e.target.value.slice(0, 500))}
-          placeholder="https://..."
-          autoCapitalize="none"
-          spellCheck={false}
-        />
+        <SubirImagen valor={fotoUrl} onCambio={setFotoUrl} etiqueta="Foto (opcional)" />
       </div>
 
       <div className="flex items-center justify-between">

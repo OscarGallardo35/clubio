@@ -17,7 +17,11 @@ import * as React from 'react'
  *    pantalla de inicio", asi que el banner muestra instrucciones.
  *  - iPad moderno: se presenta con UA de escritorio ("Macintosh") pero tiene touch; se detecta por
  *    `/Macintosh/` + `'ontouchend' in document`.
- *  - "Ya instalada": `display-mode: standalone` o `navigator.standalone` (Safari en iOS).
+ *  - "Ya instalada": `display-mode: standalone` o `navigator.standalone` (Safari en iOS). Se
+ *    CONFIRMA ademas con `navigator.getInstalledRelatedApps()` cuando el navegador lo expone: si
+ *    responde con al menos una app relacionada, la PWA esta instalada aunque sea en una pestaña.
+ *    La confirmacion solo AGREGA ocultamiento: sin soporte, con error o con lista vacia se mantiene
+ *    lo anterior, para no ocultar nunca por un falso positivo (preferimos mostrar de mas).
  */
 
 /** Navegadores in-app que envuelven la PWA y NO permiten instalarla. */
@@ -148,6 +152,25 @@ const DETECCION_INICIAL: DeteccionDispositivo = {
   abrirEn: 'Chrome',
 }
 
+/**
+ * Confirma con `navigator.getInstalledRelatedApps()` (Chrome/Android) que la PWA ya esta instalada.
+ *
+ * Devuelve `true` SOLO cuando el navegador expone la API y responde con al menos una app relacionada
+ * (p.ej. el cliente la instalo y ahora navega en una pestaña, donde `display-mode` no lo delata). Si
+ * no existe la API, si tira o si la lista viene vacia, devuelve `false`: nunca se oculta por un falso
+ * positivo. Es `async` porque la API es asincronica; el hook la consulta despues de la deteccion sync.
+ */
+export async function confirmarInstaladaConRelatedApps(): Promise<boolean> {
+  const nav = navigator as Navigator & { getInstalledRelatedApps?: () => Promise<unknown> }
+  if (typeof nav.getInstalledRelatedApps !== 'function') return false
+  try {
+    const apps = await nav.getInstalledRelatedApps()
+    return Array.isArray(apps) && apps.length > 0
+  } catch {
+    return false
+  }
+}
+
 export function usePWAInstall(claveDescarte: string = CLAVE_DESCARTE_PWA): EstadoPWAInstall {
   const promptRef = React.useRef<EventoAntesDeInstalar | null>(null)
   const [listo, setListo] = React.useState(false)
@@ -170,6 +193,17 @@ export function usePWAInstall(claveDescarte: string = CLAVE_DESCARTE_PWA): Estad
     setDescartada(leerDescartada(claveDescarte))
     setListo(true)
 
+    // Confirmacion ADICIONAL (async): `getInstalledRelatedApps()` no vuelve la app "oculta por
+    // defecto", solo AGREGA ocultamiento cuando el navegador confirma una app relacionada. Si la
+    // API no existe, tira o devuelve vacio, `confirmarInstaladaConRelatedApps()` da `false` y no
+    // pasa nada: nunca se oculta por un falso positivo.
+    let cancelado = false
+    if (!yaInstalada) {
+      void confirmarInstaladaConRelatedApps().then((confirmada) => {
+        if (!cancelado && confirmada) setInstalada(true)
+      })
+    }
+
     const alPrompt = (e: Event) => {
       // preventDefault: sin esto Chrome muestra su propio mini-infobar y no deja reusar el evento.
       e.preventDefault()
@@ -185,6 +219,7 @@ export function usePWAInstall(claveDescarte: string = CLAVE_DESCARTE_PWA): Estad
     window.addEventListener('beforeinstallprompt', alPrompt)
     window.addEventListener('appinstalled', alInstalar)
     return () => {
+      cancelado = true
       window.removeEventListener('beforeinstallprompt', alPrompt)
       window.removeEventListener('appinstalled', alInstalar)
     }

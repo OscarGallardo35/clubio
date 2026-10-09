@@ -7,6 +7,12 @@
   "id": "/",
   "start_url": "/tarjeta",
   "scope": "/",
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "/manifest.json"
+    }
+  ],
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#E63946",

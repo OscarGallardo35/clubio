@@ -7,6 +7,12 @@
   "id": "/",
   "start_url": "/",
   "scope": "/",
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "/manifest.json"
+    }
+  ],
   "display": "standalone",
   "background_color": "#E21B2D",
   "theme_color": "#E21B2D",

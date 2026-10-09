@@ -476,6 +476,12 @@ model Cliente {
   ultimaVisita          DateTime?
   eliminadoEn           DateTime? // Soft delete (Lote 3): los listados filtran eliminadoEn: null
 
+  /// Token OPACO para la pagina PUBLICA de verificacion de sellos/premio
+  /// (`/<slug>/verificar/<token>`). Unico y no adivinable: 32 bytes random.
+  /// Nullable a proposito: se genera LAZY la primera vez que se pide la tarjeta
+  /// (ver VisitasService) y se persiste; sin backfill en la migracion.
+  tokenVerificacion     String?         @unique
+
   negocio          Negocio                @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   dispositivos     DispositivoCliente[]
   visitas          Visita[]

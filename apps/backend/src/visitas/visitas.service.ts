@@ -1,7 +1,7 @@
 import {
   BadRequestException, ForbiddenException, GoneException, Injectable, NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { EstadoPedido, Prisma, TipoVisita } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
@@ -777,9 +777,15 @@ export class VisitasService {
       select: {
         id: true, nombre: true, telefono: true, etiqueta: true,
         sellosActuales: true, puntosActuales: true, totalVisitas: true, ultimaVisita: true,
+        tokenVerificacion: true,
       },
     });
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
+
+    // Link de verificacion del boton de WhatsApp: token LAZY (si todavia no tiene, se
+    // genera aca y se persiste). Solo lo ve el propio cliente autenticado.
+    const tokenVerificacion =
+      cliente.tokenVerificacion ?? (await this.generarTokenVerificacion(clienteId));
 
     const sucursal = await this.resolver.resolverSucursal(negocioId, { sucursalSlug, clienteId });
     const base = await this.sellosEfectivos(negocioId, clienteId, sucursal.id as string);
@@ -794,7 +800,7 @@ export class VisitasService {
     });
 
     return {
-      cliente,
+      cliente: { ...cliente, tokenVerificacion },
       sucursal: {
         id: sucursal.id, nombre: sucursal.nombre, slug: sucursal.slug,
         esPrincipal: sucursal.esPrincipal ?? false,
@@ -802,6 +808,24 @@ export class VisitasService {
       tarjetas,
       ...base,
     };
+  }
+
+  /**
+   * Token de verificacion LAZY: 32 bytes (256 bits) en base64url. No adivinable.
+   *
+   * Se persiste una sola vez (columna unica); a partir de ahi `miTarjeta` lo reusa.
+   * Si dos requests concurrentes llegan con el token en null, ambas generan y la
+   * segunda update gana: la ventana es minima y el token viejo simplemente deja de
+   * resolver (nadie lo habia visto todavia).
+   */
+  private async generarTokenVerificacion(clienteId: string): Promise<string> {
+    const token = randomBytes(32).toString('base64url');
+    const actualizado = await this.prisma.cliente.update({
+      where: { id: clienteId },
+      data: { tokenVerificacion: token },
+      select: { tokenVerificacion: true },
+    });
+    return actualizado.tokenVerificacion as string;
   }
 
   /** GET /visitas/mi-historial (cliente): sus propias visitas. */

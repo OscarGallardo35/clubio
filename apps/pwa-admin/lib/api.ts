@@ -71,7 +71,8 @@ export const negociosApi = {
    * se habia tipado en la Fase 0b era inventado (no hay endpoint de QR del staff).
    */
   qrInfo: () => api.get<QrInfo>(endpoints.negocios.qrInfo),
-  actualizar: (body: { nombre?: string; telefono?: string }) =>
+  /** Puede aceptar nombre/telefono desde la Fase 0; `placeId` se agrego para el boton de resena. */
+  actualizar: (body: { nombre?: string; telefono?: string; placeId?: string }) =>
     api.patch<NegocioAdmin>(endpoints.negocios.update, body),
 };
 

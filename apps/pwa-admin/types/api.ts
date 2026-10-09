@@ -12,6 +12,8 @@ export interface NegocioAdmin {
   nombre: string
   slug: string
   plan: string
+  /** Place ID de la ficha de Google: alimenta el boton "Dejá tu reseña" del cliente (sin API). */
+  placeId?: string | null
   /** Mapa `feature -> { habilitada, limite }`: lo arma el backend para que el panel sepa que mostrar. */
   features?: Record<string, { habilitada: boolean; limite: number | null }>
   sucursalesActivas?: number

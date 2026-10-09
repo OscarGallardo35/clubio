@@ -13,12 +13,25 @@ import {
   AlertDialogTitle,
   Badge,
   Button,
+  Input,
+  Label,
   Skeleton,
   toast,
 } from '@repo/ui';
-import { googleApi } from '@/lib/api';
+import { googleApi, negociosApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
-import type { GoogleEstado, UbicacionGoogle } from '@/types/api';
+import type { GoogleEstado, NegocioAdmin, UbicacionGoogle } from '@/types/api';
+
+/**
+ * El Place ID se pega de mil formas: el ID pelado, el link de "escribir reseña", o una URL de
+ * Google Maps con `?placeid=`. Se acepta cualquiera y se guarda SOLO el ID.
+ */
+function extraerPlaceId(entrada: string): string {
+  const texto = (entrada ?? '').trim();
+  const m = /[?&]place_?id=([^&\s#]+)/i.exec(texto);
+  const encontrado = m?.[1];
+  return (encontrado ? decodeURIComponent(encontrado) : texto).trim();
+}
 
 /**
  * Google Business Profile.
@@ -42,6 +55,12 @@ export default function GooglePage() {
   const [ocupado, setOcupado] = React.useState(false);
   const [aDesconectar, setADesconectar] = React.useState(false);
   const [aviso, setAviso] = React.useState<string | null>(null);
+
+  // Place ID del negocio: alimenta el boton "Dejá tu reseña" del cliente. NO depende de OAuth.
+  const [negocio, setNegocio] = React.useState<NegocioAdmin | null>(null);
+  const [placeId, setPlaceId] = React.useState('');
+  const [guardandoPlace, setGuardandoPlace] = React.useState(false);
+  const [errorPlace, setErrorPlace] = React.useState<string | null>(null);
 
   const cargarEstado = React.useCallback(async () => {
     try {
@@ -78,6 +97,48 @@ export default function GooglePage() {
     const e = await cargarEstado();
     await cargarUbicaciones(!!e?.conectado);
   }, [cargarEstado, cargarUbicaciones]);
+
+  /**
+   * Place ID: se lee de `GET /negocios/mi-negocio` y se guarda con `PATCH /negocios`. Es
+   * INDEPENDIENTE de la conexion con Google: el boton de resena del cliente es un link publico
+   * (`search.google.com/local/writereview?placeid=...`), no usa la API ni consume cuota.
+   */
+  const cargarNegocio = React.useCallback(async () => {
+    try {
+      const n = await negociosApi.miNegocio();
+      setNegocio(n);
+      setPlaceId(n.placeId ?? '');
+    } catch {
+      // Si falla, la seccion queda vacia: no rompe el resto de la pantalla.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void cargarNegocio();
+  }, [cargarNegocio]);
+
+  async function guardarPlaceId() {
+    const limpio = extraerPlaceId(placeId);
+    if (!limpio.startsWith('ChIJ')) {
+      setErrorPlace('El Place ID tiene que empezar con "ChIJ". Pegá el ID o el link de Google Maps.');
+      return;
+    }
+    setGuardandoPlace(true);
+    setErrorPlace(null);
+    try {
+      const n = await negociosApi.actualizar({ placeId: limpio });
+      setNegocio(n);
+      setPlaceId(limpio);
+      toast.success('Place ID guardado', {
+        description: 'El botón "Dejá tu reseña" ya se muestra en la confirmación del cliente.',
+      });
+    } catch (e) {
+      const { mensaje } = normalizarError(e);
+      setErrorPlace(mensaje);
+    } finally {
+      setGuardandoPlace(false);
+    }
+  }
 
   React.useEffect(() => {
     // El `?conectado=1` viene del redirect del callback de Google. Se lee de `window` y no de
@@ -280,6 +341,64 @@ export default function GooglePage() {
           )}
         </div>
       ) : null}
+
+      <div className="space-y-4 rounded-2xl border bg-card p-5">
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold">Reseñas en Google</h2>
+          <p className="text-sm text-muted-foreground">
+            Cargá el <strong>Place ID</strong> de la ficha del local y el cliente va a ver el botón
+            &quot;Dejá tu reseña&quot; cuando suma su visita.
+          </p>
+          <p className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            Este botón funciona <strong>SIN conectar Google</strong>. Es un link público: no requiere
+            API ni cuota.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="place-id">Place ID</Label>
+          <Input
+            id="place-id"
+            value={placeId}
+            onChange={(e) => {
+              setPlaceId(e.target.value.slice(0, 300));
+              setErrorPlace(null);
+            }}
+            placeholder="ChIJ… (o pegá el link de Google Maps)"
+            disabled={guardandoPlace}
+          />
+          {errorPlace ? (
+            <p role="alert" className="text-xs text-destructive">
+              {errorPlace}
+            </p>
+          ) : null}
+          {negocio?.placeId ? (
+            <p className="text-xs text-muted-foreground">
+              Guardado:{' '}
+              <a
+                className="underline"
+                href={`https://search.google.com/local/reviews?placeid=${encodeURIComponent(negocio.placeId)}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ver las reseñas de la ficha
+              </a>
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Sin cargar: el botón no se muestra en la confirmación del cliente.
+            </p>
+          )}
+        </div>
+
+        <Button
+          className="min-h-11"
+          onClick={() => void guardarPlaceId()}
+          disabled={guardandoPlace || placeId.trim() === ''}
+        >
+          {guardandoPlace ? 'Guardando...' : 'Guardar Place ID'}
+        </Button>
+      </div>
 
       <AlertDialog open={aDesconectar} onOpenChange={setADesconectar}>
         <AlertDialogContent>

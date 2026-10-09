@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Skeleton } from '@repo/ui';
 import { Sidebar } from '@/components/Sidebar';
+import { BarraAdminMobile } from '@/components/BarraAdminMobile';
 import { useDueno } from '@/hooks/useDueno';
 
 /**
@@ -28,7 +29,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="flex min-h-dvh">
+    <div className="flex min-h-dvh flex-col lg:flex-row">
+      {/* Mobile (<1024px): barra superior con hamburguesa. En desktop se oculta (`lg:hidden`). */}
+      <BarraAdminMobile />
       <Sidebar />
       {/* min-w-0: sin esto una tabla ancha estira el flex y desborda la pantalla. */}
       <main className="min-w-0 flex-1 p-6 lg:p-8">{children}</main>

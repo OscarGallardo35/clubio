@@ -323,6 +323,41 @@ Ojo con la compatibilidad: un pedido guardado ANTES de que se persistiera `expir
 `pedidoVigente` lo trata como vigente a proposito (mejor ofrecer un link que puede fallar una vez
 que esconder el seguimiento de un pedido vivo); ese caso lo cierra la guarda (1) por el 410.
 
+### Soporte dual de tenants: subdominio + path
+
+La URL del cliente puede venir de **dos** formas y las dos tienen que funcionar:
+
+```
+bar-la-esquina.app.clubio.lat/menu      (subdominio)
+app.clubio.lat/bar-la-esquina/menu      (path, el formato original)
+```
+
+El middleware de la PWA Cliente (`apps/pwa-cliente/middleware.ts`) **reescribe** (no redirige) el
+subdominio a la ruta interna: el navegador sigue mostrando `bar-la-esquina.app.clubio.lat/menu` y la
+app renderiza `/[tenant]/menu`. Asi no hay que migrar ningun link ya compartido (WhatsApp, QR
+impreso, favoritos).
+
+Cuatro cosas que se rompen si no se tienen en cuenta:
+
+1. **La lista de reservados tiene que ser UNA**: el middleware usa `tenantDelSubdominio` de
+   `lib/tenant.ts`, el mismo helper que la app (`www`, `app`, `api`, `staff`, `admin`, `localhost`).
+   Dos listas distintas = algun dia `admin.app.clubio.lat` se trata como un tenant.
+2. **Los links internos YA llevan el slug**: `RUTAS.tarjeta(slug)` devuelve `/bar-la-esquina/tarjeta`,
+   asi que en el subdominio la navegacion interna llega como `/bar-la-esquina/tarjeta`. Prefijarla
+   otra vez daria `/bar-la-esquina/bar-la-esquina/tarjeta` (404). El middleware no reescribe si el
+   primer segmento ya es el slug.
+3. **Las rutas de sesion viven en la raiz** (`/historial`, `/seleccionar-sucursal`, `/offline`,
+   `/dev`), no dentro de `[tenant]`: tampoco se reescriben.
+4. **La raiz del subdominio no tiene pagina** (`[tenant]` no tiene `page.tsx`): se redirige a
+   `/<slug>/menu` con un 307.
+
+El CORS del backend acompaña: `<slug>.app.clubio.lat` no se puede enumerar en `CORS_ORIGINS`, asi
+que `main.ts` valida con un callback (lista estatica + regex de `*.app.clubio.lat`) manteniendo
+`credentials: true`.
+
+Ojo con el `matcher` del middleware: va MINIMO (el filtro fino de assets en el codigo) por la regla
+de mas arriba sobre `\\.` dentro del matcher.
+
 ### Rate limiting: limites configurables por env
 
 `POST /pedidos` limita a 10 por hora por IP y `GET /pedidos/publico/:linkToken` a

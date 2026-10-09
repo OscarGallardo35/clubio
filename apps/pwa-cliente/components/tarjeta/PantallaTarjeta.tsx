@@ -15,6 +15,7 @@
  */
 import * as React from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { getTheme } from '@repo/types'
 import { Progress, Skeleton, TarjetaSellos, buttonVariants } from '@repo/ui'
 import { useBranding } from '@/hooks/useBranding'
@@ -36,8 +37,8 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
   const { negocio, configuracion, cargando: cargandoBranding } = useBranding()
   const { slugParaApi } = useSucursalActiva()
   // Auto-login: pega a /auth/cliente/me con la cookie. `resuelto` dice si ya se sabe si hay sesion.
-  const { autenticado, resuelto } = useCliente()
-  const { tarjeta, cargando, error, refetch } = useMiTarjeta(slugParaApi, resuelto && autenticado)
+  const { autenticado, resuelto, sesionDeOtroLocal, logout } = useCliente()
+  const { tarjeta, cargando, error, refetch, tenantMismatch } = useMiTarjeta(slugParaApi, resuelto && autenticado)
   const reducedMotion = useReducedMotion()
   // +1 sello (demo): suma EN MEMORIA para mostrar la animacion en vivo. NUNCA escribe en la DB.
   const [sellosDemo, setSellosDemo] = React.useState(0)
@@ -47,6 +48,11 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
   const colorSecundario = negocio?.colorSecundario || COLOR_SECUNDARIO_DEFECTO
 
   if ((!resuelto || cargandoBranding) && !negocio) return <Cargando />
+  // La sesion guardada es de OTRO local: no es un fallo de la app ni un 401. Se ofrece cambiar de
+  // cuenta (la cookie es HttpOnly: la baja el logout del backend, no el navegador).
+  if (sesionDeOtroLocal || tenantMismatch) {
+    return <CambiarDeCuenta slugNegocio={slugNegocio} onSalir={logout} />
+  }
   if (resuelto && !autenticado) return <SinSesion slugNegocio={slugNegocio} />
   if (error) return <Fallo mensaje={error} onReintentar={() => void refetch()} />
   if (cargando && !tarjeta) return <Cargando />
@@ -210,6 +216,55 @@ function Fallo({ mensaje, onReintentar }: { mensaje: string; onReintentar: () =>
       <button type="button" onClick={onReintentar} className={buttonVariants({ className: 'min-h-12' })}>
         Reintentar
       </button>
+    </div>
+  )
+}
+
+/**
+ * La sesion guardada pertenece a OTRO local: el backend contesta 403 "no coincide con la solicitud".
+ *
+ * No se muestra el error crudo (es una situacion esperable: el cliente entro a otro club desde el
+ * mismo telefono) ni se lo deja en un callejon: se le ofrece salir y entrar con la cuenta de ESTE
+ * local. Ojo: la cookie es HttpOnly, asi que no se puede borrar desde el navegador; el boton pasa
+ * por el logout del backend y recien despues navega al club.
+ */
+function CambiarDeCuenta({
+  slugNegocio,
+  onSalir,
+}: {
+  slugNegocio: string
+  onSalir: () => Promise<void>
+}) {
+  const router = useRouter()
+  const [saliendo, setSaliendo] = React.useState(false)
+
+  async function cambiar() {
+    setSaliendo(true)
+    try {
+      await onSalir()
+    } finally {
+      router.replace(RUTAS.club(slugNegocio))
+    }
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 p-6 text-center">
+      <p className="text-lg font-semibold text-white drop-shadow">Esta cuenta es de otro local</p>
+      <p className="text-sm text-white/85">
+        La sesión guardada en este teléfono es de otro negocio, así que no podemos mostrarte la
+        tarjeta de este club.
+      </p>
+      <button
+        type="button"
+        onClick={() => void cambiar()}
+        disabled={saliendo}
+        className={buttonVariants({ className: 'min-h-12' })}
+      >
+        {saliendo ? 'Saliendo…' : 'Cambiar de cuenta'}
+      </button>
+      <Link href={RUTAS.club(slugNegocio)} className="text-sm text-white/80 underline underline-offset-4">
+        Ir al club de este local
+      </Link>
     </div>
   )
 }

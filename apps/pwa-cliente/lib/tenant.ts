@@ -13,6 +13,19 @@ const RESERVADOS = new Set(['app', 'staff', 'admin', 'api', 'www', 'localhost'])
  * En el servidor no hay window: se devuelve el default y el segmento de la ruta
  * lo resuelve el layout, que si lo tiene como param.
  */
+/**
+ * true si el backend rechazo la request porque la SESION es de otro negocio.
+ *
+ * El `TenantGuard` del backend compara el `negocioSlug` del token con el tenant pedido y responde
+ * 403 con ese mensaje. Para el cliente no es un error de red ni un fallo de la app: significa
+ * "estas logueado en otro local", y merece un CTA para cambiar de cuenta, no un cartel de fallo.
+ * La cookie es HttpOnly, asi que no se puede limpiar desde el navegador: hay que pasar por el
+ * logout del backend.
+ */
+export function esTenantMismatch(status: number, mensaje?: string | null): boolean {
+  return status === 403 && /no coincide con la solicitud/i.test(mensaje ?? '')
+}
+
 export function tenantDelPath(pathname: string | null | undefined): string | null {
   if (!pathname) return null
   const seg = pathname.split('/').filter(Boolean)[0]

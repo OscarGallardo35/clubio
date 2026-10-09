@@ -12,6 +12,7 @@
 import * as React from 'react'
 import { visitasApi } from '@/lib/api'
 import { normalizarError } from '@/lib/checkout-maquina'
+import { esTenantMismatch } from '@/lib/tenant'
 import { crearSocketVisitas } from '@/lib/socket'
 import { useClienteStore } from '@/stores/clienteStore'
 import type { MiTarjetaRespuesta } from '@/types/api'
@@ -20,6 +21,8 @@ export interface UsoMiTarjeta {
   tarjeta: MiTarjetaRespuesta | null
   cargando: boolean
   error: string | null
+  /** true si el 403 fue por sesion de OTRO negocio (ver `esTenantMismatch`). */
+  tenantMismatch: boolean
   refetch: () => Promise<void>
 }
 
@@ -28,6 +31,7 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
   const [tarjeta, setTarjeta] = React.useState<MiTarjetaRespuesta | null>(null)
   const [cargando, setCargando] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const [tenantMismatch, setTenantMismatch] = React.useState(false)
 
   const refetch = React.useCallback(async () => {
     if (!habilitado) {
@@ -39,10 +43,13 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
       const r = await visitasApi.miTarjeta(sucursalSlug)
       setTarjeta(r)
       setError(null)
+      setTenantMismatch(false)
     } catch (e) {
       const { status, mensaje } = normalizarError(e)
       // 401 = sin sesion (no es un error: el estado "no logueado" tiene su propia pantalla).
-      if (status !== 401) setError(mensaje || 'No pudimos cargar tu tarjeta')
+      // 403 por tenant: tampoco es un fallo de la app, es una sesion de otro local.
+      if (esTenantMismatch(status, mensaje)) setTenantMismatch(true)
+      if (status !== 401 && !esTenantMismatch(status, mensaje)) setError(mensaje || 'No pudimos cargar tu tarjeta')
     } finally {
       setCargando(false)
     }
@@ -61,5 +68,5 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
     }
   }, [habilitado, token, refetch])
 
-  return { tarjeta, cargando, error, refetch }
+  return { tarjeta, cargando, error, tenantMismatch, refetch }
 }

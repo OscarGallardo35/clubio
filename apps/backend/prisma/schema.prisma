@@ -541,6 +541,9 @@ model Visita {
   sellosOtorgados   Int           @default(1)
   puntosOtorgados   Int           @default(0)
   montoConsumido    Decimal?      @db.Decimal(10, 2)
+  /// Pedido del menu (QR #1) del que sale el monto de esta visita, cuando el staff lo eligio.
+  /// El FK es 1-1: un pedido solo puede pagar UNA visita (si no, se acredita dos veces).
+  pedidoId          String?       @unique
   aprobadoEn        DateTime      @default(now())
   metodo            MetodoVisita
   origen            String?
@@ -550,6 +553,8 @@ model Visita {
   sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   cliente  Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Restrict)
+  /// Visita que uso el total de este pedido como monto (ver Visita.pedidoId).
+  pedido   Pedido?  @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
 
   @@index([negocioId, sucursalId, aprobadoEn])
   @@index([negocioId, clienteId, aprobadoEn])
@@ -730,6 +735,8 @@ model Pedido {
   sucursal         Sucursal  @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   cliente          Cliente?  @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   empleadoAsignado Empleado? @relation("PedidoAsignado", fields: [empleadoAsignadoId], references: [id], onDelete: SetNull)
+  /// Visita que se aprobo usando el total de este pedido (1-1).
+  visita           Visita?
 
   @@index([negocioId, sucursalId, estado, creadoEn])
   @@index([negocioId, telefono])

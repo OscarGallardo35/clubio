@@ -59,9 +59,11 @@ export class PedidosController {
     @Tenant() tenant: string | null,
     @Body() dto: CrearPedidoDto,
     @Headers('authorization') auth?: string,
+    @Headers('cookie') cookie?: string,
   ) {
     const negocioId = await this.pedidos.negocioPorSlug(tenant);
-    const clienteId = await this.pedidos.identificarClienteOpcional(auth);
+    // Fase 0: la sesion del cliente viaja en la cookie HttpOnly; el Bearer es el fallback.
+    const clienteId = await this.pedidos.identificarClienteOpcional(auth, cookie);
     return this.pedidos.crearPedido(negocioId, dto, clienteId);
   }
 

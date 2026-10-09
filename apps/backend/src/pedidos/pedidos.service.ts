@@ -14,6 +14,7 @@ import { PushService } from '../push/push.service';
 import { AsignacionPedidosService } from '../turnos/asignacion-pedidos.service';
 import { LimitesService } from '../planes/limites.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
+import { COOKIE_CLIENTE, leerCookie } from '../common/utils/cookie.util';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { requireEnv } from '../common/utils/env.util';
 import { PedidosGateway } from './pedidos.gateway';
@@ -52,13 +53,21 @@ export class PedidosService {
   ) {}
 
   /**
-   * Refinamiento 4: POST /pedidos es publico, pero si viene un JWT de cliente
-   * valido se vincula el pedido. Token invalido o de otro tipo -> se trata como
-   * guest (no se rechaza: el pedido igual se puede hacer).
+   * Refinamiento 4 + Fase 0: POST /pedidos es publico, pero si viene un JWT de cliente
+   * valido se vincula. Dos fuentes, en este orden:
+   *   1. `Authorization: Bearer ...` (por si la PWA tiene el token en memoria).
+   *   2. La cookie HttpOnly `cliente_token`, que es la sesion REAL de la PWA Cliente.
+   *
+   * Sin la (2) TODOS los pedidos del menu entraban como invitados aunque el cliente estuviera
+   * logueado: verificado en prod, 30 de 30 pedidos con `clienteId = null`. Eso rompia el vinculo
+   * visita<->pedido y la acreditacion del pedido entregado.
+   *
+   * Token invalido o de otro tipo -> guest (no se rechaza: el pedido igual se puede hacer).
    */
-  async identificarClienteOpcional(authHeader?: string): Promise<string | null> {
-    const [scheme, token] = String(authHeader ?? '').split(' ');
-    if (scheme !== 'Bearer' || !token) return null;
+  async identificarClienteOpcional(authHeader?: string, cookieHeader?: string): Promise<string | null> {
+    const [scheme, bearer] = String(authHeader ?? '').split(' ');
+    const token = scheme === 'Bearer' && bearer ? bearer : leerCookie(cookieHeader, COOKIE_CLIENTE);
+    if (!token) return null;
     try {
       const payload = this.jwt.verify(token, {
         secret: requireEnv('JWT_CLIENTE_SECRET', 'dev-cliente-solo-desarrollo'),
@@ -564,17 +573,28 @@ export class PedidosService {
       // Solo si el pedido tiene cliente: un invitado (clienteId null) no tiene a quien acreditarle.
       // ENTREGADO es terminal en la tabla de transiciones, asi que no se puede acreditar dos veces.
       if (dto.estado === EstadoPedido.ENTREGADO && ped.clienteId && ped.sucursalId) {
-        await this.fidelizacion.acreditar(tx, {
-          negocioId,
-          clienteId: ped.clienteId,
-          sucursalId: ped.sucursalId,
-          empleadoId: ctx.empleadoId ?? null,
-          monto: Number(ped.total),
-          tipo: TipoVisita.VISITA,
-          metodo: 'PEDIDO',
-          origen: 'PEDIDO',
-          notas: null,
+        // Candado anti doble acreditacion (Fase 1): si una visita ya uso el total de ESTE pedido,
+        // el consumo se acredito al aprobarla. Entregarlo no puede volver a acreditar.
+        const yaVinculada = await tx.visita.findFirst({
+          where: { pedidoId: ped.id }, select: { id: true },
         });
+        if (yaVinculada) {
+          this.logger.warn(
+            `Pedido ${ped.id} ya acreditado por la visita ${yaVinculada.id}: no se acredita de nuevo`,
+          );
+        } else {
+          await this.fidelizacion.acreditar(tx, {
+            negocioId,
+            clienteId: ped.clienteId,
+            sucursalId: ped.sucursalId,
+            empleadoId: ctx.empleadoId ?? null,
+            monto: Number(ped.total),
+            tipo: TipoVisita.VISITA,
+            metodo: 'PEDIDO',
+            origen: 'PEDIDO',
+            notas: null,
+          });
+        }
       }
 
       return ped;

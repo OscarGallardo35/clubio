@@ -13,7 +13,7 @@
 import * as React from 'react'
 import { useParams } from 'next/navigation'
 import { getTheme } from '@repo/types'
-import { Skeleton, TarjetaSellos } from '@repo/ui'
+import { Skeleton, TarjetaSellos, Progress } from '@repo/ui'
 import { ApiError } from '@repo/api-client'
 import { verificacionApi } from '@/lib/api'
 import { COLOR_PRIMARIO_DEFECTO, COLOR_SECUNDARIO_DEFECTO } from '@/lib/constants'
@@ -74,6 +74,50 @@ function Verificacion({ data }: { data: VerificacionRespuesta }) {
     minute: '2-digit',
   })
 
+  // Modo del club. Fallback para una respuesta VIEJA sin `modoFidelizacion`: si llego `puntos`
+  // es HIBRIDO; si no, SOLO_VISITAS. La pagina nunca rompe por campos faltantes.
+  const modo = data.modoFidelizacion ?? (data.puntos ? 'HIBRIDO' : 'SOLO_VISITAS')
+  // El premio por puntos SOLO se muestra si el club usa puntos. Ojo: NO se mira
+  // `theme.mostrarPuntos` a proposito — esa bandera gobierna la TARJETA privada del cliente; la
+  // verificacion la abre el LOCAL para confirmar que el premio es real, asi que muestra el
+  // premio de puntos aunque el theme de la tarjeta lo oculte.
+  const puntos = data.puntos ?? null
+  const mostrarSellos = modo !== 'SOLO_PUNTOS'
+  const mostrarPuntos = modo !== 'SOLO_VISITAS' && puntos != null
+
+  const faltanSellos = Math.max(0, data.sellos.meta - data.sellos.actuales)
+  const faltanPuntos = puntos ? Math.max(0, puntos.meta - puntos.actuales) : 0
+  const premioPuntos = data.premioTextoPuntos || 'un premio'
+  const porcentajePuntos =
+    puntos && puntos.meta > 0 ? Math.min(100, Math.round((puntos.actuales / puntos.meta) * 100)) : 0
+
+  // Una linea por premio: QUE premio y si esta disponible o cuantos faltan. Asi se entiende de
+  // un vistazo (con HIBRIDO puede haber los dos desbloqueados).
+  const premios: { clave: string; etiqueta: string; desbloqueado: boolean; detalle: string }[] = []
+  if (mostrarSellos) {
+    premios.push({
+      clave: 'sellos',
+      etiqueta: 'Premio por sellos',
+      desbloqueado: data.sellos.premioDesbloqueado,
+      detalle: data.sellos.premioDesbloqueado
+        ? `desbloqueado${data.premioTexto ? ` (${data.premioTexto})` : ''}`
+        : `te faltan ${faltanSellos} ${faltanSellos === 1 ? 'sello' : 'sellos'}${
+            data.premioTexto ? ` para ${data.premioTexto}` : ''
+          }`,
+    })
+  }
+  if (mostrarPuntos && puntos) {
+    premios.push({
+      clave: 'puntos',
+      etiqueta: 'Premio por puntos',
+      desbloqueado: puntos.premioDesbloqueado,
+      detalle: puntos.premioDesbloqueado
+        ? `desbloqueado (${premioPuntos})`
+        : `te faltan ${faltanPuntos} ${faltanPuntos === 1 ? 'punto' : 'puntos'} para ${premioPuntos}`,
+    })
+  }
+  const algunDesbloqueado = premios.some((p) => p.desbloqueado)
+
   return (
     <div
       className={`min-h-dvh w-full ${theme ? 'px-2' : 'px-4'} py-6`}
@@ -87,43 +131,74 @@ function Verificacion({ data }: { data: VerificacionRespuesta }) {
           <h1 className="mt-1 text-lg font-bold drop-shadow">{data.negocio.nombre}</h1>
         </header>
 
-        <TarjetaSellos
-          nombreCliente={data.nombre}
-          nombreNegocio={data.negocio.nombre}
-          logoUrl={data.negocio.logoUrl ?? undefined}
-          tipo="VISITAS"
-          actuales={data.sellos.actuales}
-          meta={data.sellos.meta}
-          premioTexto={data.premioTexto}
-          colorPrimario={colorPrimario}
-          colorSecundario={colorSecundario}
-          tamaño="full"
-          variante="glass"
-          theme={theme}
-          slugTenant={data.negocio.slug}
-          // Solo lectura: sin animacion de ingreso ni ultima visita.
-          reducedMotion
-        />
+        {mostrarSellos ? (
+          <TarjetaSellos
+            nombreCliente={data.nombre}
+            nombreNegocio={data.negocio.nombre}
+            logoUrl={data.negocio.logoUrl ?? undefined}
+            tipo="VISITAS"
+            actuales={data.sellos.actuales}
+            meta={data.sellos.meta}
+            premioTexto={data.premioTexto}
+            colorPrimario={colorPrimario}
+            colorSecundario={colorSecundario}
+            tamaño="full"
+            variante="glass"
+            theme={theme}
+            slugTenant={data.negocio.slug}
+            // Solo lectura: sin animacion de ingreso ni ultima visita.
+            reducedMotion
+          />
+        ) : null}
 
-        <section
-          role="status"
-          className={`w-full rounded-2xl p-4 text-center ring-1 ${
-            data.sellos.premioDesbloqueado
-              ? 'bg-emerald-500/20 ring-emerald-400/50'
-              : 'bg-black/25 ring-white/20'
-          } backdrop-blur`}
-        >
-          {data.sellos.premioDesbloqueado ? (
-            <p className="text-base font-bold text-white drop-shadow">
-              Premio desbloqueado: {data.premioTexto}
+        {/* Con HIBRIDO (o SOLO_PUNTOS) la segunda barra: los puntos. */}
+        {mostrarPuntos && puntos ? (
+          <section className="w-full rounded-2xl bg-black/25 p-4 ring-1 ring-white/20 backdrop-blur">
+            <div className="flex items-center justify-between gap-2 text-sm text-white">
+              <span className="font-medium">Puntos</span>
+              <span className="tabular-nums text-white/85">
+                {puntos.actuales}/{puntos.meta}
+              </span>
+            </div>
+            <Progress
+              value={porcentajePuntos}
+              className="mt-2 h-2 bg-white/20"
+              indicatorClassName="bg-amber-400"
+            />
+          </section>
+        ) : null}
+
+        {premios.length > 0 ? (
+          <section
+            role="status"
+            className={`w-full rounded-2xl p-4 text-center ring-1 ${
+              algunDesbloqueado
+                ? 'bg-emerald-500/20 ring-emerald-400/50'
+                : 'bg-black/25 ring-white/20'
+            } backdrop-blur`}
+          >
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
+              {algunDesbloqueado ? 'Premio disponible' : 'Todavía sin premio'}
             </p>
-          ) : (
-            <p className="text-sm font-medium text-white/90">
-              Todavía no llegó al premio{data.premioTexto ? ` (${data.premioTexto})` : ''}: {data.sellos.actuales} de{' '}
-              {data.sellos.meta} sellos.
-            </p>
-          )}
-        </section>
+            <div className="flex flex-col gap-2">
+              {premios.map((p) => (
+                <p
+                  key={p.clave}
+                  className={
+                    p.desbloqueado
+                      ? 'text-base font-bold text-white drop-shadow'
+                      : 'text-sm font-medium text-white/90'
+                  }
+                >
+                  <span className={p.desbloqueado ? 'text-emerald-300' : 'text-white/70'}>
+                    {p.etiqueta}:
+                  </span>{' '}
+                  {p.detalle}
+                </p>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <p className="flex items-center gap-2 text-center text-xs text-white/85">
           <span className="inline-flex size-2 rounded-full bg-emerald-400" aria-hidden="true" />

@@ -245,7 +245,7 @@ export interface MiTarjetaRespuesta extends Omit<EstadoVisitaRespuesta, 'estado'
 
 /**
  * GET /api/verificacion/:token (PUBLICO, sin login).
- * Solo datos NO personales: nombre de pila, negocio y la tarjeta (sellos/premio).
+ * Solo datos NO personales: nombre de pila, negocio y la tarjeta (sellos/premio + puntos/premio).
  */
 export interface VerificacionRespuesta {
   /** Nombre de PILA (el backend corta en el primer espacio). */
@@ -264,6 +264,15 @@ export interface VerificacionRespuesta {
     premioDesbloqueado: boolean
   }
   premioTexto: string
+  /**
+   * Premio por PUNTOS. `null`/ausente cuando el club no usa puntos (`SOLO_VISITAS`); con
+   * `HIBRIDO`/`SOLO_PUNTOS` lleva el progreso real. Opcionales para no romper una respuesta
+   * vieja cacheada: la pagina usa fallbacks.
+   */
+  puntos?: { actuales: number; meta: number; premioDesbloqueado: boolean } | null
+  premioTextoPuntos?: string | null
+  /** Modo del club: una barra (SOLO_VISITAS/SOLO_PUNTOS) o las dos (HIBRIDO). */
+  modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
   /** ISO de cuando se hizo la verificacion. */
   verificadoEn: string
 }

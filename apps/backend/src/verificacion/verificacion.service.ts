@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
+import { VisitasService } from '../visitas/visitas.service';
 
 /**
  * Datos de la pagina PUBLICA de verificacion (solo lectura, sin login).
@@ -26,6 +27,19 @@ export interface VerificacionRespuesta {
     premioDesbloqueado: boolean;
   };
   premioTexto: string;
+  /**
+   * Premio por PUNTOS. `null` cuando el club NO usa puntos (`SOLO_VISITAS`); con `HIBRIDO`
+   * o `SOLO_PUNTOS` lleva el progreso real del cliente. Mismas reglas de privacidad que
+   * `sellos`: solo el saldo, nunca telefono/email/id.
+   */
+  puntos: { actuales: number; meta: number; premioDesbloqueado: boolean } | null;
+  /** Texto del premio por puntos. `null` cuando el club no usa puntos. */
+  premioTextoPuntos: string | null;
+  /**
+   * Modo de fidelizacion del club, para que la pagina sepa dibujar una barra
+   * (`SOLO_VISITAS`/`SOLO_PUNTOS`) o las dos (`HIBRIDO`).
+   */
+  modoFidelizacion: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO';
   /** ISO de cuando se hizo ESTA verificacion (la pagina lo muestra). */
   verificadoEn: string;
 }
@@ -42,6 +56,7 @@ export class VerificacionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly resolver: SucursalResolverService,
+    private readonly visitas: VisitasService,
   ) {}
 
   async verificar(token: string): Promise<VerificacionRespuesta> {
@@ -55,7 +70,6 @@ export class VerificacionService {
       select: {
         id: true,
         nombre: true,
-        sellosActuales: true,
         negocioId: true,
         negocio: {
           select: {
@@ -65,39 +79,29 @@ export class VerificacionService {
             colorPrimario: true,
             colorSecundario: true,
             theme: true,
-            modoClientes: true,
           },
         },
       },
     });
     if (!cliente) throw new NotFoundException('Token de verificacion invalido');
 
-    const cfg = await this.prisma.configuracionClub.findUnique({
-      where: { negocioId: cliente.negocioId },
-      select: { sellosParaPremio: true, premioTexto: true },
+    // Saldos EFECTIVOS (sellos Y puntos) con la MISMA regla que GET /visitas/mi-tarjeta.
+    // Se usa el helper COMPARTIDO `saldosEfectivos` en vez de reimplementar aca la
+    // resolucion GLOBAL vs POR_SUCURSAL (una copia local se desincronizo y dejo esta
+    // pagina mostrando solo sellos cuando el club ya era HIBRIDO).
+    const sucursal = await this.resolver.resolverSucursal(cliente.negocioId, {
+      clienteId: cliente.id,
     });
+    const base = await this.visitas.saldosEfectivos(
+      cliente.negocioId,
+      cliente.id,
+      sucursal.id as string,
+    );
 
-    // Sellos EFECTIVOS con la MISMA regla que GET /visitas/mi-tarjeta:
-    // GLOBAL usa el contador del cliente; POR_SUCURSAL, la tarjeta de la sucursal.
-    let sellos = cliente.sellosActuales;
-    if (cliente.negocio.modoClientes === 'POR_SUCURSAL') {
-      const sucursal = await this.resolver.resolverSucursal(cliente.negocioId, {
-        clienteId: cliente.id,
-      });
-      const tarjeta = await this.prisma.tarjetaClienteSucursal.findUnique({
-        where: {
-          clienteId_sucursalId: {
-            clienteId: cliente.id,
-            sucursalId: sucursal.id as string,
-          },
-        },
-        select: { sellosActuales: true },
-      });
-      sellos = tarjeta?.sellosActuales ?? 0;
-    }
-
-    const sellosParaPremio = cfg?.sellosParaPremio ?? 10;
-    const premioTexto = cfg?.premioTexto ?? '';
+    // El club "usa puntos" con SOLO_PUNTOS o HIBRIDO. En SOLO_VISITAS los campos de puntos
+    // van en null/ausentes de forma coherente (la pagina no muestra nada de puntos).
+    const usaPuntos =
+      base.modoFidelizacion === 'SOLO_PUNTOS' || base.modoFidelizacion === 'HIBRIDO';
 
     return {
       // "Cliente Demo" -> "Cliente"; "Laura Fernandez" -> "Laura".
@@ -111,11 +115,20 @@ export class VerificacionService {
         theme: cliente.negocio.theme,
       },
       sellos: {
-        actuales: sellos,
-        meta: sellosParaPremio,
-        premioDesbloqueado: sellos >= sellosParaPremio,
+        actuales: base.sellosActuales,
+        meta: base.sellosParaPremio,
+        premioDesbloqueado: base.premioDesbloqueado,
       },
-      premioTexto,
+      premioTexto: base.premioTexto,
+      puntos: usaPuntos
+        ? {
+            actuales: base.puntosActuales,
+            meta: base.premioPorPuntos,
+            premioDesbloqueado: base.puntosActuales >= base.premioPorPuntos,
+          }
+        : null,
+      premioTextoPuntos: usaPuntos ? base.premioTextoPuntos : null,
+      modoFidelizacion: base.modoFidelizacion,
       verificadoEn: new Date().toISOString(),
     };
   }

@@ -699,10 +699,16 @@ export class VisitasService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Sellos efectivos segun el modo del negocio. Con POR_SUCURSAL manda la
-   * TARJETA de esa sucursal; con GLOBAL, el contador del cliente.
+   * Saldos EFECTIVOS (sellos Y puntos) segun el modo del negocio. Con POR_SUCURSAL manda la
+   * TARJETA de esa sucursal; con GLOBAL, el contador del cliente. Devuelve ademas el modo de
+   * fidelizacion y el premio por puntos, para que CUALQUIER pantalla (la tarjeta privada, la
+   * verificacion publica) dibuje una o dos barras con la MISMA regla.
+   *
+   * Es `public` a proposito: lo reusa VerificacionService. Reimplementar aca la resolucion de
+   * saldos (GLOBAL vs POR_SUCURSAL) fue justo lo que dejo la pagina de verificacion mostrando
+   * solo sellos cuando el club paso a HIBRIDO.
    */
-  private async sellosEfectivos(negocioId: string, clienteId: string, sucursalId: string) {
+  async saldosEfectivos(negocioId: string, clienteId: string, sucursalId: string) {
     const [negocio, config, cliente, tarjeta] = await Promise.all([
       this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
       this.prisma.configuracionClub.findUnique({
@@ -768,7 +774,7 @@ export class VisitasService {
     const sucursalId =
       fila.sucursalId ??
       ((await this.resolver.resolverSucursal(negocioId, { clienteId })).id as string);
-    const base = await this.sellosEfectivos(negocioId, clienteId, sucursalId);
+    const base = await this.saldosEfectivos(negocioId, clienteId, sucursalId);
 
     if (fila.usado) {
       const rechazo = await this.redis.get(CLAVE_RECHAZO(token)).catch(() => null);
@@ -818,7 +824,7 @@ export class VisitasService {
       : null;
 
     const sucursal = await this.resolver.resolverSucursal(negocioId, { sucursalSlug, clienteId });
-    const base = await this.sellosEfectivos(negocioId, clienteId, sucursal.id as string);
+    const base = await this.saldosEfectivos(negocioId, clienteId, sucursal.id as string);
 
     // Con POR_SUCURSAL la PWA muestra una tarjeta por sucursal.
     const tarjetas = await this.prisma.tarjetaClienteSucursal.findMany({

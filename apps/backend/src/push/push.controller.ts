@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { RolEmpleado } from '@prisma/client';
 import { PushService } from './push.service';
 import { DisparosService } from './disparos.service';
@@ -10,6 +10,7 @@ import { EnviarPlantillaDto } from './dto/enviar-plantilla.dto';
 import { CrearDisparoDto } from './dto/crear-disparo.dto';
 import { ActualizarDisparoDto } from './dto/actualizar-disparo.dto';
 import { ProbarDisparoDto } from './dto/probar-disparo.dto';
+import { HistorialDisparosDto } from './dto/historial-disparos.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentCliente } from '../common/decorators/current-cliente.decorator';
@@ -146,6 +147,23 @@ export class PushController {
   @Get('disparos')
   listarDisparos(@CurrentEmpleado() emp: EmpleadoAuth) {
     return this.disparos.listar(emp.negocioId);
+  }
+
+  /**
+   * Historial de ejecuciones del motor de disparos (pestaña "Historial" del admin):
+   * una fila por evento con el disparo/plantilla, el cliente, si el push se encolo y
+   * cuanto saldo se acredito. Paginado y con scope por negocio.
+   *
+   * Va ANTES que cualquier `disparos/:id` para que 'logs' no se lea como un id.
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @Get('disparos/logs')
+  historialDisparos(
+    @CurrentEmpleado() emp: EmpleadoAuth,
+    @Query() filtros: HistorialDisparosDto,
+  ) {
+    return this.disparos.historial(emp.negocioId, filtros);
   }
 
   @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)

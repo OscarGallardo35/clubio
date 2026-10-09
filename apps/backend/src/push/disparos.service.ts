@@ -3,9 +3,11 @@ import { DisparoPush, PlantillaPush, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
+import { getPagination, paginar } from '../common/utils/pagination.util';
 import { PushService, VariablesPlantilla } from './push.service';
 import type { CrearDisparoDto } from './dto/crear-disparo.dto';
 import type { ActualizarDisparoDto } from './dto/actualizar-disparo.dto';
+import type { HistorialDisparosDto } from './dto/historial-disparos.dto';
 
 /** Cola de los jobs de tiempo (DIA / INACTIVIDAD). */
 export const COLA_DISPAROS = 'push-disparos';
@@ -106,6 +108,101 @@ export class DisparosService {
       orderBy: [{ activa: 'desc' }, { creadoEn: 'asc' }],
       include: { plantilla: { select: { id: true, nombre: true, titulo: true, activa: true } } },
     });
+  }
+
+  /**
+   * GET /push/disparos/logs -> historial de ejecuciones del motor (lo consume la
+   * pestaña "Historial" del admin).
+   *
+   * Fuente: `DisparoPushLog`, que YA registra por ejecucion el disparo, el cliente,
+   * el `push` (encolados/motivo) y lo acreditado, mas los OMITIDOS por limite /
+   * duplicado / sin suscripcion. No se inventan columnas: se proyecta lo que existe.
+   *
+   * El log guarda `clienteId` como escalar (sin relacion a Cliente), asi que los
+   * nombres se resuelven en UNA query aparte por los ids de la pagina: sin esto la
+   * pantalla mostraria ids pelados.
+   */
+  async historial(negocioId: string, filtros: HistorialDisparosDto) {
+    const { page, pageSize, skip, take } = getPagination(filtros);
+
+    const where: Prisma.DisparoPushLogWhereInput = { negocioId };
+    if (filtros.disparoId) where.disparoId = filtros.disparoId;
+    if (filtros.accion) where.accion = filtros.accion;
+    if (filtros.desde || filtros.hasta) {
+      where.creadoEn = {
+        ...(filtros.desde ? { gte: new Date(filtros.desde) } : {}),
+        ...(filtros.hasta ? { lte: new Date(filtros.hasta) } : {}),
+      };
+    }
+
+    const [filas, total] = await Promise.all([
+      this.prisma.disparoPushLog.findMany({
+        where,
+        orderBy: { creadoEn: 'desc' },
+        skip,
+        take,
+        select: {
+          id: true,
+          disparoId: true,
+          clienteId: true,
+          pedidoId: true,
+          tipo: true,
+          accion: true,
+          sellosAcreditados: true,
+          puntosAcreditados: true,
+          detalle: true,
+          creadoEn: true,
+          disparo: {
+            select: {
+              nombre: true,
+              plantilla: { select: { id: true, nombre: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.disparoPushLog.count({ where }),
+    ]);
+
+    const clienteIds = [
+      ...new Set(filas.map((f) => f.clienteId).filter((id): id is string => typeof id === 'string')),
+    ];
+    const clientes = clienteIds.length
+      ? await this.prisma.cliente.findMany({
+          where: { id: { in: clienteIds }, negocioId },
+          select: { id: true, nombre: true },
+        })
+      : [];
+    const nombrePorCliente = new Map(clientes.map((c) => [c.id, c.nombre]));
+
+    return paginar(
+      filas.map((f) => {
+        const det = (f.detalle ?? {}) as {
+          push?: { encolados?: unknown; motivo?: unknown };
+          origen?: unknown;
+        };
+        const encolados = Number(det.push?.encolados ?? 0);
+        return {
+          id: f.id,
+          disparoId: f.disparoId,
+          disparoNombre: f.disparo?.nombre ?? 'disparo eliminado',
+          plantillaNombre: f.disparo?.plantilla?.nombre ?? null,
+          tipo: f.tipo,
+          accion: f.accion,
+          clienteId: f.clienteId,
+          clienteNombre: f.clienteId ? (nombrePorCliente.get(f.clienteId) ?? null) : null,
+          pedidoId: f.pedidoId,
+          sellosAcreditados: f.sellosAcreditados,
+          puntosAcreditados: f.puntosAcreditados,
+          pushEncolados: Number.isFinite(encolados) ? encolados : 0,
+          pushMotivo: typeof det.push?.motivo === 'string' ? det.push.motivo : null,
+          origen: typeof det.origen === 'string' ? det.origen : null,
+          creadoEn: f.creadoEn,
+        };
+      }),
+      total,
+      page,
+      pageSize,
+    );
   }
 
   async crear(negocioId: string, dto: CrearDisparoDto, empleadoId?: string) {

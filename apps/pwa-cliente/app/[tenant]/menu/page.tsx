@@ -21,14 +21,17 @@ export default function MenuPage() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 pb-24">
       <h1 className="text-xl font-semibold">Carta</h1>
+      {/* Instalacion guiada de la PWA: ARRIBA de la carta. Antes estaba como footer y quedaba
+          debajo del scroll (a 375px el banner arrancaba en y=1015 de un documento de 1328), o sea
+          invisible salvo que bajaran toda la carta. Se auto-oculta si ya esta instalada o si el
+          usuario lo descarto (30 dias). */}
+      <BannerInstalacion nombreApp={negocio.nombre ?? 'Clubio'} />
       <CartaDigital
         negocioSlug={negocio.slug}
         sucursalSlug={sucursal?.slug ?? null}
         sucursalId={sucursal?.id ?? null}
         colorMarca={negocio.colorPrimario ?? undefined}
       />
-      {/* Instalacion guiada de la PWA (footer de la carta): se auto-oculta si ya esta instalada. */}
-      <BannerInstalacion nombreApp={negocio.nombre ?? 'Clubio'} />
     </main>
   )
 }

@@ -123,6 +123,10 @@ async function upsertConfig(negocioId) {
     mensajeBienvenida: 'Suma 8 sellos y te llevas un lomito gratis.',
     mostrarResenaPostVisita: true,
     menuActivo: true,
+    // Numero al que el cliente le escribe por WhatsApp desde el flujo de la visita. SI es la
+    // `ConfiguracionClub` la que alimenta ese boton (no `Negocio.numeroAtendiente`), y si esta vacio
+    // el boton "Abrir WhatsApp" directamente no se renderiza: ver TROUBLESHOOTING.
+    numeroAtendiente: '+5493585705745',
   }
   if (DRY) return data
   return prisma.configuracionClub.upsert({ where: { negocioId }, update: data, create: data })

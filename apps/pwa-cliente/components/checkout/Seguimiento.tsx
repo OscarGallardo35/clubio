@@ -22,7 +22,7 @@ import type { Socket } from 'socket.io-client'
 import { Button, BottomSheet, buttonVariants } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
 import { api, pedidosApi } from '@/lib/api'
-import { ETIQUETAS, ETIQUETAS_MODO_PAGO, clasificarFalloPedido, normalizarError, timeline, urlWhatsAppStaff } from '@/lib/checkout-maquina'
+import { ETIQUETAS, ETIQUETAS_MODO_PAGO, clasificarFalloPedido, debeOlvidarPedido, normalizarError, timeline, urlWhatsAppStaff } from '@/lib/checkout-maquina'
 import type { EstadoPedido } from '@/lib/checkout-maquina'
 import type { FalloSeguimiento } from '@/lib/checkout-maquina'
 import { crearSocketPedidos } from '@/lib/socket'
@@ -115,9 +115,10 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
       if (status !== 0) {
         const f = clasificarFalloPedido(status, mensaje)
         setFallo(f)
-        // Solo el 404 REAL (pedido no encontrado) suelta el pedido. El de "falta el tenant" es
-        // transitorio: el link existe, el header llego tarde.
-        if (f === 'no-encontrado' && pedidoGuardado?.linkToken === linkToken) {
+        // DOS fallos son terminales, no uno: el 404 real (el link no existe) y el 410 (el link
+        // vencio). Los dos sueltan el pedido guardado, si no el banner del menu queda en loop.
+        // El de "falta el tenant" es transitorio: el link existe, el header llego tarde.
+        if (debeOlvidarPedido(f, linkToken, pedidoGuardado?.linkToken)) {
           despachar({ tipo: 'OLVIDAR_PEDIDO' })
         }
       }

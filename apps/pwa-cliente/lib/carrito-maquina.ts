@@ -154,7 +154,7 @@ export type EventoCarrito =
   | { tipo: 'UPSELL_OK'; sugerencia: SugerenciaUpsell | null }
   | { tipo: 'UPSELL_ERROR' }
   | { tipo: 'ENVIAR' }
-  | { tipo: 'PEDIDO_OK'; linkToken: string; numero?: number; urlCorta?: string; mensajeWhatsApp?: string }
+  | { tipo: 'PEDIDO_OK'; linkToken: string; numero?: number; urlCorta?: string; mensajeWhatsApp?: string; expiraEn?: string | null }
   | { tipo: 'PEDIDO_ERROR'; status: number; mensaje: string; data?: unknown }
   /**
    * El seguimiento sincroniza el estado del pedido EN CURSO con lo que dice el backend (`GET
@@ -507,6 +507,7 @@ export function reducerCarrito(estado: EstadoCarrito, evento: EventoCarrito): Es
           linkToken: evento.linkToken,
           ...(evento.numero !== undefined ? { numero: evento.numero } : {}),
           ...(evento.urlCorta ? { urlCorta: evento.urlCorta } : {}),
+          ...(evento.expiraEn ? { expiraEn: evento.expiraEn } : {}),
           ...(evento.mensajeWhatsApp ? { mensajeWhatsApp: evento.mensajeWhatsApp } : {}),
         },
       }
@@ -594,6 +595,29 @@ export interface PedidoEnCurso {
    * `CANCELADO`/`RECHAZADO`/`ENTREGADO` el pedido deja de contar como activo.
    */
   estado?: EstadoPedido | undefined
+  /**
+   * Cuando vence el link (ISO). Lo decide el backend al crear el pedido. Sin esto el banner "Ver
+   * estado de tu pedido" no tiene como saber que el link ya no sirve y lo ofrece igual (loop).
+   * Opcional: los pedidos guardados antes de esto no lo tienen.
+   */
+  expiraEn?: string | null | undefined
+}
+
+/**
+ * ¿El pedido guardado sigue teniendo un link usable?
+ *
+ * Sin `linkToken` no hay nada que ofrecer. Con `expiraEn` vencido, tampoco: el backend responde 410
+ * ("Este link ya vencio") y el banner que lleva ahi es un loop.
+ *
+ * Si no hay `expiraEn` guardado (pedido viejo, de antes de que se persistiera) se asume VIGENTE:
+ * es preferible ofrecer un link que puede fallar una vez a esconder el seguimiento de un pedido
+ * vivo. El caso del vencido lo cierra el fallo 410 del propio seguimiento.
+ */
+export function pedidoVigente(pedido: PedidoEnCurso | null | undefined, ahora: number = Date.now()): boolean {
+  if (!pedido?.linkToken) return false
+  if (!pedido.expiraEn) return true
+  const vence = new Date(pedido.expiraEn).getTime()
+  return Number.isFinite(vence) ? vence > ahora : true
 }
 
 export interface CarritoPersistido {
@@ -663,6 +687,9 @@ export function deserializarCarrito(crudo: unknown, negocioSlug: string): Carrit
             ...(d.pedido.numero ? { numero: d.pedido.numero } : {}),
             ...(typeof d.pedido.urlCorta === 'string' ? { urlCorta: d.pedido.urlCorta } : {}),
             ...(typeof d.pedido.mensajeWhatsApp === 'string' ? { mensajeWhatsApp: d.pedido.mensajeWhatsApp } : {}),
+            // El vencimiento del link: sin esto el banner no puede saber si el pedido ya no sirve
+            // (el caso del loop). Tiene que viajar en el whitelist, no alcanza con guardarlo.
+            ...(typeof d.pedido.expiraEn === 'string' ? { expiraEn: d.pedido.expiraEn } : {}),
             // El estado lo setea el seguimiento: se conserva para no perder el CANCELADO al recargar.
             ...(d.pedido.estado ? { estado: d.pedido.estado } : {}),
           }

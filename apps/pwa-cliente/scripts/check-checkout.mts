@@ -21,8 +21,8 @@ import {
   validarCheckout,
 } from '../lib/carrito-maquina.ts'
 import type { EstadoCarrito, ItemCarta, ModificadorElegido } from '../lib/carrito-maquina.ts'
-import { ETIQUETAS_MODO_PAGO, armarBody, clasificarFalloPedido, normalizarError, urlWhatsAppStaff } from '../lib/checkout-maquina.ts'
-import { validarTelefonoE164 } from '../lib/carrito-maquina.ts'
+import { ETIQUETAS_MODO_PAGO, armarBody, clasificarFalloPedido, debeOlvidarPedido, normalizarError, urlWhatsAppStaff } from '../lib/checkout-maquina.ts'
+import { pedidoVigente, validarTelefonoE164 } from '../lib/carrito-maquina.ts'
 import { modificadoresParaApi } from '../lib/modificadores-seleccion.ts'
 
 let ok = 0
@@ -341,6 +341,40 @@ igual('el mensaje del tenant no depende de mayusculas', clasificarFalloPedido(40
 igual('410 es link vencido', clasificarFalloPedido(410, 'cualquiera'), 'vencido')
 igual('500 es otro (no terminal)', clasificarFalloPedido(500, ''), 'otro')
 igual('un 404 con mensaje desconocido cae al lado terminal', clasificarFalloPedido(404, ''), 'no-encontrado')
+
+
+// --- 13b. Que fallos sueltan el pedido guardado (el loop del banner) ---------
+console.log('\n== que fallos sueltan el pedido ==')
+// DOS fallos terminales: 404 real (el link no existe) y 410 (el link vencio). Los dos dejan el
+// banner del menu apuntando a un link muerto.
+chk('410 suelta el pedido guardado', debeOlvidarPedido('vencido', 'tok-1', 'tok-1') === true)
+chk('404 real suelta el pedido guardado', debeOlvidarPedido('no-encontrado', 'tok-1', 'tok-1') === true)
+chk('"falta el tenant" NO suelta (es transitorio)', debeOlvidarPedido('tenant', 'tok-1', 'tok-1') === false)
+chk('un 500 NO suelta (puede ser la red)', debeOlvidarPedido('otro', 'tok-1', 'tok-1') === false)
+chk('si el pedido guardado es OTRO, no lo borra', debeOlvidarPedido('vencido', 'tok-1', 'tok-2') === false)
+chk('sin pedido guardado no hay nada que soltar', debeOlvidarPedido('vencido', 'tok-1', null) === false)
+
+// El banner solo ofrece un link VIGENTE. `ahora` es inyectable para no depender del reloj real.
+const AHORA = Date.parse('2026-10-09T12:00:00Z')
+igual('sin pedido no hay banner', pedidoVigente(null, AHORA), false)
+igual('sin linkToken tampoco', pedidoVigente({ linkToken: '' }, AHORA), false)
+igual('con vencimiento futuro se muestra', pedidoVigente({ linkToken: 'tok-1', expiraEn: '2026-10-09T15:00:00Z' }, AHORA), true)
+igual('con vencimiento pasado NO se muestra', pedidoVigente({ linkToken: 'tok-1', expiraEn: '2026-10-09T09:00:00Z' }, AHORA), false)
+igual('sin expiraEn (pedido viejo) se asume vigente', pedidoVigente({ linkToken: 'tok-1' }, AHORA), true)
+igual('un expiraEn invalido no rompe', pedidoVigente({ linkToken: 'tok-1', expiraEn: 'no-es-fecha' }, AHORA), true)
+igual('el borde exacto del vencimiento no se muestra', pedidoVigente({ linkToken: 'tok-1', expiraEn: '2026-10-09T12:00:00Z' }, AHORA), false)
+
+// Sin esto el banner pierde el dato al recargar y vuelve el loop.
+// OJO: hay que agregar un item, si no `deserializarCarrito` devuelve null (no rehidrata un carrito
+// vacio) y el test pasaria por la razon equivocada.
+const conPedidoYItem = reducerCarrito(
+  reducerCarrito(base(), { tipo: 'PEDIDO_OK', linkToken: 'tok-1', expiraEn: '2026-10-09T15:00:00Z' }),
+  { tipo: 'AGREGAR_ITEM', item: PIZZA, cantidad: 1, modificadores: [], notas: '' },
+)
+igual('expiraEn sobrevive el roundtrip de localStorage',
+  deserializarCarrito(JSON.stringify(recortarParaPersistir(conPedidoYItem)), NEG)?.pedido?.expiraEn,
+  '2026-10-09T15:00:00Z')
+igual('y el linkToken tambien', deserializarCarrito(JSON.stringify(recortarParaPersistir(conPedidoYItem)), NEG)?.pedido?.linkToken, 'tok-1')
 
 
 // --- 14. Link de WhatsApp del staff -----------------------------------------

@@ -80,6 +80,8 @@ export function useCheckout(): UsoCheckout {
         // WhatsApp siga estando despues de recargar.
         urlCorta: r.urlCorta,
         mensajeWhatsApp: r.mensajeWhatsApp,
+        // El vencimiento del link: es lo que le permite al banner del menu saber si todavia sirve.
+        expiraEn: r.expiraEn,
       })
       return r.linkToken
     } catch (e) {

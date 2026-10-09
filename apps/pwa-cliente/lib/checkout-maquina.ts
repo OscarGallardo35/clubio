@@ -84,6 +84,29 @@ export function clasificarFalloPedido(status: number, mensaje: string): FalloSeg
   return 'otro'
 }
 
+/**
+ * ¿Este fallo del seguimiento tiene que SOLTAR el pedido guardado?
+ *
+ * Hay DOS fallos terminales, no uno:
+ * - `no-encontrado` (404 real): ese link no existe mas.
+ * - `vencido` (410): el pedido existe, pero su link ya no sirve para seguirlo.
+ *
+ * Los dos dejan el banner "Ver estado de tu pedido" apuntando a un link muerto. Si no se suelta, el
+ * cliente entra, ve el error, vuelve al menu y el banner sigue ahi: un loop. (`tenant` y `otro` son
+ * transitorios: el link puede seguir siendo bueno, no se toca nada.)
+ *
+ * Solo suelta si el pedido guardado es EL MISMO que se estaba siguiendo: si el cliente ya armo un
+ * pedido nuevo, el link viejo no tiene por que borrarlo.
+ */
+export function debeOlvidarPedido(
+  fallo: FalloSeguimiento,
+  linkTokenSeguido: string,
+  linkTokenGuardado: string | null | undefined,
+): boolean {
+  if (fallo !== 'no-encontrado' && fallo !== 'vencido') return false
+  return Boolean(linkTokenGuardado) && linkTokenGuardado === linkTokenSeguido
+}
+
 export const ETIQUETAS_MODO_PAGO: Record<'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA', string> = {
   EFECTIVO: 'Efectivo',
   TRANSFERENCIA: 'Transferencia',

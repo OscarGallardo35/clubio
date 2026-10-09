@@ -6,14 +6,14 @@
  * pedido en curso (es lo que el checkout usa para ofrecer "ver mi pedido" / "cancelarlo") y que
  * al cancelarlo se pueda volver a pedir.
  *
- *   pnpm --filter backend test:pedido-activo                                   (localhost:3000)
+ *   pnpm --filter backend test:pedido-activo                                   (usa API_URL, prod por defecto)
  *   API_URL=https://api.clubio.lat pnpm --filter backend test:pedido-activo
  *
  * Telefono unico por corrida a proposito: es la identidad del guest, asi que un numero fijo
  * haria chocar la segunda corrida con el limite que el propio harness esta probando.
  * Todo lo creado se cancela en un `finally`.
  */
-const API = process.env.API_URL || 'http://localhost:3000';
+const API = process.env.API_URL || 'https://api.clubio.lat';
 const SLUG = process.env.TENANT_SLUG || 'bar-la-esquina';
 
 let fallos = 0;

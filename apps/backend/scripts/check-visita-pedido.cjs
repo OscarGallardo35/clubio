@@ -67,6 +67,12 @@ function buscarItem(obj, acc = []) {
 
   const limpiar = async () => {
     try {
+      // Defensivo: si el telefono que mandamos no esta ya en E.164, el backend lo normaliza antes
+      // de guardarlo y el crudo no matchearia. Se borra por las dos formas.
+      const tels = [tel, tel2];
+      for (const t of [tel, tel2]) {
+        try { const n = require('../dist/common/utils/phone.util.js').normalizarTelefonoE164(t); if (n) tels.push(n); } catch {}
+      }
       if (clienteId) {
         await prisma.visita.deleteMany({ where: { clienteId } });
         await prisma.tarjetaClienteSucursal.deleteMany({ where: { clienteId } });
@@ -74,8 +80,8 @@ function buscarItem(obj, acc = []) {
         await prisma.pedido.deleteMany({ where: { clienteId } });
         await prisma.cliente.deleteMany({ where: { id: clienteId } });
       }
-      await prisma.pedido.deleteMany({ where: { telefono: { in: [tel, tel2] } } });
-      await prisma.cliente.deleteMany({ where: { telefono: { in: [tel, tel2] } } });
+      await prisma.pedido.deleteMany({ where: { telefono: { in: tels } } });
+      await prisma.cliente.deleteMany({ where: { telefono: { in: tels } } });
     } catch (e) { console.log('  (cleanup parcial: ' + e.message.split('\n')[0] + ')'); }
   };
 

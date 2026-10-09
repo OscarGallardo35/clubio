@@ -787,6 +787,18 @@ export class VisitasService {
     const tokenVerificacion =
       cliente.tokenVerificacion ?? (await this.generarTokenVerificacion(clienteId));
 
+    // Link publico de verificacion: lo arma el SERVIDOR con PUBLIC_APP_URL (la regla de la casa:
+    // links del cliente = PUBLIC_APP_URL + slug). El front NO puede armarlo con
+    // `window.location.origin`: en los subdominios de tenant (`<slug>.clubio.lat`) el link saldria
+    // con el slug duplicado y la pagina de verificacion responde "enlace no valido".
+    const negocioSlug = (
+      await this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { slug: true } })
+    )?.slug;
+    const baseApp = (process.env.PUBLIC_APP_URL ?? 'https://app.dominio.com').replace(/\/$/, '');
+    const urlVerificacion = negocioSlug
+      ? `${baseApp}/${negocioSlug}/verificar/${tokenVerificacion}`
+      : null;
+
     const sucursal = await this.resolver.resolverSucursal(negocioId, { sucursalSlug, clienteId });
     const base = await this.sellosEfectivos(negocioId, clienteId, sucursal.id as string);
 
@@ -801,6 +813,8 @@ export class VisitasService {
 
     return {
       cliente: { ...cliente, tokenVerificacion },
+      /** Link absoluto y canonico de la pagina publica de verificacion (lo arma el servidor). */
+      urlVerificacion,
       sucursal: {
         id: sucursal.id, nombre: sucursal.nombre, slug: sucursal.slug,
         esPrincipal: sucursal.esPrincipal ?? false,

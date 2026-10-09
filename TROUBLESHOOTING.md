@@ -387,6 +387,27 @@ El **orden de match (exacto vs wildcard)** no esta documentado de forma fiable: 
 wildcard hay que re-verificar los dominios exactos (`app`, `api`, `staff`, `admin`), porque si el
 wildcard matchea primero se los lleva al servicio equivocado.
 
+### Railway NO rutea dominios wildcard (el subdominio por local se resuelve en Cloudflare)
+
+`*.clubio.lat` registrado como Custom Domain del servicio cliente **no rutea**: el borde contesta 404
+para `bar-la-esquina.clubio.lat`. Y peor: mientras el dominio exacto `app.clubio.lat` no esta —el plan
+trial no deja tener los dos, es 1 por servicio—, **la URL principal tambien queda en 404**, porque el
+wildcard no toma su lugar. Verificado en vivo: `app.clubio.lat` estuvo mas de 2 minutos en 404 hasta
+que se revirtio (borrar el wildcard + re-crear el exacto; los 4 hosts volvieron a 200 al instante).
+
+Conclusion: **un subdominio por local no se puede resolver en Railway en este plan**. Se resuelve en
+Cloudflare: DNS `*.clubio.lat` (proxied) + el Worker `clubio-tenant` + la ruta `*.clubio.lat/*`
+(todo en `infra/cloudflare/`, con su `deploy-worker.mjs`). El Worker reescribe al formato path y le
+hace PASSTHROUGH a los hosts exactos (`api`, `staff`, `admin`, `app`), que tienen su propio servicio.
+
+Dos detalles del Worker que costaron tiempo:
+
+1. Los assets `/_next/...` (y `/api`) **no se prefijan**: viven en la raiz del app; prefijarlos daba
+   404 en el css y en todos los chunks (la pagina se veia sin estilos).
+2. El PUT del script por API necesita `filename=worker.js` **explicito** en el multipart, coincidiendo
+   con `main_module`: con curl en Windows, si el nombre sale del path, Cloudflare busca un modulo
+   llamado con la ruta completa y falla con `No such module: worker.js`.
+
 ### El healthcheck de Railway NO acepta un 3xx (deploy en FAILED)
 
 Al mover `/login` a `/<tenant>/login` deje un redirect 308 para la URL vieja y el deploy quedo en

@@ -873,9 +873,9 @@ function ProbarDisparo({ disparo, onCerrar }: { disparo: DisparoPush; onCerrar: 
     setEnviando(c.id);
     try {
       const r = await disparosApi.probar(disparo.id, c.id);
+      const n = r?.encolados ?? r?.enviados;
       toast.success(`Prueba de "${disparo.nombre}" enviada a ${c.nombre}`, {
-        description:
-          r?.enviados != null ? `${r.enviados} notificacion(es) encolada(s)` : undefined,
+        description: n != null ? `${n} notificacion(es) encolada(s)` : undefined,
       });
       onCerrar();
     } catch (e) {

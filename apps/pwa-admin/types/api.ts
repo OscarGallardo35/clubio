@@ -633,9 +633,13 @@ export type ActualizarDisparoBody = Partial<CrearDisparoBody>
 
 /** `POST /push/disparos/:id/probar` con `{ clienteId }`. */
 export interface ResultadoProbarDisparo {
-  ok?: boolean
+  prueba?: boolean
+  disparoId?: string
+  clienteId?: string
+  /** Push encolados (la prueba no toca saldos). */
+  encolados?: number
   enviados?: number
-  mensaje?: string
+  jobId?: string
 }
 
 /** Cliente del listado `GET /clientes` (proyeccion reducida: alcanza para elegir uno). */

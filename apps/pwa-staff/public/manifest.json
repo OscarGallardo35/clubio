@@ -1,7 +1,7 @@
 {
-  "name": "Clubio",
-  "short_name": "Clubio",
-  "description": "Suma visitas y gana premios en tus locales favoritos",
+  "name": "Clubio Staff",
+  "short_name": "Staff",
+  "description": "Turnos, visitas y pedidos del local",
   "lang": "es-AR",
   "dir": "ltr",
   "id": "/",
@@ -9,11 +9,11 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#E63946",
-  "theme_color": "#E63946",
+  "background_color": "#E21B2D",
+  "theme_color": "#E21B2D",
   "categories": [
-    "food",
-    "lifestyle"
+    "business",
+    "productivity"
   ],
   "icons": [
     {
@@ -37,30 +37,23 @@
   ],
   "screenshots": [
     {
-      "src": "/screenshots/carta.png",
+      "src": "/screenshots/turnos.png",
       "sizes": "1080x1920",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Carta: pedi desde tu mesa"
-    },
-    {
-      "src": "/screenshots/tarjeta.png",
-      "sizes": "1080x1920",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Tu tarjeta de sellos y premios"
+      "label": "Turnos y operacion del local"
     }
   ],
   "shortcuts": [
     {
-      "name": "Mi tarjeta",
-      "short_name": "Tarjeta",
-      "url": "/tarjeta"
+      "name": "Validar visita",
+      "short_name": "Validar",
+      "url": "/validar"
     },
     {
-      "name": "Mi historial",
-      "short_name": "Historial",
-      "url": "/historial"
+      "name": "Pedidos",
+      "short_name": "Pedidos",
+      "url": "/pedidos"
     }
   ]
 }

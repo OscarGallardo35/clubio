@@ -19,6 +19,7 @@ export const metadata: Metadata = {
   title: 'Club de fidelizacion',
   description: 'Suma visitas y gana premios en tus locales favoritos',
   manifest: '/manifest.json',
+  icons: { icon: '/icons/icon-192.png', apple: '/icons/apple-touch-icon.png' },
   // black-translucent: en iOS el status bar se superpone al contenido y combina
   // con el degradado de la marca (el theme-color lo actualiza BrandingProvider).
   appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Club' },

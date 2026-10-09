@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: 'Admin',
   description: 'Panel del dueno: carta, personal, sucursales y configuracion',
   manifest: '/manifest.json',
+  icons: { icon: '/icons/icon-192.png', apple: '/icons/apple-touch-icon.png' },
   appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Admin' },
 };
 

@@ -7,6 +7,13 @@
  */
 import { VerificacionTarjeta } from '@/components/tarjeta/VerificacionTarjeta'
 
+// Titulo propio: es una pagina PUBLICA que se comparte por WhatsApp (preview del link).
+// noindex: el token va en la URL y no queremos que los buscadores la indexen.
+export const metadata = {
+  title: 'Verificación de tarjeta',
+  robots: { index: false, follow: false },
+}
+
 export default function VerificarPage() {
   return <VerificacionTarjeta />
 }

@@ -740,7 +740,10 @@ export function TarjetaSellos({
 
         <motion.div
           className={cn('my-4 grid justify-items-center gap-2', theme && 'relative')}
-          style={{ gridTemplateColumns: `repeat(${Math.min(config.columnas, total)}, minmax(0, 1fr))` }}
+          // Con theme, el grid va a 3 COLUMNAS: 7 sellos + 1 slot de premio (8) reparten
+          // 3+3+2, que deja los vacios mejor distribuidos que las 5 columnas (4+4 / 5+3).
+          // La rama historica conserva su `config.columnas` intacto (regresion de bar-la-esquina).
+          style={{ gridTemplateColumns: `repeat(${Math.min(theme ? 3 : config.columnas, total)}, minmax(0, 1fr))` }}
         >
           {Array.from({ length: total }, (_, i) => (
             <Sello

@@ -611,6 +611,12 @@ export class PedidosService {
             monto: Number(ped.total),
             tipo: TipoVisita.VISITA,
             metodo: 'PEDIDO',
+            // El vinculo 1-1 visita<->pedido es la CLAVE del candado anti doble acreditacion:
+            // sin esto la Visita del pedido entregado queda con `pedidoId = null`, la relacion
+            // `Pedido.visita` no se arma, `pedidosCandidatos` (que filtra `visita: { is: null }`)
+            // vuelve a ofrecer el pedido ya acreditado y `visitas.aprobar` no lo detecta: aprobar
+            // una visita con ese pedido acreditaba el consumo DOS veces (verificado en prod).
+            pedidoId: ped.id,
             origen: 'PEDIDO',
             notas: null,
           });

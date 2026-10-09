@@ -15,9 +15,14 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=https://backend-production-8ebe8.up.railway.app
 ARG NEXT_PUBLIC_WS_URL=https://backend-production-8ebe8.up.railway.app
 ARG NEXT_PUBLIC_DEFAULT_TENANT=bar-la-esquina
+# Boton demo de la tarjeta: en prod se habilita seteando esta variable de BUILD
+# (NEXT_PUBLIC_*: Next la inyecta en el bundle del cliente). Sin el flag, el boton
+# no se ve (el codigo solo lo muestra en desarrollo).
+ARG NEXT_PUBLIC_DEMO_TARJETA
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_DEFAULT_TENANT=$NEXT_PUBLIC_DEFAULT_TENANT
+ENV NEXT_PUBLIC_DEMO_TARJETA=$NEXT_PUBLIC_DEMO_TARJETA
 RUN pnpm --filter pwa-cliente build
 
 FROM base AS runner

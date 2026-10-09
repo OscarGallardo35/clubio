@@ -6,6 +6,39 @@ import { Circle, Clock, Crown, Gift, Stamp } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 /**
+ * Forma del theme del tenant tal como la CONSUME este componente.
+ *
+ * Es ESTRUCTURAL y vive aca a proposito: `@repo/ui` no importa `@repo/types`
+ * (su tsconfig fija `rootDir: ./src`, y traer el source de otro package rompe
+ * TS6059). El tipo canonico (`TenantTheme`, con `getTheme()`) vive en
+ * `@repo/types`; esta es su copia estructural y debe mantenerse en sincronia.
+ */
+export interface ColoresTemaTarjeta {
+  /** Fondo principal de la tarjeta (fallback si no carga `imagenFondo`). */
+  bg: string
+  /** Acento: sello lleno, barra de progreso, confeti. */
+  accent: string
+  /** Marca oscura: track de la barra, borde del sello, overlay de la imagen. */
+  brandDark: string
+  /** Texto principal. */
+  text: string
+  /** Texto secundario (equivale a "text/40"). */
+  textMuted: string
+}
+
+export interface SelloTemaTarjeta {
+  rotacionBase?: number
+  forma?: 'circulo'
+}
+
+export interface TemaTarjeta {
+  colores: ColoresTemaTarjeta
+  sello?: SelloTemaTarjeta
+  imagenFondo?: string | null
+  mostrarPuntos?: boolean
+}
+
+/**
  * Tarjeta de sellos: el componente estrella del producto.
  *
  * El cliente la ve justo despues de que le aprueban la visita, o sea en el
@@ -17,9 +50,16 @@ import { cn } from '../lib/utils'
  *     testeable y para que el caller pueda forzarlo desde una preferencia del
  *     negocio.
  *
- * OJO con el glassmorphism: `bg-white/10 backdrop-blur-xl border-white/20`
- * necesita un fondo con color detras. Sobre blanco liso la tarjeta se ve plana;
- * va montada sobre el degradado de la marca.
+ * DOS DISENOS EN UNO:
+ *   - SIN `theme` (theme=null/undefined): el diseno HISTORICO, intacto
+ *     (regresion de /bar-la-esquina/tarjeta asegurada).
+ *   - CON `theme`: fondo `bg` + imagen opcional, sello lleno accent/brandDark con
+ *     rotacion estable por indice, barra accent sobre brandDark, y el mensaje
+ *     unico "Llevas X de N · Te faltan Y para tu {premio}".
+ *
+ * OJO con el glassmorphism del diseno historico: `bg-white/10 backdrop-blur-xl
+ * border-white/20` necesita un fondo con color detras. Sobre blanco liso la
+ * tarjeta se ve plana; va montada sobre el degradado de la marca.
  */
 
 export type EstadoTarjeta = 'vacia' | 'progreso' | 'casi' | 'completa' | 'canjeada'
@@ -48,6 +88,8 @@ export interface TarjetaSellosProps {
   ultimaVisita?: Date | undefined
   onClick?: () => void | undefined
   reducedMotion?: boolean | undefined
+  /** Theme del tenant. null/undefined = diseno por defecto (regresion intacta). */
+  theme?: TemaTarjeta | null | undefined
   className?: string | undefined
 }
 
@@ -139,6 +181,24 @@ function textoMotivacional(estado: EstadoTarjeta, faltan: number, premioTexto: s
   }
 }
 
+// --- helpers de color (exportados para poder testearlos en node) ----------
+
+/** #rgb / #rrggbb -> `rgba(r,g,b,a)`. Devuelve null si no es hex valido. */
+export function hexARgba(hex: string, alpha: number): string | null {
+  const h = hex.trim().replace('#', '')
+  const s = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  if (!/^[0-9a-fA-F]{6}$/.test(s)) return null
+  const r = parseInt(s.slice(0, 2), 16)
+  const g = parseInt(s.slice(2, 4), 16)
+  const b = parseInt(s.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+/** Rotacion ESTABLE por indice (no random): misma posicion -> mismo angulo. */
+export function rotacionSello(indice: number, base = 0): number {
+  return base + ((indice * 37) % 21) - 10
+}
+
 // --- confeti --------------------------------------------------------------
 function Confeti({ cantidad, global, colorPrimario, colorSecundario }: {
   cantidad: number
@@ -185,6 +245,7 @@ function Sello({
   pulsar,
   config,
   colorPrimario,
+  theme,
 }: {
   indice: number
   meta: number
@@ -194,9 +255,63 @@ function Sello({
   pulsar: boolean
   config: (typeof CONFIG)[TamanoTarjeta]
   colorPrimario: string
+  theme: TemaTarjeta | null
 }) {
   const etiqueta = `Visita ${indice + 1} de ${meta}, ${lleno ? 'completada' : 'pendiente'}`
-  // El ultimo lugar es SIEMPRE el premio (Gift); los demas, sello o circulo.
+
+  // --- variante con theme: sello lleno = SVG accent + brandDark -------------
+  if (theme) {
+    const rot = rotacionSello(indice, theme.sello?.rotacionBase ?? 0)
+    const propsAnimacionThemed =
+      esUltimoNuevo || pulsar
+        ? {
+            // Sello NUEVO: spring + temblor (shake). El que late (pulsar) es el
+            // ultimo lugar cuando la tarjeta esta "casi".
+            animate: pulsar
+              ? { scale: [1, 1.08, 1], opacity: 1 }
+              : { scale: [0.6, 1.15, 1], rotate: [0, -9, 7, 0], opacity: 1 },
+            transition: pulsar
+              ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' as const }
+              : { type: 'spring' as const, stiffness: 260, damping: 18 },
+          }
+        : {}
+    const estiloThemed = lleno ? ({}) as const : { borderColor: theme.colores.textMuted, color: theme.colores.textMuted }
+    return (
+      <motion.span
+        data-slot="tarjeta-sello"
+        data-themed="true"
+        aria-label={etiqueta}
+        variants={{
+          oculto: { scale: 0.9, rotate: 0, opacity: 1 },
+          visible: { scale: 1, rotate: 0, opacity: 1, transition: { type: 'spring', stiffness: 260, damping: 18 } },
+        }}
+        {...propsAnimacionThemed}
+        // El sello vacio es un circulo dashed en text/40 (theme.colores.textMuted).
+        className={cn('flex shrink-0 items-center justify-center rounded-full', config.sello, !lleno && 'border-2 border-dashed')}
+        style={estiloThemed}
+      >
+        {lleno ? (
+          <svg
+            data-slot="tarjeta-sello-svg"
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            className={config.icono}
+            style={{ transform: `rotate(${rot}deg)` }}
+            fill={theme.colores.accent}
+            stroke={theme.colores.brandDark}
+            strokeWidth={1.6}
+            strokeLinejoin="round"
+          >
+            <path d="M12 2.6l2.72 5.5 6.08.88-4.4 4.28 1.04 6.05L12 16.9l-5.44 2.41 1.04-6.05-4.4-4.28 6.08-.88z" />
+          </svg>
+        ) : (
+          <Circle aria-hidden="true" className={config.icono} />
+        )}
+      </motion.span>
+    )
+  }
+
+  // --- variante historica (sin theme) --------------------------------------
   const Icono = esPremio ? Gift : lleno ? Stamp : Circle
   // Se construye el objeto en vez de pasar `undefined`: con
   // exactOptionalPropertyTypes, `style={cond ? {...} : undefined}` no compila.
@@ -263,6 +378,7 @@ export function TarjetaSellos({
   ultimaVisita,
   onClick,
   reducedMotion = false,
+  theme = null,
   className,
 }: TarjetaSellosProps) {
   const config = CONFIG[tamaño]
@@ -274,6 +390,7 @@ export function TarjetaSellos({
   const estadoReal = estado ?? derivarEstado(llenos, total)
   const faltan = Math.max(0, total - llenos)
   const completa = estadoReal === 'completa' || estadoReal === 'canjeada'
+  const themed = Boolean(theme)
 
   // --- secuencia de animacion (fases 1 a 6 de la especificacion) ----------
   const previos = React.useRef(llenos)
@@ -336,6 +453,27 @@ export function TarjetaSellos({
     `Tarjeta de ${nombreNegocio}: ${llenos} de ${total} ${tipo === 'PUNTOS' ? 'puntos' : 'visitas'}. ` +
     (completa ? `Premio desbloqueado: ${premioTexto}` : `Faltan ${faltan} para ${premioTexto}`)
 
+  // Con theme, el premio tambien aparece con `reducedMotion`: solo fade, sin pop
+  // ni confeti (spec: "con prefers-reduced-motion solo fade").
+  const mostrarPremio = completa && (animar ? etapa >= 5 : reducedMotion)
+  // Mensaje unico del diseno con theme.
+  const mensajeThemed = theme ? `Llevas ${llenos} de ${total} · Te faltan ${faltan} para tu ${premioTexto}` : null
+
+  // --- confeti del premio (canvas-confetti, solo con theme) ---------------
+  React.useEffect(() => {
+    if (!themed || !theme || !mostrarPremio || reducedMotion) return
+    let activo = true
+    void import('canvas-confetti').then((mod) => {
+      if (!activo) return
+      const confetti = mod.default
+      const colores = [theme.colores.accent, theme.colores.brandDark, theme.colores.text]
+      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 }, colors: colores, disableForReducedMotion: true })
+      setTimeout(() => { if (activo) confetti({ particleCount: 60, angle: 60, spread: 55, origin: { x: 0 }, colors: colores }) }, 180)
+      setTimeout(() => { if (activo) confetti({ particleCount: 60, angle: 120, spread: 55, origin: { x: 1 }, colors: colores }) }, 360)
+    })
+    return () => { activo = false }
+  }, [themed, theme, mostrarPremio, reducedMotion])
+
   // --- variante micro: solo el anillo de progreso -------------------------
   if (tamaño === 'micro') {
     return (
@@ -374,11 +512,31 @@ export function TarjetaSellos({
     },
   }
 
+  // Fondo con theme: color `bg` + imagen opcional. Si la imagen no existe, el
+  // navegador ignora el background-image y queda el color solido (fallback).
+  const fondoCard = theme
+    ? {
+        backgroundColor: theme.colores.bg,
+        ...(theme.imagenFondo
+          ? { backgroundImage: `url(${theme.imagenFondo})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+          : {}),
+        borderColor: theme.colores.brandDark,
+        color: theme.colores.text,
+        // Fuente de cuerpo del tenant (item c: --font-body via next/font).
+        fontFamily: 'var(--font-body), system-ui, sans-serif',
+      }
+    : { minHeight: 'inherit' as const }
+
+  const overlayTheme = theme ? hexARgba(theme.colores.brandDark, 0.55) : null
+  const overlayTop = theme ? hexARgba(theme.colores.brandDark, 0.12) : null
+
   return (
     <motion.div
       data-slot="tarjeta-sellos"
       data-tamano={tamaño}
       data-estado={estadoReal}
+      data-themed={themed ? 'true' : 'false'}
+      data-reduced-motion={reducedMotion ? 'true' : 'false'}
       // El contenedor se anuncia como una imagen (resumen) y ademas cada sello
       // lleva su propio aria-label.
       role="img"
@@ -388,7 +546,19 @@ export function TarjetaSellos({
       animate="visible"
       variants={variantesContenedor}
       className={cn('relative', config.caja, onClick && 'cursor-pointer', className)}
-      style={{ ['--color-primary' as string]: colorPrimario, ['--color-secondary' as string]: colorSecundario }}
+      style={{
+        ['--color-primary' as string]: colorPrimario,
+        ['--color-secondary' as string]: colorSecundario,
+        ...(theme
+          ? {
+              ['--theme-bg' as string]: theme.colores.bg,
+              ['--theme-accent' as string]: theme.colores.accent,
+              ['--theme-brand-dark' as string]: theme.colores.brandDark,
+              ['--theme-text' as string]: theme.colores.text,
+              ['--theme-text-muted' as string]: theme.colores.textMuted,
+            }
+          : {}),
+      }}
     >
       {/* Borde animado cuando la tarjeta esta completa */}
       {completa && animar ? (
@@ -396,7 +566,11 @@ export function TarjetaSellos({
           aria-hidden="true"
           data-slot="tarjeta-borde-animado"
           className="pointer-events-none absolute -inset-[2px] rounded-[1.6rem]"
-          style={{ background: `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})` }}
+          style={{
+            background: theme
+              ? `linear-gradient(135deg, ${theme.colores.accent}, ${theme.colores.brandDark})`
+              : `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})`,
+          }}
           animate={{ opacity: [0.35, 0.95, 0.35] }}
           transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
         />
@@ -405,24 +579,41 @@ export function TarjetaSellos({
       <div
         className={cn(
           'relative flex h-full w-full flex-col justify-between overflow-hidden rounded-3xl',
-          glass ? 'border border-white/20 bg-white/10 backdrop-blur-xl' : 'border border-border bg-card',
+          themed ? 'border' : glass ? 'border border-white/20 bg-white/10 backdrop-blur-xl' : 'border border-border bg-card',
           config.padding,
         )}
-        style={{ minHeight: 'inherit' }}
+        style={fondoCard}
       >
+        {theme && overlayTheme && overlayTop ? (
+          <span
+            aria-hidden="true"
+            data-slot="tarjeta-overlay-theme"
+            className="pointer-events-none absolute inset-0"
+            style={{ background: `linear-gradient(180deg, ${overlayTop}, ${overlayTheme})` }}
+          />
+        ) : null}
+
         {animar && etapa >= 2 ? (
           <Confeti
             cantidad={completa && etapa >= 5 ? 40 : 20}
             global={completa && etapa >= 5}
-            colorPrimario={colorPrimario}
-            colorSecundario={colorSecundario}
+            colorPrimario={theme ? theme.colores.accent : colorPrimario}
+            colorSecundario={theme ? theme.colores.brandDark : colorSecundario}
           />
         ) : null}
 
-        <header className="flex items-center gap-3">
+        <header className={cn('flex items-center gap-3', theme && 'relative')}>
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoUrl} alt={nombreNegocio} width={44} height={44} className={cn('shrink-0 rounded-2xl object-cover', tamaño === 'full' ? 'size-12' : 'size-9')} />
+          ) : theme ? (
+            <span
+              aria-hidden="true"
+              className={cn('flex shrink-0 items-center justify-center rounded-2xl font-bold', tamaño === 'full' ? 'size-12 text-lg' : 'size-9 text-sm')}
+              style={{ backgroundColor: theme.colores.accent, color: theme.colores.brandDark }}
+            >
+              {nombreNegocio.slice(0, 1).toUpperCase()}
+            </span>
           ) : (
             <span
               aria-hidden="true"
@@ -433,16 +624,35 @@ export function TarjetaSellos({
             </span>
           )}
           <div className="min-w-0">
-            {saludo ? <p className={cn('truncate font-semibold text-white', config.texto)}>{saludo}</p> : null}
-            <p className={cn('truncate font-bold text-white', config.titulo)}>{nombreNegocio}</p>
+            {saludo ? (
+              theme ? (
+                <p className={cn('truncate font-semibold', config.texto)} style={{ color: theme.colores.textMuted }}>{saludo}</p>
+              ) : (
+                <p className={cn('truncate font-semibold text-white', config.texto)}>{saludo}</p>
+              )
+            ) : null}
+            {theme ? (
+              <p
+                className={cn('truncate font-bold', config.titulo)}
+                style={{ color: theme.colores.text, fontFamily: 'var(--font-display), system-ui, sans-serif' }}
+              >
+                {nombreNegocio}
+              </p>
+            ) : (
+              <p className={cn('truncate font-bold text-white', config.titulo)}>{nombreNegocio}</p>
+            )}
           </div>
           {completa ? (
-            <Crown aria-hidden="true" className={cn('ml-auto shrink-0 text-white', config.icono)} />
+            theme ? (
+              <Crown aria-hidden="true" className={cn('ml-auto shrink-0', config.icono)} style={{ color: theme.colores.accent }} />
+            ) : (
+              <Crown aria-hidden="true" className={cn('ml-auto shrink-0 text-white', config.icono)} />
+            )
           ) : null}
         </header>
 
         <motion.div
-          className="my-4 grid justify-items-center gap-2"
+          className={cn('my-4 grid justify-items-center gap-2', theme && 'relative')}
           style={{ gridTemplateColumns: `repeat(${Math.min(config.columnas, total)}, minmax(0, 1fr))` }}
         >
           {Array.from({ length: total }, (_, i) => (
@@ -458,27 +668,51 @@ export function TarjetaSellos({
               pulsar={animar && estadoReal === 'casi' && i === total - 1 && etapa < 2}
               config={config}
               colorPrimario={colorPrimario}
+              theme={theme}
             />
           ))}
         </motion.div>
 
-        <footer className="space-y-2">
-          <div className="h-2 w-full overflow-hidden rounded-full bg-white/20">
+        <footer className={cn('space-y-2', theme && 'relative')}>
+          <div
+            className={cn('h-2 w-full overflow-hidden rounded-full', !theme && 'bg-white/20')}
+            style={theme ? { backgroundColor: theme.colores.brandDark } : undefined}
+          >
             <motion.div
               data-slot="tarjeta-progreso"
               className="h-full rounded-full"
-              style={{ backgroundColor: colorPrimario }}
+              style={{ backgroundColor: theme ? theme.colores.accent : colorPrimario }}
               initial={false}
               animate={{ width: `${porcentaje}%` }}
-              transition={animar ? { duration: 0.5, ease: 'easeOut' } : { duration: 0 }}
+              // Barra: transicion suave cuando anima; instantanea con reduced motion.
+              transition={animar ? { duration: theme ? 0.6 : 0.5, ease: 'easeOut' } : { duration: 0 }}
             />
           </div>
 
-          <p className={cn('font-medium text-white/90', config.texto)}>
-            {completa ? etiquetaContenedor.split('. ')[1] ?? '' : `Llevás ${llenos} de ${total} ${tipo === 'PUNTOS' ? 'puntos' : 'visitas'}`}
-          </p>
+          {theme ? (
+            <p className={cn('font-medium', config.texto)} style={{ color: theme.colores.text }}>
+              {mensajeThemed}
+            </p>
+          ) : (
+            <p className={cn('font-medium text-white/90', config.texto)}>
+              {completa ? etiquetaContenedor.split('. ')[1] ?? '' : `Llevás ${llenos} de ${total} ${tipo === 'PUNTOS' ? 'puntos' : 'visitas'}`}
+            </p>
+          )}
 
-          {animar && etapa >= 4 ? (
+          {theme ? (
+            mostrarPremio ? (
+              <motion.p
+                data-slot="tarjeta-motivacional"
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: reducedMotion ? 0.4 : 0.3 }}
+                className={cn('font-semibold', config.texto)}
+                style={{ color: theme.colores.accent }}
+              >
+                {mensajeThemed}
+              </motion.p>
+            ) : null
+          ) : animar && etapa >= 4 ? (
             <motion.p
               data-slot="tarjeta-motivacional"
               initial={{ opacity: 0, y: 6 }}
@@ -493,22 +727,33 @@ export function TarjetaSellos({
           )}
 
           {mostrarUltimaVisita && ultimaVisita ? (
-            <p className={cn('flex items-center gap-1 text-white/70', config.texto)}>
-              <Clock aria-hidden="true" className="size-3.5" />
-              Última visita: {haceCuanto(ultimaVisita)}
-            </p>
+            theme ? (
+              <p className={cn('flex items-center gap-1', config.texto)} style={{ color: theme.colores.textMuted }}>
+                <Clock aria-hidden="true" className="size-3.5" />
+                Última visita: {haceCuanto(ultimaVisita)}
+              </p>
+            ) : (
+              <p className={cn('flex items-center gap-1 text-white/70', config.texto)}>
+                <Clock aria-hidden="true" className="size-3.5" />
+                Última visita: {haceCuanto(ultimaVisita)}
+              </p>
+            )
           ) : null}
         </footer>
 
-        {/* Fase 5: banner de premio con bounce */}
-        {animar && etapa >= 5 ? (
+        {/* Fase 5: banner de premio. Con reduced motion aparece solo con fade. */}
+        {mostrarPremio ? (
           <motion.div
             data-slot="tarjeta-banner-premio"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: [0.8, 1.06, 1], opacity: 1 }}
+            initial={reducedMotion ? { opacity: 0 } : { scale: 0.8, opacity: 0 }}
+            animate={reducedMotion ? { opacity: 1 } : { scale: [0.8, 1.06, 1], opacity: 1 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="mt-3 flex items-center gap-2 rounded-2xl px-4 py-3 font-semibold text-white"
-            style={{ background: `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})` }}
+            className={cn('mt-3 flex items-center gap-2 rounded-2xl px-4 py-3 font-semibold', theme && 'relative', !theme && 'text-white')}
+            style={
+              theme
+                ? { background: `linear-gradient(135deg, ${theme.colores.accent}, ${theme.colores.brandDark})`, color: theme.colores.text }
+                : { background: `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})` }
+            }
           >
             <Gift aria-hidden="true" className="size-5" />
             ¡Completaste tu tarjeta! Mostrale esta pantalla al personal

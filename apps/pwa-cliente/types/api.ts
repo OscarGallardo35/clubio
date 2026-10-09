@@ -4,6 +4,7 @@
  * importa es el de los endpoints publicos/del cliente, y ese se verifico con
  * requests reales. Si el backend cambia, aca se ve el desajuste.
  */
+import type { TenantTheme } from '@repo/types'
 
 // --- catalogos chicos ---
 export type ModoClientes = 'GLOBAL' | 'POR_SUCURSAL'
@@ -65,6 +66,8 @@ export interface NegocioPublico {
   logoUrl?: string | null
   colorPrimario?: string | null
   colorSecundario?: string | null
+  /** Personalizacion visual de la tarjeta (theme JSON). null/ausente = por defecto. */
+  theme?: TenantTheme | null
   placeId?: string | null
   urlMenu?: string | null
   urlClub?: string | null

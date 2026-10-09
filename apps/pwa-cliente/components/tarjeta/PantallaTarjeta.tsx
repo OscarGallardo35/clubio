@@ -4,20 +4,33 @@
  * Mi tarjeta (QR #1): la tarjeta de sellos real del cliente + el banner de premio.
  *
  * Fuente de datos: GET /api/visitas/mi-tarjeta (una sola llamada). El branding (nombre, logo,
- * colores, modo de fidelizacion) sale de useBranding, que ya lo resolvio el layout del tenant.
+ * colores, modo de fidelizacion, theme) sale de useBranding, que ya lo resolvio el layout del tenant.
  *
  * Regla que se respeta aca: un 401 NO es un error. Si no hay sesion se muestra el estado
  * "todavia no tenes tarjeta" con el CTA al club, no un cartel de fallo.
+ *
+ * THEME: si el negocio tiene `theme` (ver @repo/types getTheme), la tarjeta se dibuja con el
+ * diseno personalizado; si no, cae al diseno historico. El bloque de puntos se oculta cuando
+ * el theme lo pide (`mostrarPuntos: false`).
  */
 import * as React from 'react'
 import Link from 'next/link'
+import { getTheme } from '@repo/types'
 import { Progress, Skeleton, TarjetaSellos, buttonVariants } from '@repo/ui'
 import { useBranding } from '@/hooks/useBranding'
 import { useCliente } from '@/hooks/useCliente'
 import { useMiTarjeta } from '@/hooks/useMiTarjeta'
 import { useSucursalActiva } from '@/hooks/useSucursalActiva'
+import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { COLOR_PRIMARIO_DEFECTO, COLOR_SECUNDARIO_DEFECTO, RUTAS } from '@/lib/constants'
 import { vistaDeTarjeta } from '@/lib/tarjeta'
+
+/**
+ * El boton demo "+1 sello" se ve siempre en desarrollo y en prod solo con
+ * NEXT_PUBLIC_DEMO_TARJETA=true (variable de BUILD: Next la inyecta en el bundle).
+ */
+const DEMO_HABILITADO =
+  process.env.NEXT_PUBLIC_DEMO_TARJETA === 'true' || process.env.NODE_ENV !== 'production'
 
 export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
   const { negocio, configuracion, cargando: cargandoBranding } = useBranding()
@@ -25,7 +38,11 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
   // Auto-login: pega a /auth/cliente/me con la cookie. `resuelto` dice si ya se sabe si hay sesion.
   const { autenticado, resuelto } = useCliente()
   const { tarjeta, cargando, error, refetch } = useMiTarjeta(slugParaApi, resuelto && autenticado)
+  const reducedMotion = useReducedMotion()
+  // +1 sello (demo): suma EN MEMORIA para mostrar la animacion en vivo. NUNCA escribe en la DB.
+  const [sellosDemo, setSellosDemo] = React.useState(0)
 
+  const theme = getTheme(negocio)
   const colorPrimario = negocio?.colorPrimario || COLOR_PRIMARIO_DEFECTO
   const colorSecundario = negocio?.colorSecundario || COLOR_SECUNDARIO_DEFECTO
 
@@ -36,6 +53,11 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
   if (!tarjeta) return <SinSesion slugNegocio={slugNegocio} />
 
   const v = vistaDeTarjeta(tarjeta, configuracion?.modoFidelizacion)
+  // El demo suma sobre el contador principal (sellos); se corta en la meta.
+  const actualesConDemo = Math.min(v.actuales + sellosDemo, v.meta)
+  const demoAlTope = actualesConDemo >= v.meta
+  // Con theme.mostrarPuntos === false, el bloque de puntos se oculta.
+  const mostrarPuntos = v.mostrarPuntos && (theme ? theme.mostrarPuntos !== false : true)
 
   // Con HIBRIDO el cliente puede tener los DOS premios: se listan los que esten desbloqueados.
   const premiosDesbloqueados = [
@@ -58,7 +80,7 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
         nombreNegocio={negocio?.nombre ?? ''}
         logoUrl={negocio?.logoUrl ?? undefined}
         tipo={v.tipo === 'HIBRIDO' ? 'VISITAS' : v.tipo}
-        actuales={v.actuales}
+        actuales={actualesConDemo}
         meta={v.meta}
         premioTexto={v.premioTexto}
         colorPrimario={colorPrimario}
@@ -67,13 +89,40 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
         // 'glass' es la variante pensada para fondos con color: /tarjeta es una ruta inmersiva.
         variante="glass"
         mostrarUltimaVisita
+        reducedMotion={reducedMotion}
+        theme={theme}
         {...(v.ultimaVisita ? { ultimaVisita: v.ultimaVisita } : {})}
       />
+
+      {DEMO_HABILITADO ? (
+        <div className="flex items-center justify-center gap-3" data-slot="demo-tarjeta">
+          <button
+            type="button"
+            disabled={demoAlTope}
+            onClick={() => setSellosDemo((n) => n + 1)}
+            className={buttonVariants({
+              variant: 'secondary',
+              className: 'min-h-11 disabled:opacity-40',
+            })}
+          >
+            +1 sello (demo)
+          </button>
+          {sellosDemo > 0 ? (
+            <button
+              type="button"
+              onClick={() => setSellosDemo(0)}
+              className="text-xs font-medium text-white/80 underline"
+            >
+              Reiniciar demo
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Con HIBRIDO, la segunda barra: los sellos tienen su grilla en la tarjeta de arriba, los
           puntos van aca. Se dibuja en la pantalla y no dentro de <TarjetaSellos /> porque ese
           componente es COMPARTIDO (@repo/ui) y solo sabe de sellos. */}
-      {v.mostrarPuntos ? (
+      {mostrarPuntos ? (
         <section className="rounded-2xl bg-black/25 p-4 ring-1 ring-white/20 backdrop-blur">
           {v.mostrarSellos ? (
             <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-white/70">

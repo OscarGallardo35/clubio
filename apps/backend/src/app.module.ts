@@ -32,6 +32,7 @@ import { PushModule } from './push/push.module';
 import { GoogleModule } from './google/google.module';
 import { ResenasModule } from './resenas/resenas.module';
 import { EstadisticasModule } from './estadisticas/estadisticas.module';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
@@ -73,6 +74,8 @@ import { EstadisticasModule } from './estadisticas/estadisticas.module';
     GoogleModule,
     ResenasModule,
     EstadisticasModule,
+    // --- Media: firma de subidas directas a Cloudinary ---
+    MediaModule,
   ],
   providers: [
     // Rate limiting global. Los JWT guards NO se registran globalmente:

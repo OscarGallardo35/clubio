@@ -60,6 +60,16 @@ enum MetodoVisita {
   PEDIDO
 }
 
+// Tipo de disparo push (automatizacion configurable desde el admin)
+enum TipoDisparo {
+  COMPRA
+  SELLOS
+  DIA
+  INACTIVIDAD
+  BIENVENIDA
+  MANUAL
+}
+
 // Canal de una campaña de marketing
 enum CanalCampana {
   PUSH
@@ -208,6 +218,7 @@ model Negocio {
   notificacionesPushEmp NotificacionPushEmpleado[]
   campanas              CampanaMarketing[]
   plantillasPush        PlantillaPush[]
+  disparosPush          DisparoPush[]
   tokensValidacion      TokenValidacion[]
   usoMensual            UsoMensual[]
   eventosAuditoria      EventoAuditoria[]
@@ -949,8 +960,69 @@ model PlantillaPush {
   actualizadoEn DateTime @updatedAt
 
   negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  disparos DisparoPush[]
 
   @@index([negocioId, activa])
+}
+
+// Disparo / automatizacion de push configurable por el negocio (CRUD del admin).
+// El MOTOR que los ejecuta vive en DisparosService (ver apps/backend/src/push/disparos.service.ts).
+// Por tipo, `config` lleva:
+//  COMPRA     { estado:'ENTREGADO', cadaNCompras:1 }
+//  SELLOS     { cuando:'CADA_SELLO'|'FALTAN_N', n:1 }
+//  DIA        { dia:'FRIDAY'|'2026-10-15', hora:'18:00' }
+//  INACTIVIDAD{ dias:30 }
+//  BIENVENIDA {}
+//  MANUAL     {}
+model DisparoPush {
+  id               String      @id @default(cuid())
+  negocioId        String
+  nombre           String
+  activa           Boolean     @default(true)
+  tipo             TipoDisparo
+  config           Json
+  plantillaId      String
+  /// Regalo OPCIONAL ademas del push: { sellos?:number, puntos?:number }.
+  regalo           Json?
+  /// Topes por cliente: { porDia?:number, porMes?:number }.
+  limitePorCliente Json?
+  creadoEn         DateTime    @default(now())
+  actualizadoEn    DateTime    @updatedAt
+
+  negocio   Negocio         @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  plantilla PlantillaPush   @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  logs      DisparoPushLog[]
+
+  @@index([negocioId, tipo, activa])
+}
+
+// Registro de cada ejecucion del motor. Es el CANDADO de idempotencia:
+// `@@unique([disparoId, clave])` hace que un mismo evento (pedido, vista de
+// saldo, dia) no se pueda procesar dos veces para un disparo. Tambien es la
+// fuente de los topes (limitePorCliente por dia/mes) y de la auditoria del regalo.
+model DisparoPushLog {
+  id                String      @id @default(cuid())
+  disparoId         String
+  negocioId         String
+  clienteId         String?
+  pedidoId          String?
+  tipo              TipoDisparo
+  /// Clave de dedupe por disparo: 'COMPRA:<pedidoId>' | 'SELLOS:<visitaId>' |
+  /// 'DIA:<fechaAR>' | 'INACTIVIDAD:<fechaAR>' | 'BIENVENIDA:<clienteId>'.
+  clave             String
+  /// 'ENVIADO' | 'OMITIDO_LIMITE' | 'OMITIDO_DUP' | 'OMITIDO_SIN_SUSCRIPCION'
+  accion            String
+  sellosAcreditados Int         @default(0)
+  puntosAcreditados Int         @default(0)
+  detalle           Json?
+  creadoEn          DateTime    @default(now())
+
+  disparo DisparoPush @relation(fields: [disparoId], references: [id], onDelete: Cascade)
+
+  @@unique([disparoId, clave])
+  @@unique([disparoId, clienteId, pedidoId])
+  @@index([disparoId, clienteId, creadoEn])
+  @@index([negocioId, creadoEn])
 }
 
 // ============================================================================

@@ -20,6 +20,10 @@
  * - 1 cliente demo (GLOBAL: sellos en `Cliente.sellosActuales` + su TarjetaClienteSucursal
  *   en la sucursal principal) para poder ver su tarjeta. La cookie NO se firma aca:
  *   usar scripts/firmar-cookie-cliente.cjs.
+ * - 2 empleados: `Lomitos Dueño` (rol DUENO, email + password, para el panel) y
+ *   `Lomitos Encargado` (rol ENCARGADO, PIN 1111, para el staff). El hash lo hace bcryptjs (puro
+ *   JS) y no el `bcrypt` nativo del backend, que en este entorno no carga; el formato es el mismo
+ *   y el backend lo compara con su propio bcrypt sin problema.
  *
  * NO TOCA otros negocios: filtra TODO por el id/slug de que-lomitos.
  */
@@ -190,6 +194,41 @@ async function upsertClienteDemo(negocioId, sucursalId) {
   return { id: cliente.id }
 }
 
+/**
+ * Empleados del tenant demo: un DUENO (email + password, para el panel) y un ENCARGADO (PIN, para
+ * el staff). Mimic exactamente lo que hace el alta real (`empleados.service`): mismo algoritmo de
+ * hash, `twoFactorEnabled: false` (asi el login por email entra directo).
+ *
+ * Idempotente por CLAVE NATURAL (nombre), no por `pinHash`: bcrypt usa salt aleatorio, asi que el
+ * mismo PIN produce un hash distinto en cada corrida y el `@@unique([negocioId, pinHash])` nunca
+ * colisiona; un upsert por esa clave crearia un empleado nuevo cada vez.
+ */
+async function upsertEmpleados(negocioId, sucursalId) {
+  const bcrypt = require('bcryptjs')
+  const filas = [
+    ['dueno', {
+      negocioId, sucursalId, nombre: 'Lomitos Dueño', rol: 'DUENO',
+      email: 'dueno@quelomitos.com', passwordHash: bcrypt.hashSync('dueno123456', 10),
+      twoFactorEnabled: false, emailVerificado: true, activo: true,
+    }],
+    ['encargado', {
+      negocioId, sucursalId, nombre: 'Lomitos Encargado', rol: 'ENCARGADO',
+      pinHash: bcrypt.hashSync('1111', 10), twoFactorEnabled: false, activo: true,
+    }],
+  ]
+  if (DRY) return { dueno: 'DRY', encargado: 'DRY' }
+  const res = {}
+  for (const [clave, data] of filas) {
+    const existente = await prisma.empleado.findFirst({
+      where: { negocioId, nombre: data.nombre }, select: { id: true },
+    })
+    res[clave] = existente
+      ? (await prisma.empleado.update({ where: { id: existente.id }, data, select: { id: true } })).id
+      : (await prisma.empleado.create({ data, select: { id: true } })).id
+  }
+  return res
+}
+
 async function main() {
   console.log('\n  Seed que-lomitos' + (DRY ? '  [DRY-RUN]' : '  [APLICANDO]'))
   const neg = await upsertNegocio()
@@ -205,10 +244,12 @@ async function main() {
   const suc = await upsertSucursal(neg.id)
   const items = await upsertItems(neg.id)
   const cli = await upsertClienteDemo(neg.id, suc.id)
+  const emps = await upsertEmpleados(neg.id, suc.id)
   console.log(`   configuracionClub: OK (SOLO_VISITAS / 8 sellos / "Lomito gratis")`)
   console.log(`   sucursal: ${suc.id}`)
   console.log(`   items de carta: ${items}`)
   console.log(`   cliente demo: ${cli.id} (telefono ${TELEFONO_DEMO}, 3 sellos)`)
+  console.log(`   empleados: dueno ${emps.dueno} + encargado ${emps.encargado} (PIN 1111)`)
   console.log('\n  Listo. Para la cookie del cliente demo:')
   console.log('   node scripts/firmar-cookie-cliente.cjs que-lomitos ' + TELEFONO_DEMO)
   console.log('')

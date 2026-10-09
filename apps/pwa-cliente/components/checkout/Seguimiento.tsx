@@ -22,7 +22,7 @@ import type { Socket } from 'socket.io-client'
 import { Button, BottomSheet, buttonVariants } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
 import { api, pedidosApi } from '@/lib/api'
-import { ETIQUETAS, ETIQUETAS_MODO_PAGO, clasificarFalloPedido, debeOlvidarPedido, normalizarError, timeline, urlWhatsAppStaff } from '@/lib/checkout-maquina'
+import { ETIQUETAS, ETIQUETAS_MODO_PAGO, clasificarFalloPedido, debeOlvidarPedido, esFinal, normalizarError, timeline, urlWhatsAppStaff } from '@/lib/checkout-maquina'
 import type { EstadoPedido } from '@/lib/checkout-maquina'
 import type { FalloSeguimiento } from '@/lib/checkout-maquina'
 import { crearSocketPedidos } from '@/lib/socket'
@@ -108,6 +108,11 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
       // tambien al guest del QR (que no tiene WebSocket y solo tiene este polling).
       if (pedidoGuardado?.linkToken === linkToken) {
         despachar({ tipo: 'PEDIDO_ESTADO', estado: r.estado })
+        // Un estado TERMINAL (CANCELADO/RECHAZADO/ENTREGADO) cierra el pedido: se suelta igual que
+        // con un fallo terminal (404/410), si no el banner del menu sigue ofreciendo el seguimiento
+        // de un pedido muerto. El GET es 200 con `estado`, no un error: por eso el camino de exito
+        // tambien tiene que limpiar.
+        if (esFinal(r.estado)) despachar({ tipo: 'OLVIDAR_PEDIDO' })
       }
     } catch (e) {
       const { status, mensaje } = normalizarError(e)

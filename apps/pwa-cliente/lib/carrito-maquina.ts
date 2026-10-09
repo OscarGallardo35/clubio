@@ -615,6 +615,14 @@ export interface PedidoEnCurso {
  */
 export function pedidoVigente(pedido: PedidoEnCurso | null | undefined, ahora: number = Date.now()): boolean {
   if (!pedido?.linkToken) return false
+  // Un estado TERMINAL cierra el pedido: el banner "Ver estado de tu pedido" no puede quedar
+  // apuntando a algo cancelado, rechazado o ya entregado (el backend conserva `linkExpiraEn` al
+  // cancelar, asi que mirando solo el vencimiento el banner quedaba huerfano para siempre).
+  // OJO: `estado === undefined` cuenta como ACTIVO a proposito — `PEDIDO_OK` no setea estado, asi
+  // que justo despues de pedir todavia no hay estado sincronizado y el banner TIENE que mostrarse.
+  const terminal =
+    pedido.estado === 'CANCELADO' || pedido.estado === 'RECHAZADO' || pedido.estado === 'ENTREGADO'
+  if (terminal) return false
   if (!pedido.expiraEn) return true
   const vence = new Date(pedido.expiraEn).getTime()
   return Number.isFinite(vence) ? vence > ahora : true

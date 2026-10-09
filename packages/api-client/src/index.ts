@@ -310,5 +310,13 @@ export const endpoints = {
     vapidPublicKey: '/api/push/vapid-public-key',
     suscribir: '/api/push/suscribir',
   },
+  media: {
+    /**
+     * Firma una subida DIRECTA a Cloudinary: el backend devuelve timestamp/signature/apiKey/
+     * cloudName/folder/transformation y el NAVEGADOR manda el binario a Cloudinary. El backend
+     * nunca recibe el archivo.
+     */
+    firmarSubida: '/api/media/firmar-subida',
+  },
   health: '/api/health',
 } as const

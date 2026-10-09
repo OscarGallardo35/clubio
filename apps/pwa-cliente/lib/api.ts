@@ -1,6 +1,6 @@
 import type { SugerenciaUpsell } from './carrito-maquina'
 import { ApiClient, endpoints } from '@repo/api-client'
-import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta, CrearPedidoBody, PedidoCreadoRespuesta, PedidoPublico } from '@/types/api'
+import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta, CrearPedidoBody, PedidoCreadoRespuesta, PedidoPublico, VerificacionRespuesta } from '@/types/api'
 
 /**
  * Cliente HTTP unico de la PWA.
@@ -101,5 +101,13 @@ export const modificadoresApi = {
   // Misma regla que el upsell: la ruta sale de `endpoints` (que ya trae el prefijo /api).
   // Escrita a mano quedaba SIN /api -> 404 y el flujo caia por el camino de "sin grupos".
   porItem: (itemId: string) => api.get<unknown>(endpoints.modificadores.gruposDeItem(encodeURIComponent(itemId))),
+}
+
+/**
+ * Verificacion publica de la tarjeta (link de WhatsApp del local). SIN sesion ni cookie:
+ * el token de la URL es la unica llave. Token invalido -> ApiError con status 404.
+ */
+export const verificacionApi = {
+  obtener: (token: string) => api.get<VerificacionRespuesta>(endpoints.verificacion.verificar(token)),
 }
 

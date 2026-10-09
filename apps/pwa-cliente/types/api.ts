@@ -91,6 +91,11 @@ export interface ClienteBasico {
   totalVisitas?: number
   ultimaVisita?: string | null
   aceptaNotificaciones?: boolean
+  /**
+   * Token del link PUBLICO de verificacion (solo lo devuelve GET /visitas/mi-tarjeta).
+   * Opcional: /auth/cliente/me y los fixtures viejos no lo traen.
+   */
+  tokenVerificacion?: string | null
 }
 
 export interface TarjetaSucursal {
@@ -229,6 +234,31 @@ export interface MiTarjetaRespuesta extends Omit<EstadoVisitaRespuesta, 'estado'
   modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
   premioPorPuntos?: number | undefined
   premioTextoPuntos?: string | null | undefined
+}
+
+/**
+ * GET /api/verificacion/:token (PUBLICO, sin login).
+ * Solo datos NO personales: nombre de pila, negocio y la tarjeta (sellos/premio).
+ */
+export interface VerificacionRespuesta {
+  /** Nombre de PILA (el backend corta en el primer espacio). */
+  nombre: string
+  negocio: {
+    nombre: string
+    slug: string
+    logoUrl: string | null
+    colorPrimario: string
+    colorSecundario: string
+    theme: TenantTheme | null
+  }
+  sellos: {
+    actuales: number
+    meta: number
+    premioDesbloqueado: boolean
+  }
+  premioTexto: string
+  /** ISO de cuando se hizo la verificacion. */
+  verificadoEn: string
 }
 
 export interface VisitaHistorial {

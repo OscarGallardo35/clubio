@@ -306,6 +306,10 @@ export const endpoints = {
   resenas: {
     publicas: '/api/resenas',
   },
+  verificacion: {
+    /** Publica: la tarjeta de un cliente solo con el token (link de WhatsApp). */
+    verificar: (token: string) => `/api/verificacion/${encodeURIComponent(token)}`,
+  },
   push: {
     vapidPublicKey: '/api/push/vapid-public-key',
     suscribir: '/api/push/suscribir',

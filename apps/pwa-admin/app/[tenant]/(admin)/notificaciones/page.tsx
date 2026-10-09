@@ -22,12 +22,17 @@ import {
   Label,
   Skeleton,
   Switch,
+  Tabs,
+  TabsList,
+  TabsTrigger,
   Textarea,
   toast,
 } from '@repo/ui';
 import { pushApi } from '@/lib/api';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { normalizarError } from '@/lib/errores';
+import { renderizarPlantilla as renderizar } from '@/lib/push';
+import { Disparos } from './Disparos';
 import type {
   CatalogoPlantillas,
   CrearPlantillaBody,
@@ -59,6 +64,7 @@ export default function NotificacionesPage() {
   const [aEliminar, setAEliminar] = React.useState<PlantillaPush | null>(null);
   const [borrando, setBorrando] = React.useState(false);
   const [enviando, setEnviando] = React.useState<string | null>(null);
+  const [tab, setTab] = React.useState('plantillas');
 
   const push = usePushNotifications();
 
@@ -149,7 +155,9 @@ export default function NotificacionesPage() {
             Plantillas de push, prueba en tu dispositivo y envio por segmentos.
           </p>
         </div>
-        <Button onClick={() => setCreando(true)}>+ Nueva plantilla</Button>
+        {tab === 'plantillas' ? (
+          <Button onClick={() => setCreando(true)}>+ Nueva plantilla</Button>
+        ) : null}
       </header>
 
       <DispositivoCard
@@ -160,7 +168,19 @@ export default function NotificacionesPage() {
         onActivar={() => void push.activar()}
       />
 
-      {plantillas === null && !error ? <Skeleton className="h-64 w-full" /> : null}
+      {/* `TabsList` ya trae `w-full` + scroll interno: NO agregarle `w-max` (desborda en mobile). */}
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="gap-1">
+          <TabsTrigger value="plantillas">Plantillas</TabsTrigger>
+          <TabsTrigger value="disparos">Disparos</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {tab === 'disparos' ? <Disparos plantillas={plantillas} ejemplo={ejemplo} /> : null}
+
+      {tab === 'plantillas' ? (
+        <>
+          {plantillas === null && !error ? <Skeleton className="h-64 w-full" /> : null}
 
       {plantillas && plantillas.length === 0 ? (
         <p className="rounded-2xl border bg-card p-5 text-sm text-muted-foreground">
@@ -316,24 +336,10 @@ export default function NotificacionesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+        </>
+      ) : null}
     </section>
   );
-}
-
-/** Reemplaza {{var}} con los datos de ejemplo. Espejo del backend. */
-function renderizar(texto: string, datos: DatosEjemploPlantilla | null): string {
-  const vars: Record<string, string> = datos
-    ? {
-        nombre: datos.nombre,
-        negocio: datos.negocio,
-        premio: datos.premio,
-        actuales: String(datos.actuales),
-        meta: String(datos.meta),
-        faltantes: String(datos.faltantes),
-        numero: datos.numero,
-      }
-    : {};
-  return texto.replace(/\{\{\s*([a-zA-Z]+)\s*\}\}/g, (_t, clave: string) => vars[clave] ?? `{{${clave}}}`);
 }
 
 /** Card del estado de push del dispositivo actual (para "Enviar prueba"). */

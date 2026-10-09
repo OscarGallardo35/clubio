@@ -1,6 +1,6 @@
 'use client'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui';
+import { BannerInstalacion, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui';
 import { useEmpleado } from '@/hooks/useEmpleado';
 
 /** Dashboard de turnos. Placeholder de la Fase 1: la Fase 4 lo llena. */
@@ -25,6 +25,9 @@ export default function TurnosPage() {
           Esta pantalla se implementa en la Fase 4 (turnos + check-in + presentes).
         </CardContent>
       </Card>
+
+      {/* Instalacion guiada de la PWA: se auto-oculta si ya esta instalada o fue descartada. */}
+      <BannerInstalacion nombreApp="Clubio Staff" />
     </main>
   );
 }

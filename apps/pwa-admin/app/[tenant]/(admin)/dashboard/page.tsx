@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Badge, Progress, Skeleton, toast } from '@repo/ui';
+import { Badge, BannerInstalacion, Progress, Skeleton, toast } from '@repo/ui';
 import { estadisticasApi, usoApi, visitasApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import type { DashboardAdmin, UsoRecurso, VisitaPendiente } from '@/types/api';
@@ -204,6 +204,9 @@ export default function DashboardPage() {
       <p className="text-xs text-muted-foreground">
         Las visitas pendientes se aprueban desde la app del personal: aca solo se ven.
       </p>
+
+      {/* Instalacion guiada de la PWA: se auto-oculta si ya esta instalada o fue descartada. */}
+      <BannerInstalacion nombreApp="Clubio Admin" />
     </section>
   );
 }

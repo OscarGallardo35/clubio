@@ -8,6 +8,7 @@
  * paso 4.
  */
 import { CartaDigital } from '@/components/carta/CartaDigital'
+import { BannerInstalacion } from '@repo/ui'
 import { useBranding } from '@/hooks/useBranding'
 import { useSucursalActiva } from '@/hooks/useSucursalActiva'
 
@@ -26,6 +27,8 @@ export default function MenuPage() {
         sucursalId={sucursal?.id ?? null}
         colorMarca={negocio.colorPrimario ?? undefined}
       />
+      {/* Instalacion guiada de la PWA (footer de la carta): se auto-oculta si ya esta instalada. */}
+      <BannerInstalacion nombreApp={negocio.nombre ?? 'Clubio'} />
     </main>
   )
 }

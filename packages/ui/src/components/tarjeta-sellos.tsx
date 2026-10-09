@@ -114,9 +114,10 @@ const CONFIG: Record<
 > = {
   full: {
     // `w-full max-w-[360px]`: en un telefono chico la tarjeta se achica con la pantalla en vez de
-    // desbordar; `min-h-[440px]` (antes 560) mantiene la proporcion vertical sin dejar el hueco
-    // enorme que quedaba entre el bloque de sellos y la barra cuando el contenido es corto.
-    caja: 'w-full max-w-[360px] min-h-[440px]',
+    // desbordar; `min-h-[520px]` da aire vertical para las 2 filas de 8 sellos y el texto, con el
+    // contenido repartido por `justify-between` (el hueco extra queda entre bloques, no pegado a un
+    // borde). El icono del local (rama con theme) suma ~40px al header, por eso sube desde 440.
+    caja: 'w-full max-w-[360px] min-h-[520px]',
     padding: 'p-7',
     sello: 'size-12',
     icono: 'size-6',
@@ -246,17 +247,27 @@ function Confeti({ cantidad, global, colorPrimario, colorSecundario }: {
 
 // --- icono de esquina del tenant ------------------------------------------
 /**
- * Icono del tenant, discreto, en la esquina superior derecha del header.
+ * Icono del tenant, GRANDE, en la esquina superior izquierda del header (al lado
+ * del texto del negocio). Reemplaza al avatar con la inicial cuando esta disponible.
  *
  * Fuente en ese orden: `/icons/<slug>-icono.jpg` (override multi-tenant) y, si
- * no existe, el generico `/icons/icono.jpg`. Si tampoco existe, se oculta solo
- * via `onError`: nunca deja cuadro roto. Es decorativo (el nombre del negocio ya
- * esta en el header), asi que va con `alt=""` y `aria-hidden`.
+ * no existe, el generico `/icons/icono.jpg`. Si tampoco existe, cae al `fallback`
+ * (la inicial del negocio): nunca deja cuadro roto ni un hueco vacio. Es decorativo
+ * (el nombre del negocio ya esta en el header), asi que va con `alt=""` y `aria-hidden`.
  */
-function IconoEsquina({ slug, className }: { slug: string; className: string }) {
+function IconoEsquina({
+  slug,
+  className,
+  fallback,
+}: {
+  slug: string
+  className: string
+  /** Nodo a mostrar si ninguna imagen carga (ej. el avatar con la inicial). */
+  fallback?: React.ReactNode
+}) {
   // 0 = override por slug | 1 = generico | 2 = oculto
   const [etapa, setEtapa] = React.useState<0 | 1 | 2>(slug ? 0 : 1)
-  if (etapa === 2) return null
+  if (etapa === 2) return <>{fallback ?? null}</>
   const src = etapa === 0 ? `/icons/${slug}-icono.jpg` : '/icons/icono.jpg'
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -652,13 +663,23 @@ export function TarjetaSellos({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoUrl} alt={nombreNegocio} width={44} height={44} className={cn('shrink-0 rounded-2xl object-cover', tamaño === 'full' ? 'size-12' : 'size-9')} />
           ) : theme ? (
-            <span
-              aria-hidden="true"
-              className={cn('flex shrink-0 items-center justify-center rounded-2xl font-bold', tamaño === 'full' ? 'size-12 text-lg' : 'size-9 text-sm')}
-              style={{ backgroundColor: theme.colores.accent, color: theme.colores.brandDark }}
-            >
-              {nombreNegocio.slice(0, 1).toUpperCase()}
-            </span>
+            // Rama CON theme: el icono del local va ARRIBA A LA IZQUIERDA y GRANDE
+            // (88px en `full`), en el lugar del avatar con la inicial. Si ninguna
+            // imagen carga (ni la del slug ni la generica), cae al avatar con la
+            // inicial para no dejar un hueco vacio.
+            <IconoEsquina
+              slug={slugTenant ?? ''}
+              className={cn('shrink-0 rounded-2xl object-cover ring-1 ring-white/25', tamaño === 'full' ? 'size-[88px]' : 'size-9')}
+              fallback={
+                <span
+                  aria-hidden="true"
+                  className={cn('flex shrink-0 items-center justify-center rounded-2xl font-bold', tamaño === 'full' ? 'size-[88px] text-3xl' : 'size-9 text-sm')}
+                  style={{ backgroundColor: theme.colores.accent, color: theme.colores.brandDark }}
+                >
+                  {nombreNegocio.slice(0, 1).toUpperCase()}
+                </span>
+              }
+            />
           ) : (
             <span
               aria-hidden="true"
@@ -688,17 +709,13 @@ export function TarjetaSellos({
             )}
           </div>
           {theme ? (
-            // Rama CON theme: grupo a la derecha = corona (si completo) + icono
-            // del tenant en la esquina superior derecha. Va EN FLUJO (ml-auto),
-            // asi nunca tapa nombre, sellos ni el banner de premio.
+            // Rama CON theme: la CORONA (tarjeta completa) sigue a la DERECHA; el
+            // icono del local ahora vive a la IZQUIERDA del header (ver arriba). El
+            // grupo va EN FLUJO (ml-auto), asi nunca tapa nombre, sellos ni el banner.
             <span className="ml-auto flex shrink-0 items-center gap-2">
               {completa ? (
                 <Crown aria-hidden="true" className={cn('shrink-0', config.icono)} style={{ color: theme.colores.accent }} />
               ) : null}
-              <IconoEsquina
-                slug={slugTenant ?? ''}
-                className={cn('shrink-0 rounded-xl object-cover ring-1 ring-white/25', tamaño === 'full' ? 'size-8' : 'size-6')}
-              />
             </span>
           ) : completa ? (
             <Crown aria-hidden="true" className={cn('ml-auto shrink-0 text-white', config.icono)} />

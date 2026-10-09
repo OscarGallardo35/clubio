@@ -328,14 +328,16 @@ que esconder el seguimiento de un pedido vivo); ese caso lo cierra la guarda (1)
 La URL del cliente puede venir de **dos** formas y las dos tienen que funcionar:
 
 ```
-bar-la-esquina.app.clubio.lat/menu      (subdominio)
+bar-la-esquina.clubio.lat/menu          (subdominio, UN nivel: es el formato que usa el DNS)
 app.clubio.lat/bar-la-esquina/menu      (path, el formato original)
 ```
 
 El middleware de la PWA Cliente (`apps/pwa-cliente/middleware.ts`) **reescribe** (no redirige) el
-subdominio a la ruta interna: el navegador sigue mostrando `bar-la-esquina.app.clubio.lat/menu` y la
+subdominio a la ruta interna: el navegador sigue mostrando `bar-la-esquina.clubio.lat/menu` y la
 app renderiza `/[tenant]/menu`. Asi no hay que migrar ningun link ya compartido (WhatsApp, QR
-impreso, favoritos).
+impreso, favoritos). El middleware es agnostico del host: cualquier host con 3+ etiquetas cuyo
+primer label no sea reservado se reescribe (por eso un nivel o dos funcionan igual *si* el
+certificado los cubre: ver la seccion del SSL de Cloudflare mas abajo).
 
 Cuatro cosas que se rompen si no se tienen en cuenta:
 
@@ -371,7 +373,12 @@ Dos salidas:
   proxyado, incluidos los de dos niveles.
 - **Un subdominio de UN nivel** (`bar-la-esquina.clubio.lat`): el certificado actual ya lo cubre, es
   gratis e inmediato. Requiere un CNAME wildcard `*.clubio.lat` (los registros exactos —`api`, `staff`,
-  `admin`— tienen prioridad sobre el wildcard, asi que no se pisan).
+  `admin`— tienen prioridad sobre el wildcard, asi que no se pisan). Es la opcion que quedo:
+  `bar-la-esquina.clubio.lat` es igual de profesional y no vale US$10/mes por el nivel extra.
+
+**Regla**: verificar el SAN del certificado (`openssl s_client -servername <host> | openssl x509
+-noout -ext subjectAltName`) ANTES de elegir el formato de subdominio. El DNS puede estar perfecto y
+el sitio igual no abrir.
 
 ### Verificar DNS: el resolver local miente y el negativo se cachea
 

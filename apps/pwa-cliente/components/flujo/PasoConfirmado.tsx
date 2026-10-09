@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { Button, TarjetaSellos, toast } from '@repo/ui'
+import type { TemaTarjeta } from '@repo/ui'
 import { resumenDeAprobacion } from '@/lib/visita-maquina'
 import type { SellosTrasAprobar } from '@/lib/visita-maquina'
 import { BloqueResena } from './BloqueResena'
@@ -34,6 +35,10 @@ export interface PasoConfirmadoProps {
    */
   numeroAtendiente?: string | null
   mensajeWhatsApp?: string | null
+  /** Theme del tenant (null = diseno historico). Con theme, la tarjeta del flujo usa el diseno nuevo. */
+  theme?: TemaTarjeta | null
+  /** Slug del tenant para el icono de esquina (rama con theme). */
+  slugTenant?: string | null
   onVerTarjeta: () => void
   onVolver: () => void
 }
@@ -56,6 +61,8 @@ export function PasoConfirmado({
   puntosActuales,
   numeroAtendiente,
   mensajeWhatsApp,
+  theme,
+  slugTenant,
   onVerTarjeta,
   onVolver,
 }: PasoConfirmadoProps) {
@@ -84,6 +91,31 @@ export function PasoConfirmado({
       ? `Ahora tenes ${puntosActuales} puntos`
       : null
 
+  /**
+   * La MISMA tarjeta de /tarjeta con el sello/puntos YA sumados (los datos que ya recibe
+   * esta pantalla). Con `theme` usa el diseno nuevo (grid de 3, header centrado, icono
+   * grande); con `theme` null renderiza el diseno historico EXACTO de antes. Por eso se
+   * reusa una sola llamada y solo cambia DONDE se monta: con theme va ARRIBA.
+   */
+  const themed = Boolean(theme)
+  const tarjeta = (
+    <TarjetaSellos
+      tamaño="medium"
+      nombreNegocio={nombreNegocio}
+      logoUrl={logoUrl ?? undefined}
+      nombreCliente={nombreCliente ?? undefined}
+      tipo="VISITAS"
+      actuales={actuales}
+      meta={meta}
+      premioTexto={premioTexto}
+      colorPrimario={colorPrimario}
+      colorSecundario={colorSecundario}
+      estado={completo ? 'completa' : 'progreso'}
+      theme={theme}
+      slugTenant={slugTenant ?? undefined}
+    />
+  )
+
   // Aviso no bloqueante al confirmar (la pantalla ya lo dice; el toast es el
   // "ya esta" para quien no esta mirando).
   React.useEffect(() => {
@@ -102,6 +134,9 @@ export function PasoConfirmado({
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 px-4 py-8">
+      {/* Con theme, la MISMA tarjeta de /tarjeta va ARRIBA, con el sello ya sumado. */}
+      {themed ? tarjeta : null}
+
       <div className="flex size-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg">
         <IconoCheck className="size-7" />
       </div>
@@ -116,19 +151,8 @@ export function PasoConfirmado({
         </p>
       ) : null}
 
-      <TarjetaSellos
-        tamaño="medium"
-        nombreNegocio={nombreNegocio}
-        logoUrl={logoUrl ?? undefined}
-        nombreCliente={nombreCliente ?? undefined}
-        tipo="VISITAS"
-        actuales={actuales}
-        meta={meta}
-        premioTexto={premioTexto}
-        colorPrimario={colorPrimario}
-        colorSecundario={colorSecundario}
-        estado={completo ? 'completa' : 'progreso'}
-      />
+      {/* Sin theme, la tarjeta conserva su posicion historica (regresion intacta). */}
+      {themed ? null : tarjeta}
 
       {completo && (
         <p role="status" className="w-full rounded-2xl bg-white/95 px-4 py-3 text-center text-sm font-medium shadow-xl">

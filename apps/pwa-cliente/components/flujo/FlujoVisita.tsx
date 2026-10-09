@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { getTheme } from '@repo/types'
 import { useBranding } from '@/hooks/useBranding'
 import { useSucursalActiva } from '@/hooks/useSucursalActiva'
 import { useCliente } from '@/hooks/useCliente'
@@ -30,6 +31,12 @@ export function FlujoVisita() {
   const { autenticado, cliente, resuelto } = useCliente()
   const tarjetas = useClienteStore((s) => s.tarjetas)
   const visita = useVisitaQr(slugParaApi)
+
+  // Mismo camino que PantallaTarjeta: el theme del tenant sale de getTheme(negocio).
+  // Se propaga a las tarjetas del flujo (registro, espera, confirmacion) para que
+  // muestren el MISMO diseno que /tarjeta.
+  const theme = getTheme(negocio)
+  const slugTenant = negocio?.slug ?? null
 
   const meta = configuracion?.sellosParaPremio ?? 10
   const premioTexto = configuracion?.premioTexto ?? 'un premio'
@@ -69,6 +76,8 @@ export function FlujoVisita() {
         nombreCliente={cliente?.nombre ?? null}
         premioDesbloqueado={actuales >= meta}
         autenticado={autenticado}
+        theme={theme}
+        slugTenant={slugTenant}
         // Mientras no se sabe si hay sesion, el boton queda inhabilitado: con
         // eso no se le pide el nombre a alguien que ya es del club.
         cargando={visita.flujo.paso === 'solicitando' || (!resuelto && cargandoBranding)}
@@ -86,6 +95,12 @@ export function FlujoVisita() {
         ws={visita.ws}
         numeroAtendiente={configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null}
         mensajeWhatsApp={visita.mensajeWhatsApp ?? `Hola, quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}`}
+        // La misma tarjeta de /tarjeta, con el progreso de AHORA. `comun` ya trae
+        // nombreNegocio, logoUrl, colores, premioTexto, meta y actuales.
+        {...comun}
+        nombreCliente={cliente?.nombre ?? null}
+        theme={theme}
+        slugTenant={slugTenant}
         onCancelar={visita.reiniciar}
       />
     )
@@ -98,6 +113,8 @@ export function FlujoVisita() {
         actuales={actualesConfirmados}
         premioDesbloqueado={premioConfirmado}
         nombreCliente={cliente?.nombre ?? null}
+        theme={theme}
+        slugTenant={slugTenant}
         // Mismo numero que usa la espera: config del club -> negocio. Si no hay, el boton no se
         // muestra (PasoConfirmado lo decide).
         numeroAtendiente={configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null}

@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { registrarClienteSchema } from '@repo/validators'
 import { Badge, Button, Input, Label, TarjetaSellos } from '@repo/ui'
+import type { TemaTarjeta } from '@repo/ui'
 import { IconoCheck } from './iconos'
 
 /**
@@ -27,6 +28,10 @@ export interface PasoRegistroProps {
   colorSecundario: string
   autenticado: boolean
   cargando: boolean
+  /** Theme del tenant (null = diseno historico). Se propaga a la tarjeta del flujo. */
+  theme?: TemaTarjeta | null
+  /** Slug del tenant para el icono de esquina (rama con theme). */
+  slugTenant?: string | null
   onRegistrar: (datos: { nombre: string; telefono: string }) => void
   onSumar: () => void
 }
@@ -43,6 +48,8 @@ export function PasoRegistro({
   colorSecundario,
   autenticado,
   cargando,
+  theme,
+  slugTenant,
   onRegistrar,
   onSumar,
 }: PasoRegistroProps) {
@@ -86,6 +93,8 @@ export function PasoRegistro({
         colorPrimario={colorPrimario}
         colorSecundario={colorSecundario}
         estado={premioDesbloqueado ? 'completa' : undefined}
+        theme={theme}
+        slugTenant={slugTenant ?? undefined}
       />
 
       {autenticado ? (

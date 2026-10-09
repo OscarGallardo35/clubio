@@ -1,7 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { Button, Separator } from '@repo/ui'
+import { Button, Separator, TarjetaSellos } from '@repo/ui'
+import type { TemaTarjeta } from '@repo/ui'
 import { IconoReloj, IconoWhatsApp } from './iconos'
 import type { EstadoWs } from '@/stores/visitaStore'
 
@@ -30,14 +31,51 @@ export interface PasoEsperaProps {
   ws: EstadoWs
   numeroAtendiente?: string | null
   mensajeWhatsApp?: string | null
+  /**
+   * Datos para la MISMA tarjeta (`TarjetaSellos`) que se muestra en /tarjeta, con el
+   * progreso ACTUAL del cliente. Solo se dibuja con theme (la rama sin theme, hoy
+   * inexistente en el paso de espera, no cambia). Mismo camino de datos que PantallaTarjeta:
+   * useBranding/getTheme + los contadores que ya viven en FlujoVisita.
+   */
+  nombreCliente?: string | null
+  nombreNegocio?: string | null
+  logoUrl?: string | null
+  colorPrimario?: string
+  colorSecundario?: string
+  premioTexto?: string
+  meta?: number
+  actuales?: number
+  theme?: TemaTarjeta | null
+  slugTenant?: string | null
   onCancelar: () => void
 }
 
 /**
  * Se le muestra el codigo al personal. El contador refleja la vida real del
  * token (5 min en el backend), no una animacion decorativa.
+ *
+ * Con theme, ARRIBA va la misma tarjeta de /tarjeta con el progreso de AHORA
+ * (los sellos que ya tenia antes de que aprueben): el cliente ve como avanza
+ * mientras espera. El codigo, el contador y el boton de WhatsApp quedan DEBAJO.
  */
-export function PasoEspera({ token, expiraEn, ws, numeroAtendiente, mensajeWhatsApp, onCancelar }: PasoEsperaProps) {
+export function PasoEspera({
+  token,
+  expiraEn,
+  ws,
+  numeroAtendiente,
+  mensajeWhatsApp,
+  nombreCliente,
+  nombreNegocio,
+  logoUrl,
+  colorPrimario,
+  colorSecundario,
+  premioTexto,
+  meta,
+  actuales,
+  theme,
+  slugTenant,
+  onCancelar,
+}: PasoEsperaProps) {
   const [resta, setResta] = React.useState(() => restante(expiraEn))
 
   React.useEffect(() => {
@@ -52,6 +90,26 @@ export function PasoEspera({ token, expiraEn, ws, numeroAtendiente, mensajeWhats
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-6 px-4 py-10 text-center">
+      {theme ? (
+        // La MISMA tarjeta que /tarjeta, con el progreso de AHORA (los sellos que el
+        // cliente ya tenia antes de que aprueben). Va ARRIBA; el codigo, el contador y
+        // el boton de WhatsApp quedan DEBAJO, para que vea como avanza mientras espera.
+        <TarjetaSellos
+          tamaño="medium"
+          nombreNegocio={nombreNegocio ?? ''}
+          logoUrl={logoUrl ?? undefined}
+          nombreCliente={nombreCliente ?? undefined}
+          tipo="VISITAS"
+          actuales={actuales ?? 0}
+          meta={meta ?? 10}
+          premioTexto={premioTexto ?? 'un premio'}
+          colorPrimario={colorPrimario ?? '#E63946'}
+          colorSecundario={colorSecundario ?? '#F77F00'}
+          theme={theme}
+          slugTenant={slugTenant ?? undefined}
+        />
+      ) : null}
+
       <div className="flex size-16 items-center justify-center rounded-full bg-white/15 text-white">
         <IconoReloj className="size-8" />
       </div>

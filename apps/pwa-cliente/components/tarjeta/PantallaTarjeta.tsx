@@ -84,16 +84,29 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
    * no alcanza. El canje sigue siendo PRESENCIAL (lo valida el staff), asi que el boton solo abre el
    * chat con el local.
    *
-   * Condiciones: con theme (la tarjeta historica de bar-la-esquina queda intacta), premio
-   * desbloqueado y numero de atencion configurado (config del club -> negocio, el mismo que usan
-   * PasoEspera y PasoConfirmado). Si no hay numero, no hay boton. Cuando el cliente ya canjeo (los
-   * sellos se restan y el premio deja de estar desbloqueado) el boton desaparece solo.
+   * Condiciones: premio desbloqueado y numero de atencion configurado (config del club -> negocio,
+   * el mismo que usa PasoEspera). NO depende del theme: se ve tambien en los locales SIN theme
+   * (bar-la-esquina). Si no hay numero, no hay boton. Cuando el cliente ya canjeo (los sellos se
+   * restan y el premio deja de estar desbloqueado) el boton desaparece solo.
+   *
+   * El mensaje incluye el LINK PUBLICO de verificacion (`/<slug>/verificar/<token>`) para que el
+   * local confirme en el momento que los sellos/premio son reales, sin login.
    */
   const numeroAtendiente = configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null
+  // El token lo devuelve /visitas/mi-tarjeta (lazy). La URL se arma absoluta con el origin del
+  // navegador: en prod es https://app.clubio.lat (== PUBLIC_APP_URL). El boton solo se renderiza
+  // del lado del cliente (con la tarjeta ya cargada), asi que `window` siempre existe aca.
+  const tokenVerificacion = tarjeta.cliente?.tokenVerificacion ?? null
+  const slugVerificacion = negocio?.slug ?? slugNegocio
+  const urlVerificacion =
+    tokenVerificacion && typeof window !== 'undefined'
+      ? `${window.location.origin}/${slugVerificacion}/verificar/${tokenVerificacion}`
+      : null
   const waCanje =
-    theme && premiosDesbloqueados.length > 0 && numeroAtendiente
+    premiosDesbloqueados.length > 0 && numeroAtendiente
       ? `https://wa.me/${numeroAtendiente.replace(/\D/g, '')}?text=${encodeURIComponent(
-          `Hola, soy ${v.nombreCliente}. Completé mi tarjeta en ${negocio?.nombre ?? 'el local'} y quiero canjear ${premiosDesbloqueados[0]}.`,
+          `Hola, soy ${v.nombreCliente}. Completé mi tarjeta en ${negocio?.nombre ?? 'el local'} y quiero canjear ${premiosDesbloqueados[0]}.` +
+            (urlVerificacion ? ` Verificalo acá: ${urlVerificacion}` : ''),
         )}`
       : null
 

@@ -44,9 +44,16 @@ async function req(method, path, { body, token, cookie } = {}) {
 const cookieDe = (setCookie) =>
   String(setCookie).split('|').map((c) => c.trim().split(';')[0]).filter((c) => c.startsWith('cliente_token=')).join('; ');
 
+/**
+ * OJO: solo objetos que PARECEN un item de carta (con `precio` numerico). Sin ese filtro,
+ * el `negocio` de la respuesta (que tambien trae `nombre` + `id`) se colaba como item y el
+ * POST /pedidos moria con "Item inexistente".
+ */
 function buscarItem(obj, acc = []) {
   if (obj && typeof obj === 'object') {
-    if (obj.nombre && (obj.id || obj.itemId)) acc.push({ id: obj.id || obj.itemId, nombre: obj.nombre });
+    if (obj.nombre && (obj.id || obj.itemId) && typeof obj.precio === 'number') {
+      acc.push({ id: obj.id || obj.itemId, nombre: obj.nombre });
+    }
     for (const v of Object.values(obj)) buscarItem(v, acc);
   }
   return acc;
@@ -91,8 +98,10 @@ function buscarItem(obj, acc = []) {
     if (!staffToken) { console.log('SIN TOKEN DE STAFF: ' + trunc(staff.data)); process.exit(2); }
 
     const carta = await req('GET', '/api/carta?sucursalSlug=centro');
-    const item = buscarItem(carta.data)[0];
-    if (!item) { console.log('No encontre un item de carta'); process.exit(2); }
+    const items = buscarItem(carta.data);
+    const item = items.find((i) => /coca/i.test(i.nombre)) ?? items[0];
+    if (!item) { console.log('No encontre un item de carta (items vistos: ' + items.length + ')'); process.exit(2); }
+    console.log(`item de la carta: ${item.nombre}\n`);
 
     // ---------------------------------------------------------------- [0] Fase 0
     console.log('[0] Fase 0: el pedido guarda el cliente de la COOKIE');
@@ -143,9 +152,9 @@ function buscarItem(obj, acc = []) {
       select: { id: true, montoConsumido: true, puntosOtorgados: true, sellosOtorgados: true, pedidoId: true, metodo: true },
     });
     visitaId = visita?.id ?? null;
-    chk('la visita guardo el vinculo (Visita.pedidoId)', visita?.pedidoId === pedidoId, `pedidoId=${visita?.pedidoId}`);
-    chk('el monto es el TOTAL del pedido', Number(visita?.montoConsumido) === totalPedido, `monto=${Number(visita?.montoConsumido)} total=${totalPedido}`);
-    chk('los puntos salen del total (tasa del club)', visita?.puntosOtorgados === calcular(totalPedido), `puntos=${visita?.puntosOtorgados} esperado=${calcular(totalPedido)}`);
+    chk('la visita guardo el vinculo (Visita.pedidoId)', !!pedidoId && visita?.pedidoId === pedidoId, `pedidoId=${visita?.pedidoId} (esperado ${pedidoId})`);
+    chk('el monto es el TOTAL del pedido', !!totalPedido && Number(visita?.montoConsumido) === totalPedido, `monto=${Number(visita?.montoConsumido)} total=${totalPedido}`);
+    chk('los puntos salen del total (tasa del club)', !!totalPedido && visita?.puntosOtorgados === calcular(totalPedido), `puntos=${visita?.puntosOtorgados} esperado=${calcular(totalPedido)}`);
 
     // ------------------------------------------------------- [2] candado anti doble
     console.log('\n[2] Candado: entregar el pedido vinculado no acredita de nuevo');
@@ -169,7 +178,9 @@ function buscarItem(obj, acc = []) {
     chk('la tarjeta de la sucursal tampoco se movio', despues.tarjeta?.puntosActuales === antes.tarjeta?.puntosActuales, `${antes.tarjeta?.puntosActuales} -> ${despues.tarjeta?.puntosActuales}`);
   } catch (e) {
     falla++;
-    console.log('\nEXCEPCION: ' + (e && e.message ? e.message.split('\n')[0] : e));
+    console.log('\nEXCEPCION: ' + (e && e.message ? e.message.split('\n')[0] : String(e)));
+    if (e && e.stack) console.log(e.stack.split('\n').slice(0, 6).join('\n'));
+    else if (e) console.log('crudo: ' + JSON.stringify(e));
   } finally {
     await limpiar();
     await prisma.$disconnect();

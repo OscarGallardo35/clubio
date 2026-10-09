@@ -20,6 +20,8 @@ import {
   toast,
 } from '@repo/ui';
 import { configuracionApi } from '@/lib/api';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 import { normalizarError } from '@/lib/errores';
 import type {
   ConfiguracionAdmin,
@@ -44,6 +46,7 @@ import type {
  * - `puntosPorPeso` / `premioPorPuntos` son del programa de puntos, que es otro flujo.
  */
 export default function ConfiguracionPage() {
+  const tenant = useTenant();
   const [cfg, setCfg] = React.useState<ConfiguracionAdmin | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [tab, setTab] = React.useState('programa');
@@ -114,7 +117,7 @@ export default function ConfiguracionPage() {
           </div>
           {/* Ruta propia y no un tab: el callback de Google redirige a /configuracion/google. */}
           <Link
-            href="/configuracion/google"
+            href={rutaDe(tenant, '/configuracion/google')}
             className="rounded-xl border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent"
           >
             Abrir Google

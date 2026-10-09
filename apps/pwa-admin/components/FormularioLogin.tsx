@@ -4,9 +4,9 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Input, Label } from '@repo/ui';
 import { duenoApi } from '@/lib/api';
+import { rutaDe } from '@/lib/tenant';
+import { RUTA_INICIO } from '@/lib/constants';
 import { normalizarError } from '@/lib/errores';
-
-const SLUG_DEFECTO = process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'bar-la-esquina';
 
 /**
  * Login del dueno: email + password y, si el backend lo pide, el paso de 2FA.
@@ -22,9 +22,8 @@ const SLUG_DEFECTO = process.env.NEXT_PUBLIC_DEFAULT_TENANT ?? 'bar-la-esquina';
  * obliga a envolver todo en un <Suspense> para poder prerenderizar y es una fuente clasica de
  * "prerender-error".
  */
-export function FormularioLogin({ volver }: { volver?: string | undefined }) {
+export function FormularioLogin({ tenant, volver }: { tenant: string; volver?: string | undefined }) {
   const router = useRouter();
-  const [slug, setSlug] = React.useState(SLUG_DEFECTO);
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [codigo, setCodigo] = React.useState('');
@@ -33,10 +32,11 @@ export function FormularioLogin({ volver }: { volver?: string | undefined }) {
   const [error, setError] = React.useState<string | null>(null);
 
   // Solo rutas internas: un `volver` absoluto seria un redirect abierto.
-  const destino = volver && volver.startsWith('/') ? volver : '/';
+  // El destino por defecto es el dashboard DEL TENANT, no la raiz.
+  const destino = volver && volver.startsWith('/') ? volver : rutaDe(tenant, RUTA_INICIO);
 
   const puedeEnviarCredenciales =
-    email.trim().length > 3 && password.length >= 6 && slug.trim().length > 0 && !enviando;
+    email.trim().length > 3 && password.length >= 6 && tenant.trim().length > 0 && !enviando;
   const puedeEnviarCodigo = /^\d{6}$/.test(codigo) && !enviando;
 
   /** 401 y 429 no significan lo mismo: uno se arregla escribiendo bien, el otro esperando. */
@@ -53,7 +53,8 @@ export function FormularioLogin({ volver }: { volver?: string | undefined }) {
     setEnviando(true);
     setError(null);
     try {
-      const r = await duenoApi.login({ email: email.trim(), password, negocioSlug: slug.trim() });
+      // El local ya NO se pide en el form: viene del path (`/<tenant>/login`).
+      const r = await duenoApi.login({ email: email.trim(), password, negocioSlug: tenant });
       if (r.requiere2FA && r.challengeToken) {
         setChallenge(r.challengeToken);
         setEnviando(false);
@@ -134,21 +135,6 @@ export function FormularioLogin({ volver }: { volver?: string | undefined }) {
 
   return (
     <form onSubmit={enviarCredenciales} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="negocio">Local</Label>
-        <Input
-          id="negocio"
-          name="negocio"
-          value={slug}
-          onChange={(e) => setSlug(e.target.value)}
-          autoComplete="organization"
-          autoCapitalize="none"
-          spellCheck={false}
-          placeholder="bar-la-esquina"
-          required
-        />
-      </div>
-
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input

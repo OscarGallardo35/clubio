@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@repo/ui';
 import { useDueno } from '@/hooks/useDueno';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 
 /**
  * Barra lateral del admin.
@@ -16,17 +18,34 @@ import { useDueno } from '@/hooks/useDueno';
  * todo el ancho; si en algun momento hace falta, entra una barra superior con el mismo listado.
  */
 const SECCIONES = [
-  { href: '/', etiqueta: 'Dashboard', listo: true },
-  { href: '/carta', etiqueta: 'Carta', listo: true },
-  { href: '/personal', etiqueta: 'Personal', listo: true },
-  { href: '/sucursales', etiqueta: 'Sucursales', listo: true },
-  { href: '/configuracion', etiqueta: 'Configuracion', listo: true },
-  { href: '/qr', etiqueta: 'QR', listo: true },
+  { ruta: '/dashboard', etiqueta: 'Dashboard', listo: true },
+  { ruta: '/carta', etiqueta: 'Carta', listo: true },
+  { ruta: '/personal', etiqueta: 'Personal', listo: true },
+  { ruta: '/sucursales', etiqueta: 'Sucursales', listo: true },
+  { ruta: '/configuracion', etiqueta: 'Configuracion', listo: true },
+  { ruta: '/qr', etiqueta: 'QR', listo: true },
 ] as const;
 
 export function Sidebar() {
-  const ruta = usePathname();
+  const pathname = usePathname();
+  const tenant = useTenant();
   const { negocio, logout } = useDueno();
+
+  // El pathname trae el tenant adelante (`/bar-la-esquina/carta`). Se compara contra el path sin el
+  // primer segmento (y tambien contra la ruta con tenant) para que el item activo no dependa de que
+  // el tenant del param y el del path coincidan.
+  const limpio = (pathname || '').replace(/\/+$/, '') || '/';
+  const segmentos = limpio.split('/').filter(Boolean);
+  const sinTenant = segmentos.length > 1 ? `/${segmentos.slice(1).join('/')}` : limpio;
+  const activa = (r: string) => {
+    const conTenant = rutaDe(tenant, r);
+    return (
+      sinTenant === r ||
+      sinTenant.startsWith(`${r}/`) ||
+      limpio === conTenant ||
+      limpio.startsWith(`${conTenant}/`)
+    );
+  };
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r bg-card p-4 lg:flex">
@@ -39,18 +58,18 @@ export function Sidebar() {
         {SECCIONES.map((seccion) =>
           seccion.listo ? (
             <Link
-              key={seccion.href}
-              href={seccion.href}
+              key={seccion.ruta}
+              href={rutaDe(tenant, seccion.ruta)}
               className={cn(
                 'rounded-xl px-3 py-2 text-sm font-medium transition-colors',
-                ruta === seccion.href ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
+                activa(seccion.ruta) ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
               )}
             >
               {seccion.etiqueta}
             </Link>
           ) : (
             <span
-              key={seccion.href}
+              key={seccion.ruta}
               aria-disabled="true"
               className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-muted-foreground/60"
             >

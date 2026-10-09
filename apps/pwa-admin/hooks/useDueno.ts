@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { duenoApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import { useDuenoStore } from '@/stores/duenoStore';
+import { rutaLogin, tenantDePath } from '@/lib/tenant';
+import { DEFAULT_TENANT } from '@/lib/constants';
 import type { DuenoSesion } from '@/types/api';
 
 export interface UsoDueno {
@@ -30,6 +32,14 @@ export interface UsoDueno {
  * El sondeo de sesion es `GET /auth/dueno/me` (Fase 0c): devuelve la identidad del dueno y su
  * negocio, y sale por `JwtDuenoGuard`, que acepta la cookie `dueno_token` ademas del Bearer.
  */
+/** Login del tenant que se esta mirando, con el destino actual (para no perder la query en curso). */
+function loginActual(): string {
+  if (typeof window === 'undefined') return rutaLogin(DEFAULT_TENANT);
+  const tenant = tenantDePath(window.location.pathname) ?? DEFAULT_TENANT;
+  const destino = encodeURIComponent(window.location.pathname + window.location.search);
+  return `${rutaLogin(tenant)}?volver=${destino}`;
+}
+
 export function useDueno(): UsoDueno {
   const { dueno, negocio, autenticado, cargando } = useDuenoStore();
   const fijarSesion = useDuenoStore((s) => s.fijarSesion);
@@ -47,14 +57,10 @@ export function useDueno(): UsoDueno {
       const { status, mensaje } = normalizarError(e);
       if (status === 401) {
         limpiar();
-        // Se vuelve al destino ACTUAL (con query) para no perder a donde iba.
-        // window y no useSearchParams: este hook vive en el layout y useSearchParams obligaria a
-        // un <Suspense> para poder prerenderizar.
-        const actual =
-          typeof window === 'undefined'
-            ? '/login'
-            : `/login?volver=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-        router.replace(actual);
+        // Se vuelve al login DEL TENANT actual, con el destino (con query) para no perder a donde
+        // iba. window y no useSearchParams: este hook vive en el layout y useSearchParams obligaria
+        // a un <Suspense> para poder prerenderizar.
+        router.replace(loginActual());
       } else {
         setError(mensaje);
       }
@@ -75,7 +81,11 @@ export function useDueno(): UsoDueno {
       // (Fase 0c) la borra el backend; si no, vence sola.
     }
     limpiar();
-    router.replace('/login');
+    const tenantAhora =
+      typeof window === 'undefined'
+        ? DEFAULT_TENANT
+        : tenantDePath(window.location.pathname) ?? DEFAULT_TENANT;
+    router.replace(rutaLogin(tenantAhora));
   }, [limpiar, router]);
 
   return { dueno, negocio, autenticado, cargando, resuelto, error, refetch, logout };

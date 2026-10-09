@@ -19,6 +19,8 @@ import {
   toast,
 } from '@repo/ui';
 import { googleApi, negociosApi } from '@/lib/api';
+import { useTenant } from '@/hooks/useTenant';
+import { rutaDe } from '@/lib/tenant';
 import { normalizarError } from '@/lib/errores';
 import type { GoogleEstado, NegocioAdmin, UbicacionGoogle } from '@/types/api';
 
@@ -45,6 +47,7 @@ function extraerPlaceId(entrada: string): string {
  *    backend responde 403 y se muestra tal cual (la feature es del plan, no un bug del panel).
  */
 export default function GooglePage() {
+  const tenant = useTenant();
   const [estado, setEstado] = React.useState<GoogleEstado | null>(null);
   const [ubicaciones, setUbicaciones] = React.useState<UbicacionGoogle[] | null>(null);
   // Dos errores SEPARADOS: el estado sale de nuestra DB (casi nunca falla) y las
@@ -217,7 +220,7 @@ export default function GooglePage() {
             Conecta la ficha de Google del local para mostrar y responder resenas.
           </p>
         </div>
-        <Link href="/configuracion" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+        <Link href={rutaDe(tenant, '/configuracion')} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
           Volver a Configuracion
         </Link>
       </header>

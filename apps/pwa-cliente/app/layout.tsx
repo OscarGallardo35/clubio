@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Anton, DM_Sans } from 'next/font/google';
 import { Toaster } from '@repo/ui';
 import { COLOR_PRIMARIO_DEFECTO } from '@/lib/constants';
+import { RegistroServiceWorker } from '@/components/RegistroServiceWorker';
 import './globals.css';
 
 /**
@@ -37,6 +38,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es-AR" className={`${anton.variable} ${dmSans.variable}`}>
       <body className="min-h-dvh bg-background text-foreground antialiased">
+        {/* Registra /sw.js: sin SW no hay pushManager y las notificaciones no existen. */}
+        <RegistroServiceWorker />
         {children}
         <Toaster />
       </body>

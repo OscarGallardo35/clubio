@@ -17,6 +17,11 @@ coverage/
 *.tsbuildinfo
 /apps/*/public/sw.js
 /apps/*/public/workbox-*.js
+# EXCEPCION: el sw.js BASE ahora se AUTORA a mano (antes se esperaba un sw.js
+# generado por next-pwa, que nunca se configuro). Sin esta negacion el archivo
+# queda fuera del repo y el deploy sirve 404 en /sw.js: justo el bug que el push
+# arrastraba.
+!/apps/*/public/sw.js
 next-env.d.ts
 
 # dist de aislamiento del build (NEXT_DIST_DIR)

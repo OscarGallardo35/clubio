@@ -1,23 +1,35 @@
 /**
- * Handler de notificaciones push del service worker.
+ * Handler de notificaciones push del service worker (PWA Cliente).
  *
- * Se mantiene aparte del SW principal (workbox/next-pwa lo genera) y se importa
- * con importScripts: asi el ciclo de push se toca sin regenerar el SW entero.
+ * Se mantiene aparte del SW base (`sw.js`, que lo importa con importScripts) para
+ * poder tocar el ciclo de push sin regenerar el SW entero.
+ *
+ * CLAVES DEL PAYLOAD: el backend (push.processor) manda `title`/`body`/`url`
+ * (las del processor), pero el diseno original de este archivo esperaba
+ * `titulo`/`cuerpo`. Se aceptan LAS DOS para no depender del emisor.
  */
 
 self.addEventListener('push', (event) => {
   if (!event.data) return
 
-  let datos = { titulo: 'Clubio', cuerpo: 'Tenés novedades', url: '/tarjeta' }
+  let crudo = {}
   try {
-    datos = { ...datos, ...event.data.json() }
+    crudo = event.data.json()
   } catch {
-    datos.cuerpo = event.data.text()
+    crudo = { body: event.data.text() }
+  }
+
+  const datos = {
+    titulo: crudo.titulo ?? crudo.title ?? 'Clubio',
+    cuerpo: crudo.cuerpo ?? crudo.body ?? 'Tenés novedades',
+    url: crudo.url ?? '/tarjeta',
+    icon: crudo.icon ?? crudo.icono ?? '/icons/icon-192.png',
+    tag: crudo.tag,
   }
 
   const opciones = {
     body: datos.cuerpo,
-    icon: '/icons/icon-192.png',
+    icon: datos.icon,
     badge: '/icons/badge-72.png',
     data: { url: datos.url },
     tag: datos.tag || 'clubio',

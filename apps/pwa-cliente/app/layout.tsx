@@ -35,7 +35,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es-AR" className={`${anton.variable} ${dmSans.variable}`}>
-      <body className="min-h-dvh bg-background text-foreground antialiased" style={{ fontFamily: 'var(--font-body), system-ui, sans-serif' }}>
+      <body className="min-h-dvh bg-background text-foreground antialiased">
         {children}
         <Toaster />
       </body>

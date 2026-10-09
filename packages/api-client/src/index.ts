@@ -320,6 +320,15 @@ export const endpoints = {
     plantilla: (id: string) => `/api/push/plantillas/${encodeURIComponent(id)}`,
     /** Envio por plantilla: segmento o prueba a un dispositivo. */
     enviar: '/api/push/enviar',
+    /** Disparos automaticos (CRUD del admin). */
+    disparos: '/api/push/disparos',
+    disparo: (id: string) => `/api/push/disparos/${encodeURIComponent(id)}`,
+    /** Prueba UN disparo contra UN cliente (`{ clienteId }`). */
+    disparoProbar: (id: string) => `/api/push/disparos/${encodeURIComponent(id)}/probar`,
+  },
+  clientes: {
+    list: '/api/clientes',
+    get: (id: string) => `/api/clientes/${encodeURIComponent(id)}`,
   },
   media: {
     /**

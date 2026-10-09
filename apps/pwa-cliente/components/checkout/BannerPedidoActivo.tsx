@@ -28,18 +28,21 @@ export function BannerPedidoActivo({ slugNegocio }: { slugNegocio: string }) {
   }, [linkToken, vigente, despachar])
 
   /**
-   * Tercera guarda: el pedido guardado puede no tener estado SINCRONIZADO. Dos casos reales:
-   * una pestana vieja (el `estado` se agrego despues, asi que el carrito persistido no lo trae) y un
-   * pedido que el staff cancelo mientras el cliente no abria el seguimiento — ahi no hay WebSocket ni
-   * polling que avisen.
+   * Tercera guarda: el store puede tener un estado VIEJO o inexistente, y el banner se lo cree.
+   * Tres casos reales, todos con el link todavia vigente:
+   *   - una pestana vieja (el `estado` se agrego despues y el carrito persistido no lo trae);
+   *   - el staff cancelo el pedido mientras el cliente no tenia el seguimiento abierto (en /menu no
+   *     hay WebSocket ni polling que avisen);
+   *   - un `PENDIENTE` de una sesion anterior que ya no es cierto.
    *
-   * Con `estado` en `undefined` el banner no tiene con que decidir, asi que se le pregunta al backend
-   * UNA vez: si el pedido ya esta cerrado se suelta. Una sola consulta por pedido: en cuanto el estado
-   * llega queda en el store (y persistido), y esta guarda no vuelve a dispararse.
+   * Asi que siempre que el banner se muestre se le pregunta al backend UNA vez: si el pedido ya esta
+   * cerrado se suelta, si el GET falla con 404/410 tambien (mismo criterio que el seguimiento) y si
+   * sigue vivo se sincroniza el estado. Es un solo GET por montaje del banner (menu/club), el mismo
+   * que hace el seguimiento, y el resultado queda persistido.
    */
-  const sinEstado = vigente && pedido?.estado === undefined
+  const verificar = vigente && Boolean(linkToken)
   React.useEffect(() => {
-    if (!linkToken || !sinEstado) return undefined
+    if (!linkToken || !verificar) return undefined
     let vivo = true
     void (async () => {
       try {
@@ -61,7 +64,7 @@ export function BannerPedidoActivo({ slugNegocio }: { slugNegocio: string }) {
     return () => {
       vivo = false
     }
-  }, [linkToken, sinEstado, despachar])
+  }, [linkToken, verificar, despachar])
 
   if (!linkToken || !vigente) return null
 

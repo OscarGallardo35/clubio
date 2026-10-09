@@ -3380,3 +3380,22 @@ Lo correcto es recomputar con el MISMO algoritmo del SDK (`cloudinary.utils.api_
 comparar contra lo que devolvio el backend: eso valida que el backend firme exactamente los
 parametros que entrega, que es lo unico que importa. La prueba de fuego, igual, es una subida real:
 si Cloudinary acepta el multipart, la firma estaba bien.
+
+### Upstash: "max requests limit exceeded" (y el login empieza a dar 500)
+
+Sintoma: `/api/health` dice `redis:"down"` y todo lo que toca la sesion falla con 500 — incluido el
+login del staff por PIN y el del dueno, en CUALQUIER negocio (no es un problema del tenant). En los
+logs del backend el grito es:
+
+```
+ReplyError: ERR max requests limit exceeded. Limit: 500000, Usage: 500001
+  command: { name: 'bzpopmin', args: [ 'bull:push-send:marker', '10' ] }
+```
+
+El que la quema es la cola de BullMQ (`push-send`): cuando Redis responde con error, el worker
+reintenta en LOOP ESTRECHO (los logs se llenan de la misma excepcion) y cada reintento es un comando
+que cuenta contra la cuota de Upstash. Con el limite agotado Upstash rechaza TODO, asi que no alcanza
+con arreglar la app: hay que liberar cuota (nueva DB o upgrade) Y cortar el loop, o se vuelve a quemar.
+
+Diagnostico rapido: `curl https://api.clubio.lat/api/health` (mirar `redis`) y probar el login del
+negocio por DEFECTO, que es el que confirma si el fallo es sistémico y no del tenant.

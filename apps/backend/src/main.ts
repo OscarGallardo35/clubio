@@ -13,13 +13,27 @@ async function bootstrap() {
   // Prefijo global: todos los endpoints cuelgan de /api
   app.setGlobalPrefix('api');
 
-  // CORS: los 3 subdominios + localhost de desarrollo (via CORS_ORIGINS)
+  // CORS: lista estatica (CORS_ORIGINS) + los tenants por SUBDOMINIO, que son dinamicos
+  // (`<slug>.app.clubio.lat`): no se pueden enumerar, van por regex. `credentials: true` obliga a
+  // devolver el origen EXACTO (nunca `*`), por eso es un callback y no un array.
   const origins = (process.env.CORS_ORIGINS ?? '')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);
+  const dinamicos = [
+    /^https:\/\/[a-z0-9-]+\.app\.clubio\.lat$/i,
+    /^https:\/\/[a-z0-9-]+\.staff\.clubio\.lat$/i,
+  ];
   app.enableCors({
-    origin: origins.length > 0 ? origins : true,
+    origin: (origin: string | undefined, callback: (err: Error | null, permitido?: boolean) => void) => {
+      // Sin Origin (curl, health checks, apps nativas): no hay politica que aplicar.
+      if (!origin) return callback(null, true);
+      // Sin lista estatica se mantiene el comportamiento historico (reflejar el origen): no cambiar
+      // esto sin revisar prod, donde CORS_ORIGINS SI esta seteada.
+      if (origins.length === 0) return callback(null, true);
+      const permitido = origins.includes(origin) || dinamicos.some((re) => re.test(origin));
+      return callback(null, permitido);
+    },
     credentials: true,
   });
 

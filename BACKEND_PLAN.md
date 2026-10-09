@@ -287,6 +287,30 @@ Y por fase: el test unit/e2e que indica cada prompt.
   prohibe imports fuera de src, TS6059) y el Dockerfile construye `@repo/types` antes que el
   backend. Ver TROUBLESHOOTING.md.
 
+## Google Business Profile: que hacer cuando la cuota deje de ser 0
+
+Hoy el proyecto (`186759125945`) tiene la API **habilitada pero con `quota_limit_value: "0"`**: toda
+llamada responde `429 RESOURCE_EXHAUSTED`. Mientras eso siga asi, el panel muestra el motivo real
+(gracias al manejo de errores nuevo) pero no puede listar ubicaciones ni sincronizar resenas.
+
+Cuando la cuota llegue a >0:
+
+1. **Railway**: no hay nada que setear. `GOOGLE_GBP_API_URL` NO esta seteada (verificado) y los
+   defaults del codigo ya son los hosts modernos: `mybusinessaccountmanagement.googleapis.com/v1`,
+   `mybusinessbusinessinformation.googleapis.com/v1` y `mybusinessreviews.googleapis.com/v1`. Esa var
+   queda SOLO para apuntar a un mock en tests (apunta las tres al mismo root).
+2. **Re-correr el harness contra Google real**: `pnpm --filter backend test:google` usa siempre el
+   mock. Para probar de verdad, llamar los endpoints con el token guardado (o un script aparte) y
+   confirmar que `GET /accounts` devuelve 200, que `locations` respeta `readMask` y que `reviews`
+   devuelve `reviews[].reviewId/starRating/reviewer`.
+3. **Vincular la ubicacion real del primer local** en `admin.clubio.lat/configuracion/google`
+   (elegir con "Usar esta"), que persiste `googleAccountId` + `googleLocationId`.
+4. **Ojo con el formato de los recursos**: en las APIs modernas el nombre viene completo
+   (`accounts/{id}/locations/{id}`); en la DB se guarda SOLO el id y se rearma al llamar reviews.
+
+Pendiente de verificar contra Google real (el mock no lo cubre): que `readMask` alcance para
+`title` + `storefrontAddress`, y que el `starRating` venga como string (`FIVE`) y no como numero.
+
 ---
 
 ## Progreso

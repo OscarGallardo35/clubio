@@ -38,6 +38,7 @@ import type { DataTableColumn } from '@repo/ui';
 import { empleadosApi, sucursalesApi } from '@/lib/api';
 import { useDueno } from '@/hooks/useDueno';
 import { normalizarError } from '@/lib/errores';
+import { useTenant } from '@/hooks/useTenant';
 import type { EmpleadoAdmin, RolEmpleado, SucursalAdmin } from '@/types/api';
 
 /** Los literales, copiados del enum de Prisma (`RolEmpleado`); no los del pedido. */
@@ -468,12 +469,16 @@ function FormularioEmpleado({
     }
   }
 
+  // La URL del staff lleva el SLUG del local: sin el, el middleware manda al local por defecto y el
+  // empleado de este negocio terminaria entrando al club de otro.
+  const tenant = useTenant();
+
   if (creado) {
     return (
       <div className="space-y-4">
         <p className="text-sm">
           <strong>{creado.nombre}</strong> quedo creado. Este es su PIN para entrar en{' '}
-          <code className="rounded bg-muted px-1">staff.clubio.lat</code>:
+          <code className="rounded bg-muted px-1">staff.clubio.lat/{tenant}/login</code>:
         </p>
         <PinCopiable pin={creado.pin} />
         <p role="alert" className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">

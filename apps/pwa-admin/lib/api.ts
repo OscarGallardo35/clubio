@@ -26,6 +26,7 @@ import type {
   FeaturePlan,
   FirmaSubida,
   GoogleEstado,
+  HistorialDisparosRespuesta,
   ItemCartaAdmin,
   ItemOverrideAdmin,
   LoginDuenoRespuesta,
@@ -311,6 +312,18 @@ export const pushApi = {
  */
 export const disparosApi = {
   listar: () => api.get<DisparoPush[]>(endpoints.push.disparos),
+  /** Historial paginado de ejecuciones (`/push/disparos/logs`): enviados, omitidos y regalo. */
+  historial: (
+    filtros: { page?: number; pageSize?: number; disparoId?: string; accion?: string } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filtros))
+      if (v !== undefined && v !== '') qs.set(k, String(v));
+    const q = qs.toString();
+    return api.get<HistorialDisparosRespuesta>(
+      `${endpoints.push.disparoLogs}${q ? `?${q}` : ''}`,
+    );
+  },
   crear: (body: CrearDisparoBody) => api.post<DisparoPush>(endpoints.push.disparos, body),
   actualizar: (id: string, body: ActualizarDisparoBody) =>
     api.patch<DisparoPush>(endpoints.push.disparo(id), body),

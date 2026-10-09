@@ -642,6 +642,44 @@ export interface ResultadoProbarDisparo {
   jobId?: string
 }
 
+/**
+ * Una fila del historial de disparos (`GET /push/disparos/logs`).
+ *
+ * No todas son envios: el log tambien guarda los OMITIDOS (limite, duplicado, sin
+ * suscripcion). `accion` es el discriminante; `sellosAcreditados`/`puntosAcreditados`
+ * son lo que REALMENTE se acredito al cliente en esa ejecucion (0 si no llevaba regalo).
+ */
+export interface DisparoPushLogItem {
+  id: string
+  disparoId: string
+  /** `disparo eliminado` si el disparo ya no existe (el log se borra en cascada, defensivo). */
+  disparoNombre: string
+  plantillaNombre: string | null
+  tipo: TipoDisparo
+  /** 'ENVIADO' | 'OMITIDO_LIMITE' | 'OMITIDO_DUP' | 'OMITIDO_SIN_SUSCRIPCION'. */
+  accion: string
+  clienteId: string | null
+  clienteNombre: string | null
+  pedidoId: string | null
+  sellosAcreditados: number
+  puntosAcreditados: number
+  /** Jobs de push efectivamente encolados en esa ejecucion (0 si no habia suscripcion). */
+  pushEncolados: number
+  /** Motivo por el que el push no se encolo (ej. 'sin suscripciones'). */
+  pushMotivo: string | null
+  /** Evento que origino la ejecucion: 'COMPRA' | 'SELLOS' | 'BIENVENIDA' | 'DIA' | 'INACTIVIDAD'. */
+  origen: string | null
+  creadoEn: string
+}
+
+/** `GET /push/disparos/logs`: envelope paginado estandar de la API. */
+export interface HistorialDisparosRespuesta {
+  data: DisparoPushLogItem[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 /** Cliente del listado `GET /clientes` (proyeccion reducida: alcanza para elegir uno). */
 export interface ClienteResumen {
   id: string

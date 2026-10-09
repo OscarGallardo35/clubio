@@ -323,6 +323,8 @@ export const endpoints = {
     /** Disparos automaticos (CRUD del admin). */
     disparos: '/api/push/disparos',
     disparo: (id: string) => `/api/push/disparos/${encodeURIComponent(id)}`,
+    /** Historial paginado de ejecuciones del motor (enviados + omitidos + regalo). */
+    disparoLogs: '/api/push/disparos/logs',
     /** Prueba UN disparo contra UN cliente (`{ clienteId }`). */
     disparoProbar: (id: string) => `/api/push/disparos/${encodeURIComponent(id)}/probar`,
   },

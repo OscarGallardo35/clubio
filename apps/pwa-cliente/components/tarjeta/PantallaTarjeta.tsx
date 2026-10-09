@@ -98,7 +98,10 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
       : null
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-5 px-4 py-6">
+    // Con theme, la tarjeta es mas ancha (hasta 400px): en mobile el `px-4` la dejaba en
+    // 343px, asi que se baja a `px-2` (en 375 da ~359px, entra con margen). La pantalla
+    // historica (sin theme) mantiene `px-4` y su ancho intacto.
+    <div className={`mx-auto flex w-full max-w-md flex-col gap-5 py-6 ${theme ? 'px-2' : 'px-4'}`}>
       <TarjetaSellos
         nombreCliente={v.nombreCliente}
         nombreNegocio={negocio?.nombre ?? ''}

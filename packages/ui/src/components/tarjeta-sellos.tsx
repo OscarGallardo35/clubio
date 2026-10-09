@@ -114,10 +114,11 @@ const CONFIG: Record<
 > = {
   full: {
     // `w-full max-w-[360px]`: en un telefono chico la tarjeta se achica con la pantalla en vez de
-    // desbordar; `min-h-[520px]` da aire vertical para las 2 filas de 8 sellos y el texto, con el
-    // contenido repartido por `justify-between` (el hueco extra queda entre bloques, no pegado a un
-    // borde). El icono del local (rama con theme) suma ~40px al header, por eso sube desde 440.
-    caja: 'w-full max-w-[360px] min-h-[520px]',
+    // desbordar; `min-h-[440px]` (antes 560) mantiene la proporcion vertical sin dejar el hueco
+    // enorme que quedaba entre el bloque de sellos y la barra cuando el contenido es corto.
+    // OJO: este preset lo COMPARTE la tarjeta historica (bar-la-esquina). La tarjeta CON theme
+    // usa 400x(alto 580) en el `style` del contenedor (theme-only), sin tocar este valor.
+    caja: 'w-full max-w-[360px] min-h-[440px]',
     padding: 'p-7',
     sello: 'size-12',
     icono: 'size-6',
@@ -572,6 +573,11 @@ export function TarjetaSellos({
         ...(theme.imagenFondo
           ? { backgroundImage: `url(${theme.imagenFondo})`, backgroundSize: 'cover', backgroundPosition: 'center' }
           : {}),
+        // La caja del theme es mas alta que el contenido: heredar el `min-height` del
+        // contenedor para que el interior la llene y `justify-between` reparta el aire
+        // entre header / sellos / footer. La rama historica ya lo hacia; sin esto la
+        // tarjeta con theme quedaba del alto del contenido (no llenaba la caja).
+        minHeight: 'inherit' as const,
         borderColor: theme.colores.brandDark,
         color: theme.colores.text,
         // Fuente de cuerpo del tenant (item c: --font-body via next/font).
@@ -603,6 +609,11 @@ export function TarjetaSellos({
       variants={variantesContenedor}
       className={cn('relative', config.caja, onClick && 'cursor-pointer', className)}
       style={{
+        // La tarjeta CON theme (tamano full) es mas grande que la historica: hasta 400px
+        // de ancho (en mobile manda el ancho de la pantalla) y 580px de alto minimo. Va
+        // en `style` y no en el preset `full` porque ese preset lo comparte la tarjeta
+        // historica (bar-la-esquina), que no debe cambiar.
+        ...(theme && tamaño === 'full' ? { maxWidth: '400px', minHeight: '580px' } : {}),
         ['--color-primary' as string]: colorPrimario,
         ['--color-secondary' as string]: colorSecundario,
         ...(theme
@@ -663,23 +674,28 @@ export function TarjetaSellos({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoUrl} alt={nombreNegocio} width={44} height={44} className={cn('shrink-0 rounded-2xl object-cover', tamaño === 'full' ? 'size-12' : 'size-9')} />
           ) : theme ? (
-            // Rama CON theme: el icono del local va ARRIBA A LA IZQUIERDA y GRANDE
-            // (88px en `full`), en el lugar del avatar con la inicial. Si ninguna
-            // imagen carga (ni la del slug ni la generica), cae al avatar con la
-            // inicial para no dejar un hueco vacio.
-            <IconoEsquina
-              slug={slugTenant ?? ''}
-              className={cn('shrink-0 rounded-2xl object-cover ring-1 ring-white/25', tamaño === 'full' ? 'size-[88px]' : 'size-9')}
-              fallback={
-                <span
-                  aria-hidden="true"
-                  className={cn('flex shrink-0 items-center justify-center rounded-2xl font-bold', tamaño === 'full' ? 'size-[88px] text-3xl' : 'size-9 text-sm')}
-                  style={{ backgroundColor: theme.colores.accent, color: theme.colores.brandDark }}
-                >
-                  {nombreNegocio.slice(0, 1).toUpperCase()}
-                </span>
-              }
-            />
+            // Rama CON theme: un CIRCULO de 52px arriba a la IZQUIERDA, con el fondo
+            // accent del theme y el icono del local adentro (la imagen, recortada
+            // redonda). Si la imagen no carga (ni la del slug ni la generica), cae al
+            // avatar con la inicial del negocio para no dejar un hueco vacio.
+            <span
+              aria-hidden="true"
+              className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full', tamaño === 'full' ? 'size-[52px]' : 'size-9')}
+              style={{ backgroundColor: theme.colores.accent }}
+            >
+              <IconoEsquina
+                slug={slugTenant ?? ''}
+                className={cn('rounded-full object-cover', tamaño === 'full' ? 'size-11' : 'size-7')}
+                fallback={
+                  <span
+                    className={cn('flex size-full items-center justify-center rounded-full font-bold', tamaño === 'full' ? 'text-2xl' : 'text-sm')}
+                    style={{ color: theme.colores.brandDark }}
+                  >
+                    {nombreNegocio.slice(0, 1).toUpperCase()}
+                  </span>
+                }
+              />
+            </span>
           ) : (
             <span
               aria-hidden="true"

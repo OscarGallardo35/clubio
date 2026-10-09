@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { MetodoVisita, Prisma, TipoVisita } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SegmentosService } from '../clientes/segmentos.service';
@@ -59,6 +59,8 @@ export interface CtxAcreditar {
   tipo: TipoVisita;
   /** Como entro el consumo: por QR, a mano, o el pedido digital. */
   metodo: MetodoVisita;
+  /** Pedido del menu del que sale el monto (Fase 1). Null en el flujo manual/QR. */
+  pedidoId?: string | null;
   origen?: string | null;
   notas?: string | null;
 }
@@ -142,6 +144,7 @@ export class FidelizacionService {
         puntosOtorgados: puntos,
         montoConsumido: ctx.monto !== null ? new Prisma.Decimal(ctx.monto) : null,
         metodo: ctx.metodo,
+        pedidoId: ctx.pedidoId ?? null,
         origen: ctx.origen ?? null,
         notas: ctx.notas ?? null,
       },
@@ -203,6 +206,84 @@ export class FidelizacionService {
       premioPorPuntos: cfg.premioPorPuntos,
       premioDesbloqueado: sellosEfectivos >= cfg.sellosParaPremio,
       premioPuntosDesbloqueado: puntosEfectivos >= cfg.premioPorPuntos,
+    };
+  }
+
+  /**
+   * Fase 2: corrige el monto de una visita ya aprobada y ajusta los PUNTOS por el delta.
+   *
+   * Decisiones del dueño que estan aca adentro:
+   *   - los puntos se recalculan con la TASA VIGENTE del club (no con la del momento de la visita);
+   *   - los SELLOS no se tocan: el sello es por visita, no por monto (la unica fuente de sellos es
+   *     `calcularAcreditacion`, que solo mira el modo);
+   *   - si el delta es negativo y el cliente ya no tiene ese saldo, se RECHAZA (no se clampea a 0:
+   *     clampear regalaria la diferencia en silencio).
+   *
+   * El saldo a tocar sigue la MISMA regla que `acreditar`: con POR_SUCURSAL vive en la tarjeta.
+   */
+  async recalcularVisitaPorMonto(
+    tx: Prisma.TransactionClient,
+    ctx: { negocioId: string; visitaId: string; montoNuevo: number },
+  ): Promise<{
+    montoAntes: number | null; montoDespues: number;
+    puntosAntes: number; puntosDespues: number; saldoDespues: number;
+  }> {
+    const cfg = await this.contexto(ctx.negocioId);
+    const visita = await tx.visita.findFirstOrThrow({
+      where: { id: ctx.visitaId, negocioId: ctx.negocioId },
+      select: {
+        id: true, clienteId: true, sucursalId: true,
+        puntosOtorgados: true, montoConsumido: true,
+      },
+    });
+
+    const puntosDespues = calcularPuntos(ctx.montoNuevo, cfg.puntosPorMil);
+    const delta = puntosDespues - visita.puntosOtorgados;
+
+    const saldo = cfg.porSucursal
+      ? (await tx.tarjetaClienteSucursal.findUnique({
+          where: {
+            clienteId_sucursalId: { clienteId: visita.clienteId, sucursalId: visita.sucursalId },
+          },
+          select: { puntosActuales: true },
+        }))?.puntosActuales ?? 0
+      : (await tx.cliente.findUnique({
+          where: { id: visita.clienteId }, select: { puntosActuales: true },
+        }))?.puntosActuales ?? 0;
+
+    if (delta < 0 && saldo + delta < 0) {
+      throw new BadRequestException(
+        `El cliente ya gasto esos puntos: tiene ${saldo} y la correccion le sacaria ${Math.abs(delta)}. No se puede bajar el monto.`,
+      );
+    }
+
+    await tx.visita.update({
+      where: { id: visita.id },
+      data: {
+        montoConsumido: new Prisma.Decimal(ctx.montoNuevo),
+        puntosOtorgados: puntosDespues,
+      },
+    });
+
+    if (delta !== 0) {
+      if (!cfg.porSucursal) {
+        await tx.cliente.update({
+          where: { id: visita.clienteId },
+          data: { puntosActuales: { increment: delta } },
+        });
+      }
+      await tx.tarjetaClienteSucursal.updateMany({
+        where: { clienteId: visita.clienteId, sucursalId: visita.sucursalId },
+        data: { puntosActuales: { increment: delta } },
+      });
+    }
+
+    return {
+      montoAntes: visita.montoConsumido === null ? null : Number(visita.montoConsumido),
+      montoDespues: ctx.montoNuevo,
+      puntosAntes: visita.puntosOtorgados,
+      puntosDespues,
+      saldoDespues: saldo + delta,
     };
   }
 }

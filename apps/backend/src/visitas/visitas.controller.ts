@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Ip, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Ip, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { RolEmpleado } from '@prisma/client';
 import { VisitasService } from './visitas.service';
 import type { ClienteCtx, EmpleadoCtx } from './visitas.service';
 import { SolicitarVisitaDto } from './dto/solicitar-visita.dto';
 import { AprobarVisitaDto } from './dto/aprobar-visita.dto';
+import { EditarMontoVisitaDto } from './dto/editar-monto-visita.dto';
 import { CanjearPremioDto } from './dto/canjear-premio.dto';
 import { RechazarVisitaDto } from './dto/rechazar-visita.dto';
 import { HistorialVisitasDto } from './dto/historial-visitas.dto';
@@ -85,6 +86,21 @@ export class VisitasController {
   @Post('canjear')
   canjear(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CanjearPremioDto, @Ip() ip: string) {
     return this.visitas.canjear(emp.negocioId, dto, this.ctx(emp, ip));
+  }
+
+  /**
+   * Fase 2: corrige el monto de una visita ya aprobada (el caso "aprobo sin monto y se perdieron
+   * los puntos"). El permiso fino (quien aprobo o DUENO/ENCARGADO) y el "mismo dia" se validan en
+   * el servicio.
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO, RolEmpleado.CAJERO, RolEmpleado.MESERO, RolEmpleado.EMPLEADO, RolEmpleado.DELIVERY)
+  @Patch(':id/monto')
+  editarMonto(
+    @CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string,
+    @Body() dto: EditarMontoVisitaDto, @Ip() ip: string,
+  ) {
+    return this.visitas.editarMonto(emp.negocioId, id, this.ctx(emp, ip), dto);
   }
 
   @UseGuards(StaffGuard, TenantGuard, RolesGuard)

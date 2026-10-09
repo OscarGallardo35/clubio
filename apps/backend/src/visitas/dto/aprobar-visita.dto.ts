@@ -10,6 +10,13 @@ export class AprobarVisitaDto {
   @IsOptional() @IsString() @MaxLength(500)
   notas?: string;
 
+  /**
+   * Fase 1: pedido del menu (QR #1) del que sale el monto de la visita.
+   * Si viene, MANDA sobre `montoConsumido` (lo pone el pedido, no el staff).
+   */
+  @IsOptional() @IsString() @MaxLength(50)
+  pedidoId?: string;
+
   /** Objetos de la carta consumidos (futuro: modificadores). */
   @IsOptional()
   items?: unknown[];

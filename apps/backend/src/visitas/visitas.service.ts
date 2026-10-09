@@ -2,7 +2,7 @@ import {
   BadRequestException, ForbiddenException, GoneException, Injectable, NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { Prisma, TipoVisita } from '@prisma/client';
+import { EstadoPedido, Prisma, TipoVisita } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
@@ -14,6 +14,7 @@ import { VisitasGateway } from './visitas.gateway';
 import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
 import type { SolicitarVisitaDto } from './dto/solicitar-visita.dto';
 import type { AprobarVisitaDto } from './dto/aprobar-visita.dto';
+import type { EditarMontoVisitaDto } from './dto/editar-monto-visita.dto';
 import type { CanjearPremioDto } from './dto/canjear-premio.dto';
 import type { RechazarVisitaDto } from './dto/rechazar-visita.dto';
 import type { HistorialVisitasDto } from './dto/historial-visitas.dto';
@@ -28,6 +29,14 @@ export interface ClienteCtx {
 }
 
 const TTL_TOKEN_MS = 5 * 60 * 1000; // 5 min
+
+/**
+ * Fase 1: ventana para ofrecer pedidos del menu como monto de una visita.
+ * 3 h cubre un almuerzo o una cena sin arrastrar el turno anterior. Se mide desde `entregadoEn`
+ * si el pedido ya se entrego, si no desde `creadoEn` (pedido a las 13:40 y cobrado a las 15:00
+ * no tiene que quedar afuera).
+ */
+const VENTANA_VINCULO_MS = 3 * 60 * 60 * 1000;
 
 /**
  * El RECHAZO se guarda en Redis, no en la tabla.
@@ -202,7 +211,59 @@ export class VisitasService {
         etiqueta: fila.cliente.etiqueta,
         ultimaVisita: fila.cliente.ultimaVisita,
       },
+      // Fase 1: pedidos del menu que pueden ser el consumo de esta visita.
+      pedidosCandidatos: await this.pedidosCandidatos(negocioId, fila.cliente),
     };
+  }
+
+  /**
+   * Fase 1: pedidos del menu candidatos a ser el consumo de una visita.
+   *
+   * Dos criterios, y NUNCA se suman (el staff elige uno; decision del dueño):
+   *   - mismo `clienteId` — lo normal desde la Fase 0;
+   *   - mismo telefono y pedido de INVITADO (`clienteId` null) — es una SUGERENCIA: un telefono
+   *     puede ser compartido, por eso se marca `porTelefono` para que la UI lo advierta.
+   *
+   * Se excluyen los cancelados/rechazados y los que ya pagaron otra visita (el vinculo es 1-1).
+   */
+  private async pedidosCandidatos(negocioId: string, cliente: { id: string; telefono: string | null }) {
+    const desde = new Date(Date.now() - VENTANA_VINCULO_MS);
+    const telefono = cliente.telefono?.trim() || null;
+
+    const porClienteOPorTelefono: Prisma.PedidoWhereInput[] = [];
+    if (cliente.id) porClienteOPorTelefono.push({ clienteId: cliente.id });
+    if (telefono) porClienteOPorTelefono.push({ clienteId: null, telefono });
+    if (!porClienteOPorTelefono.length) return [];
+
+    const filas = await this.prisma.pedido.findMany({
+      where: {
+        negocioId,
+        estado: { notIn: [EstadoPedido.CANCELADO, EstadoPedido.RECHAZADO] },
+        visita: { is: null },
+        AND: [
+          { OR: [{ entregadoEn: { gte: desde } }, { entregadoEn: null, creadoEn: { gte: desde } }] },
+          { OR: porClienteOPorTelefono },
+        ],
+      },
+      orderBy: { creadoEn: 'desc' },
+      take: 10,
+      select: {
+        id: true, total: true, estado: true, creadoEn: true, entregadoEn: true,
+        items: true, clienteId: true, telefono: true, mesa: true,
+      },
+    });
+
+    return filas.map((p) => ({
+      id: p.id,
+      total: Number(p.total),
+      estado: p.estado,
+      creadoEn: p.creadoEn,
+      entregadoEn: p.entregadoEn,
+      mesa: p.mesa,
+      items: p.items,
+      /** true = coincide por telefono (pedido de invitado): sugerencia, no vinculo seguro. */
+      porTelefono: !p.clienteId && telefono !== null && p.telefono === telefono,
+    }));
   }
 
   /** POST /visitas/aprobar/:token (staff). */
@@ -212,6 +273,31 @@ export class VisitasService {
 
     if (fila.usado) throw new BadRequestException('Este token ya fue usado');
     if (fila.expiraEn < new Date()) throw new GoneException('El token expiro');
+
+    // Fase 1: si el staff eligio un pedido del menu, el monto sale del PEDIDO (no del DTO) y queda
+    // el vinculo 1-1 (`Visita.pedidoId`). Validaciones: mismo negocio, sin otra visita, y del mismo
+    // cliente (o del mismo telefono si el pedido es de invitado).
+    let pedidoVinculado: { id: string; total: Prisma.Decimal } | null = null;
+    if (dto.pedidoId) {
+      const pedido = await this.prisma.pedido.findFirst({
+        where: { id: dto.pedidoId, negocioId },
+        select: {
+          id: true, total: true, clienteId: true, telefono: true,
+          visita: { select: { id: true } },
+        },
+      });
+      if (!pedido) throw new NotFoundException('Ese pedido no existe en este negocio');
+      if (pedido.visita) throw new BadRequestException('Ese pedido ya acredito otra visita');
+      const mismoCliente = pedido.clienteId === fila.clienteId;
+      const mismoTelefono =
+        !pedido.clienteId && !!fila.cliente.telefono && pedido.telefono === fila.cliente.telefono;
+      if (!mismoCliente && !mismoTelefono) {
+        throw new BadRequestException('Ese pedido no es de este cliente');
+      }
+      pedidoVinculado = { id: pedido.id, total: pedido.total };
+    }
+    /** Monto efectivo: el del pedido si hay vinculo, si no el que tipeo el staff (puede ser null). */
+    const monto = pedidoVinculado ? Number(pedidoVinculado.total) : dto.montoConsumido ?? null;
 
     // Sucursal efectiva de la visita: la del TOKEN (Opción A). Si es legacy
     // (sin sucursalId), se usa la del empleado que aprueba.
@@ -238,9 +324,10 @@ export class VisitasService {
         clienteId: fila.clienteId,
         sucursalId,
         empleadoId: empleado.id,
-        monto: dto.montoConsumido ?? null,
+        monto,
         tipo: TipoVisita.VISITA,
         metodo: 'QR_DINAMICO',
+        pedidoId: pedidoVinculado?.id ?? null,
         origen: dto.origen ?? null,
         notas: dto.notas ?? null,
       });
@@ -252,7 +339,8 @@ export class VisitasService {
       negocioId, accion: 'visita.aprobada', empleadoId: empleado.id, clienteId: fila.clienteId,
       detalle: {
         visitaId: resultado.visitaId, sucursalId, origen: dto.origen ?? null,
-        sellos: resultado.sellos, puntos: resultado.puntos, monto: dto.montoConsumido ?? null,
+        sellos: resultado.sellos, puntos: resultado.puntos, monto,
+        pedidoId: pedidoVinculado?.id ?? null,
       },
       ip: empleado.ip,
     });
@@ -543,6 +631,47 @@ export class VisitasService {
       this.prisma.visita.count({ where }),
     ]);
     return { data, total, desde };
+  }
+
+  /**
+   * PATCH /visitas/:id/monto (Fase 2): corrige el consumo de una visita ya aprobada.
+   *
+   * Reglas (decisiones del dueño): solo el MISMO DIA, y solo quien aprobo la visita o DUENO/ENCARGADO.
+   * La matematica (puntos por la tasa vigente + ajuste del saldo + rechazo si ya se gasto) vive en
+   * FidelizacionService: es el unico lugar donde se tocan saldos.
+   */
+  async editarMonto(negocioId: string, visitaId: string, empleado: EmpleadoCtx, dto: EditarMontoVisitaDto) {
+    const visita = await this.prisma.visita.findFirst({
+      where: { id: visitaId, negocioId },
+      select: { id: true, empleadoId: true, aprobadoEn: true, clienteId: true },
+    });
+    if (!visita) throw new NotFoundException('Visita no encontrada');
+
+    const desde = new Date();
+    desde.setHours(0, 0, 0, 0);
+    if (visita.aprobadoEn < desde) {
+      throw new BadRequestException('Solo se puede corregir el monto de una visita del mismo dia');
+    }
+
+    const esDuenoOEncargado = empleado.rol === 'DUENO' || empleado.rol === 'ENCARGADO';
+    if (visita.empleadoId !== empleado.id && !esDuenoOEncargado) {
+      throw new ForbiddenException(
+        'Solo quien aprobo la visita (o el dueño/encargado) puede corregir el monto',
+      );
+    }
+
+    const resultado = await this.prisma.$transaction((tx) =>
+      this.fidelizacion.recalcularVisitaPorMonto(tx, {
+        negocioId, visitaId: visita.id, montoNuevo: dto.montoConsumido,
+      }),
+    );
+
+    await this.auditoria.registrar({
+      negocioId, accion: 'visita.monto_editado', empleadoId: empleado.id, clienteId: visita.clienteId,
+      detalle: { ...resultado }, ip: empleado.ip,
+    });
+
+    return { ok: true, visitaId: visita.id, ...resultado };
   }
 
   // ---------------------------------------------------------------------------

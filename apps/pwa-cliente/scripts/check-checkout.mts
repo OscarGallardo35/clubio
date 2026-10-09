@@ -364,6 +364,42 @@ igual('sin expiraEn (pedido viejo) se asume vigente', pedidoVigente({ linkToken:
 igual('un expiraEn invalido no rompe', pedidoVigente({ linkToken: 'tok-1', expiraEn: 'no-es-fecha' }, AHORA), true)
 igual('el borde exacto del vencimiento no se muestra', pedidoVigente({ linkToken: 'tok-1', expiraEn: '2026-10-09T12:00:00Z' }, AHORA), false)
 
+// Un estado TERMINAL cierra el pedido: el banner no puede quedar apuntando a algo cancelado,
+// rechazado o entregado (el backend conserva `linkExpiraEn` al cancelar, asi que sin esto el banner
+// quedaba huerfano para siempre). Los terminales llegan como 200 con `estado`, no como error.
+for (const estado of ['CANCELADO', 'RECHAZADO', 'ENTREGADO'] as const) {
+  igual(
+    `un pedido ${estado} NO ofrece el banner (link vivo)`,
+    pedidoVigente({ linkToken: 'tok-1', expiraEn: '2026-10-09T15:00:00Z', estado }, AHORA),
+    false,
+  )
+}
+// Los NO terminales lo siguen ofreciendo: el pedido esta vivo y el seguimiento sirve.
+for (const estado of ['PENDIENTE', 'CONFIRMADO', 'EN_PREPARACION', 'LISTO', 'ENVIADO'] as const) {
+  igual(
+    `un pedido ${estado} SI ofrece el banner`,
+    pedidoVigente({ linkToken: 'tok-1', expiraEn: '2026-10-09T15:00:00Z', estado }, AHORA),
+    true,
+  )
+}
+// La regla que no se puede invertir: sin estado (recien pedido, PEDIDO_OK no lo setea) el banner se
+// muestra igual. Si la condicion pidiera un estado activo, desapareceria para un pedido nuevo.
+igual(
+  'sin estado (recien pedido, todavia sin sincronizar) el banner se muestra',
+  pedidoVigente({ linkToken: 'tok-1', expiraEn: '2026-10-09T15:00:00Z' }, AHORA),
+  true,
+)
+igual(
+  'un terminal gana sobre un vencimiento lejano (no depende del reloj)',
+  pedidoVigente({ linkToken: 'tok-1', expiraEn: '2027-01-01T00:00:00Z', estado: 'ENTREGADO' }, AHORA),
+  false,
+)
+igual(
+  'y con el link ya vencido tampoco (regresion del 410)',
+  pedidoVigente({ linkToken: 'tok-1', expiraEn: '2026-10-09T09:00:00Z', estado: 'CANCELADO' }, AHORA),
+  false,
+)
+
 // Sin esto el banner pierde el dato al recargar y vuelve el loop.
 // OJO: hay que agregar un item, si no `deserializarCarrito` devuelve null (no rehidrata un carrito
 // vacio) y el test pasaria por la razon equivocada.

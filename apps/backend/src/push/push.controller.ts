@@ -1,11 +1,15 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { RolEmpleado } from '@prisma/client';
 import { PushService } from './push.service';
+import { DisparosService } from './disparos.service';
 import { SuscribirPushDto } from './dto/suscribir-push.dto';
 import { EnviarPromocionDto } from './dto/enviar-promocion.dto';
 import { CrearPlantillaDto } from './dto/crear-plantilla.dto';
 import { ActualizarPlantillaDto } from './dto/actualizar-plantilla.dto';
 import { EnviarPlantillaDto } from './dto/enviar-plantilla.dto';
+import { CrearDisparoDto } from './dto/crear-disparo.dto';
+import { ActualizarDisparoDto } from './dto/actualizar-disparo.dto';
+import { ProbarDisparoDto } from './dto/probar-disparo.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentCliente } from '../common/decorators/current-cliente.decorator';
@@ -22,7 +26,10 @@ interface EmpleadoAuth { id: string; negocioId: string; rol: RolEmpleado }
 
 @Controller('push')
 export class PushController {
-  constructor(private readonly push: PushService) {}
+  constructor(
+    private readonly push: PushService,
+    private readonly disparos: DisparosService,
+  ) {}
 
   /** La PWA necesita esta clave para llamar a pushManager.subscribe(). */
   @Public()
@@ -130,5 +137,55 @@ export class PushController {
   @Post('enviar')
   enviarPlantilla(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: EnviarPlantillaDto) {
     return this.push.enviarConPlantilla(emp.negocioId, dto, emp.id);
+  }
+
+  // ---- disparos (automatizaciones) ----
+
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @Get('disparos')
+  listarDisparos(@CurrentEmpleado() emp: EmpleadoAuth) {
+    return this.disparos.listar(emp.negocioId);
+  }
+
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Post('disparos')
+  crearDisparo(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CrearDisparoDto) {
+    return this.disparos.crear(emp.negocioId, dto, emp.id);
+  }
+
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Patch('disparos/:id')
+  actualizarDisparo(
+    @CurrentEmpleado() emp: EmpleadoAuth,
+    @Param('id') id: string,
+    @Body() dto: ActualizarDisparoDto,
+  ) {
+    return this.disparos.actualizar(emp.negocioId, id, dto, emp.id);
+  }
+
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Delete('disparos/:id')
+  eliminarDisparo(@CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string) {
+    return this.disparos.eliminar(emp.negocioId, id, emp.id);
+  }
+
+  /** Dispara YA a un cliente puntual (test). Manda el push, no toca saldos. */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Post('disparos/:id/probar')
+  probarDisparo(
+    @CurrentEmpleado() emp: EmpleadoAuth,
+    @Param('id') id: string,
+    @Body() dto: ProbarDisparoDto,
+  ) {
+    return this.disparos.probar(emp.negocioId, id, dto.clienteId, emp.id);
   }
 }

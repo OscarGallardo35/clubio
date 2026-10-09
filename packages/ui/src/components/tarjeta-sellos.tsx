@@ -669,15 +669,13 @@ export function TarjetaSellos({
           />
         ) : null}
 
-        <header className={cn('flex items-center gap-3', theme && 'relative')}>
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoUrl} alt={nombreNegocio} width={44} height={44} className={cn('shrink-0 rounded-2xl object-cover', tamaño === 'full' ? 'size-12' : 'size-9')} />
-          ) : theme ? (
-            // Rama CON theme: un CIRCULO de 52px arriba a la IZQUIERDA, con el fondo
-            // accent del theme y el icono del local adentro (la imagen, recortada
-            // redonda). Si la imagen no carga (ni la del slug ni la generica), cae al
-            // avatar con la inicial del negocio para no dejar un hueco vacio.
+        {theme ? (
+          // Rama CON theme: el header va CENTRADO. El icono del local (circulo con el
+          // fondo accent y la imagen adentro) queda ARRIBA, y DEBAJO el saludo
+          // ("Hola, {nombre}") y el nombre del negocio, todo centrado horizontalmente.
+          // La corona (tarjeta completa) va ABSOLUTA arriba a la derecha: fuera del
+          // flujo no desplaza el bloque centrado ni tapa el saludo ni el nombre.
+          <header className="relative flex flex-col items-center gap-2 text-center">
             <span
               aria-hidden="true"
               className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full', tamaño === 'full' ? 'size-[52px]' : 'size-9')}
@@ -696,47 +694,44 @@ export function TarjetaSellos({
                 }
               />
             </span>
-          ) : (
-            <span
-              aria-hidden="true"
-              className={cn('flex shrink-0 items-center justify-center rounded-2xl font-bold text-white', tamaño === 'full' ? 'size-12 text-lg' : 'size-9 text-sm')}
-              style={{ backgroundColor: colorPrimario }}
-            >
-              {nombreNegocio.slice(0, 1).toUpperCase()}
-            </span>
-          )}
-          <div className="min-w-0">
-            {saludo ? (
-              theme ? (
+            <div className="min-w-0 max-w-full">
+              {saludo ? (
                 <p className={cn('truncate font-semibold', config.texto)} style={{ color: theme.colores.textMuted }}>{saludo}</p>
-              ) : (
-                <p className={cn('truncate font-semibold text-white', config.texto)}>{saludo}</p>
-              )
-            ) : null}
-            {theme ? (
+              ) : null}
               <p
                 className={cn('truncate font-bold', config.titulo)}
                 style={{ color: theme.colores.text, fontFamily: 'var(--font-display), system-ui, sans-serif' }}
               >
                 {nombreNegocio}
               </p>
+            </div>
+            {completa ? (
+              <Crown aria-hidden="true" className={cn('absolute right-0 top-0 shrink-0', config.icono)} style={{ color: theme.colores.accent }} />
+            ) : null}
+          </header>
+        ) : (
+          // Rama historica (sin theme): intacta. Logo o inicial a la izquierda, saludo +
+          // nombre al medio y la corona a la derecha. Es la regresion de bar-la-esquina.
+          <header className="flex items-center gap-3">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt={nombreNegocio} width={44} height={44} className={cn('shrink-0 rounded-2xl object-cover', tamaño === 'full' ? 'size-12' : 'size-9')} />
             ) : (
-              <p className={cn('truncate font-bold text-white', config.titulo)}>{nombreNegocio}</p>
+              <span
+                aria-hidden="true"
+                className={cn('flex shrink-0 items-center justify-center rounded-2xl font-bold text-white', tamaño === 'full' ? 'size-12 text-lg' : 'size-9 text-sm')}
+                style={{ backgroundColor: colorPrimario }}
+              >
+                {nombreNegocio.slice(0, 1).toUpperCase()}
+              </span>
             )}
-          </div>
-          {theme ? (
-            // Rama CON theme: la CORONA (tarjeta completa) sigue a la DERECHA; el
-            // icono del local ahora vive a la IZQUIERDA del header (ver arriba). El
-            // grupo va EN FLUJO (ml-auto), asi nunca tapa nombre, sellos ni el banner.
-            <span className="ml-auto flex shrink-0 items-center gap-2">
-              {completa ? (
-                <Crown aria-hidden="true" className={cn('shrink-0', config.icono)} style={{ color: theme.colores.accent }} />
-              ) : null}
-            </span>
-          ) : completa ? (
-            <Crown aria-hidden="true" className={cn('ml-auto shrink-0 text-white', config.icono)} />
-          ) : null}
-        </header>
+            <div className="min-w-0">
+              {saludo ? <p className={cn('truncate font-semibold text-white', config.texto)}>{saludo}</p> : null}
+              <p className={cn('truncate font-bold text-white', config.titulo)}>{nombreNegocio}</p>
+            </div>
+            {completa ? <Crown aria-hidden="true" className={cn('ml-auto shrink-0 text-white', config.icono)} /> : null}
+          </header>
+        )}
 
         <motion.div
           className={cn('my-4 grid justify-items-center gap-2', theme && 'relative')}

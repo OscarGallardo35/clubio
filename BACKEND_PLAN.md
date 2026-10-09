@@ -1111,6 +1111,19 @@ staff.clubio.lat ya este arriba**, no despues.
 - `CORS_ORIGINS` incluye app/staff.clubio.lat + los 2 origenes `.up.railway.app` (las PWAs llaman a la
   API por la URL de Railway, no por api.clubio.lat; cambiar eso exige rebuild de las PWAs).
 
+### Multi-tenant paths: cada PWA tiene `[tenant]` en la URL
+
+Staff y Admin pasaron a `/<tenant>/...` (`staff.clubio.lat/bar-la-esquina/visitas`,
+`admin.clubio.lat/bar-la-esquina/dashboard`): el middleware resuelve el tenant del path, manda al login
+del tenant cuando no hay cookie y redirige al slug del token cuando la sesion es de OTRO negocio (el
+payload del JWT se decodifica sin verificar la firma: es UX, la barrera real es el backend, que
+resuelve el negocio del token en cada request). **Sin el slug en la URL el aislamiento no es real**: la
+pantalla era la misma para cualquier local. Las URLs viejas sin slug siguen entrando por redirects de
+compatibilidad (308), salvo la del healthcheck de Railway, que no puede ser un 3xx.
+
+Harness: `pnpm --filter @mi-saas/pwa-staff test:tenant-aislamiento` (verifica los dos PWAs y la
+regresion del path del cliente; firma cookies reales con los secrets del `.env`).
+
 ### TODO opcional post-MVP: SSR de la carta renderiza empty state; el cliente rellena por useEffect
 
 Verificado en browser real (perfil limpio, sin cookies) contra `https://app.clubio.lat/bar-la-esquina/menu`:

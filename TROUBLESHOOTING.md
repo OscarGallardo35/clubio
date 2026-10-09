@@ -387,6 +387,58 @@ El **orden de match (exacto vs wildcard)** no esta documentado de forma fiable: 
 wildcard hay que re-verificar los dominios exactos (`app`, `api`, `staff`, `admin`), porque si el
 wildcard matchea primero se los lleva al servicio equivocado.
 
+### El healthcheck de Railway NO acepta un 3xx (deploy en FAILED)
+
+Al mover `/login` a `/<tenant>/login` deje un redirect 308 para la URL vieja y el deploy quedo en
+FAILED con esto en los logs:
+
+```
+Path: /login
+Attempt #1 failed with HTTP 308. Continuing to retry for 1m59s
+...
+1/1 replicas never became healthy!
+```
+
+Railway considera sana solo una respuesta 2xx. Un deploy de una PWA con redirect en la ruta del
+healthcheck no llega a levantar, aunque el build haya salido perfecto y la app funcione.
+
+**La solucion que no toca la config de prod**: `/login` sirve una PAGINA propia que devuelve **200** y
+reenvia desde el cliente (`router.replace` en un `useEffect`), y el middleware la deja pasar ANTES de
+la logica de tenant (si no, la manda al tenant por defecto y vuelve a ser un 3xx). Los demas paths
+viejos si pueden ser 308: a esos nadie les hace healthcheck.
+
+Regla general: **la ruta del healthcheck nunca puede ser un redirect**, ni por `redirects()` del
+`next.config.js` ni por el middleware. Antes de mover una ruta, mirar cual sondea el healthcheck
+(Railway -> servicio -> Settings -> Deploy -> Healthcheck Path).
+
+### Multi-tenant por path: el slug vive en la URL, no en el formulario
+
+Las PWAs de Staff y Admin pasaron a `/<tenant>/...` (`staff.clubio.lat/bar-la-esquina/visitas`,
+`admin.clubio.lat/bar-la-esquina/dashboard`). Antes la pantalla era la misma para cualquier local y el
+negocio salia del token: sin el slug en la URL el aislamiento no se veia en ningun lado.
+
+Lo que hace el middleware, en orden:
+
+1. Sin tenant en la URL -> al tenant por defecto (los paths viejos los cubren los `redirects` del
+   config, que corren antes; el middleware es la red de seguridad).
+2. Sin cookie -> `/<tenant>/login?volver=<destino CON query>`: el link del WhatsApp
+   (`/<tenant>/validar?ref=TOKEN`) no puede perder el token al pasar por el login.
+3. Con cookie de **otro** negocio -> 307 al slug del token. El token es un JWT y el middleware
+   **decodifica el payload sin verificar la firma**: alcanza para comparar el negocio de la sesion con
+   el de la URL y no dejar a nadie parado en la UI de otro local. La barrera REAL es el backend, que
+   valida la firma y resuelve el negocio del token en cada request. Esto es UX, no seguridad.
+
+Los helpers viven en `lib/tenant.ts` (`tenantDePath`, `rutaDe`, `rutaLogin`, `slugDelToken`), el hook
+de UI en `hooks/useTenant.ts` y el `DEFAULT_TENANT` en `lib/constants.ts` (**no** en `lib/tenant.ts`).
+El grupo `(staff)` / `(admin)` se mantiene: el layout con el guard NO tiene que envolver al login.
+
+Dos trampas al migrar los links: un link puede estar dentro de un componente AUXILIAR (un `Aviso`
+compartido), asi que el hook va en la funcion que CONTIENE el link, no en la principal; y hay que
+verificar que cada archivo IMPORTE lo que usa (buscar el string `useTenant` da falso OK cuando el
+nombre ya aparece en el cuerpo).
+
+### Un wildcard a DOS niveles no lo cubre el SSL universal de Cloudflare
+
 `*.app.clubio.lat` (dos niveles) resuelve bien en DNS, pero el handshake TLS FALLA: el certificado
 universal de la zona cubre `clubio.lat` y `*.clubio.lat` — un solo nivel —, asi que
 `bar-la-esquina.app.clubio.lat` recibe un certificado que no matchea (el cliente ve un fatal alert:

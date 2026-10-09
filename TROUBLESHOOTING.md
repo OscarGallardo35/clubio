@@ -360,7 +360,32 @@ que `main.ts` valida con un callback (lista estatica + regex de `*.app.clubio.la
 Ojo con el `matcher` del middleware: va MINIMO (el filtro fino de assets en el codigo) por la regla
 de mas arriba sobre `\\.` dentro del matcher.
 
-### Un wildcard a DOS niveles no lo cubre el SSL universal de Cloudflare
+### Railway Custom Domains: un wildcard necesita DOS cosas (y ojo con el limite del plan)
+
+Un subdominio dinamico (`<slug>.clubio.lat`) necesita **las dos** piezas:
+1. El **CNAME proxied en Cloudflare** — sin esto el host ni resuelve.
+2. El **dominio registrado en Railway**, servicio por servicio — sin esto Cloudflare resuelve pero el
+   borde de Railway contesta:
+   ```
+   HTTP/1.1 404 Not Found
+   x-railway-fallback: true
+   {"status":"error","code":404,"message":"Application not found"}
+   ```
+   Ese header `x-railway-fallback` es la forma rapida de distinguir un 404 de Railway (el dominio no
+   esta registrado) de un 404 de la app.
+
+**El limite del plan es la trampa**: Railway limita los custom domains **por servicio**, y con el
+limite alcanzado el alta falla aunque el DNS este perfecto:
+```
+customDomainCreate -> "You have reached the limit for custom domains per service on your plan.
+                       Please upgrade to add more."
+```
+Con el plan actual cada servicio tiene **un** dominio (app / api / staff / admin = 1 cada uno), asi que
+no entra un wildcard en el mismo servicio sin liberar el slot o subir de plan.
+
+El **orden de match (exacto vs wildcard)** no esta documentado de forma fiable: despues de crear un
+wildcard hay que re-verificar los dominios exactos (`app`, `api`, `staff`, `admin`), porque si el
+wildcard matchea primero se los lleva al servicio equivocado.
 
 `*.app.clubio.lat` (dos niveles) resuelve bien en DNS, pero el handshake TLS FALLA: el certificado
 universal de la zona cubre `clubio.lat` y `*.clubio.lat` — un solo nivel —, asi que

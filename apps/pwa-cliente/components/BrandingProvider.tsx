@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { usePathname } from 'next/navigation'
+import { getTheme } from '@repo/types'
 import type { ConfiguracionPublica, NegocioPublico } from '@/types/api'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { tenantDelPath } from '@/lib/tenant'
@@ -149,6 +150,26 @@ export function BrandingProvider({ children, negocioInicial, modo, tenant }: Bra
   const hslPrimario = hexAHslTriple(colorPrimario)
   const hslSecundario = hexAHslTriple(colorSecundario)
 
+  /**
+   * THEME del tenant, aplicado en TODO el arbol del local y no solo dentro de la tarjeta.
+   *
+   * Antes las variables `--theme-*` se inyectaban recien dentro de `<TarjetaSellos />`, asi que la
+   * ruta inmersiva del club (`/club`, ver RUTAS_INMERSIVAS) se pintaba con el degradado de marca y el
+   * theme quedaba aplicado a medias. Aca, en el provider que el layout del tenant monta, valen para
+   * cualquier pantalla.
+   */
+  const theme = getTheme(negocio)
+  const fondoTheme =
+    modoReal === 'inmersivo' && theme?.imagenFondo
+      ? {
+          // Imagen del theme + la capa del color de marca al 82%: la capa es lo que mantiene el texto
+          // legible (contraste >= 4.5:1) sobre una foto cualquiera.
+          backgroundImage: `linear-gradient(hsl(var(--primary) / 0.82), hsl(var(--primary) / 0.82)), url(${theme.imagenFondo})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }
+      : undefined
+
   return (
     <Ctx.Provider value={valor}>
       <div
@@ -157,11 +178,22 @@ export function BrandingProvider({ children, negocioInicial, modo, tenant }: Bra
         // Doble juego de variables a proposito:
         //  - --primary/--secondary como tripleta HSL para el sistema shadcn
         //  - --color-primary/--color-secondary con el HEX para gradientes y framer
+        //  - --theme-* con la paleta del theme (si el local tiene uno)
         style={{
           ...(hslPrimario ? { ['--primary' as string]: hslPrimario, ['--ring' as string]: hslPrimario } : {}),
           ...(hslSecundario ? { ['--secondary' as string]: hslSecundario } : {}),
           ['--color-primary' as string]: colorPrimario,
           ['--color-secondary' as string]: colorSecundario,
+          ...(theme
+            ? {
+                ['--theme-bg' as string]: theme.colores.bg,
+                ['--theme-accent' as string]: theme.colores.accent,
+                ['--theme-brand-dark' as string]: theme.colores.brandDark,
+                ['--theme-text' as string]: theme.colores.text,
+                ['--theme-text-muted' as string]: theme.colores.textMuted,
+              }
+            : {}),
+          ...(fondoTheme ?? {}),
         }}
         className={
           modoReal === 'inmersivo'

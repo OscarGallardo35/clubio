@@ -11,6 +11,8 @@ const PUBLICO = {
   id: true, nombre: true, slug: true, direccion: true, telefono: true, email: true,
   logoUrl: true, colorPrimario: true, colorSecundario: true, placeId: true,
   urlMenu: true, urlClub: true, plan: true, modoClientes: true, activo: true,
+  // Personalizacion de la tarjeta por tenant (ver packages/types/src/theme.ts).
+  theme: true,
 } as const;
 
 @Injectable()

@@ -13,7 +13,21 @@ import { encrypt, decrypt } from '../common/utils/crypto.util';
 // En produccion se dejan los valores por defecto.
 const OAUTH_AUTH = process.env.GOOGLE_OAUTH_AUTH_URL ?? 'https://accounts.google.com/o/oauth2/v2/auth';
 const OAUTH_TOKEN = process.env.GOOGLE_OAUTH_TOKEN_URL ?? 'https://oauth2.googleapis.com/token';
-const GBP_REVIEWS = process.env.GOOGLE_GBP_API_URL ?? 'https://mybusiness.googleapis.com/v4';
+
+/**
+ * Business Profile APIs, las tres modernas. Antes esto apuntaba a
+ * `mybusiness.googleapis.com/v4` (la API legacy, RETIRADA): devuelve un 404 HTML,
+ * no un error JSON, asi que el AxiosError terminaba en un 500 pelado.
+ *
+ * `GOOGLE_GBP_API_URL` apunta las TRES al mismo root y es lo que usan los tests
+ * contra un mock (`/v1/accounts`, `/v1/accounts/{id}/locations`,
+ * `/v1/accounts/{id}/locations/{id}/reviews`). Sin esa var, cada una va a su host real.
+ */
+const GBP_MOCK = (process.env.GOOGLE_GBP_API_URL ?? '').trim().replace(/\/+$/, '');
+const GBP_ACCOUNTS = GBP_MOCK || 'https://mybusinessaccountmanagement.googleapis.com/v1';
+const GBP_INFO = GBP_MOCK || 'https://mybusinessbusinessinformation.googleapis.com/v1';
+const GBP_REVIEWS = GBP_MOCK || 'https://mybusinessreviews.googleapis.com/v1';
+
 const PLACES_DETAILS =
   process.env.GOOGLE_PLACES_URL ?? 'https://maps.googleapis.com/maps/api/place/details/json';
 
@@ -231,6 +245,60 @@ export class GoogleService {
   }
 
   /**
+   * ¿Google rechazo las credenciales? Solo el 401 significa que hay que reconectar.
+   * Un 403 (cuenta sin permiso / API sin habilitar), 404 (host retirado) o 429 (cuota)
+   * son problemas de configuracion o de cuota, no del token.
+   */
+  private rompeLasCredenciales(e: unknown): boolean {
+    return (e as { response?: { status?: number } })?.response?.status === 401;
+  }
+
+  /**
+   * Traduce el error de Google a un motivo legible para el panel.
+   *
+   * El sobre de error trae `error.message` ("Quota exceeded for quota metric ...") y,
+   * cuando es cuota, la cuota del proyecto en `details[].metadata.quota_limit_value`
+   * (0 = el proyecto no tiene acceso asignado todavia). Los 4xx tipicos se anotan con
+   * una pista: son los que se ven al configurar, no bugs del codigo.
+   */
+  private motivoDeGoogle(e: unknown): string {
+    const err = e as {
+      message?: string;
+      response?: {
+        status?: number;
+        data?: {
+          error?: {
+            message?: string;
+            status?: string;
+            details?: Array<{ metadata?: Record<string, string> }>;
+          };
+        };
+      };
+    };
+    const status = err?.response?.status;
+    const g = err?.response?.data?.error;
+    const meta = Array.isArray(g?.details)
+      ? g?.details.map((d) => d?.metadata).find((m) => m?.quota_limit_value !== undefined)
+      : undefined;
+    const cuota = meta
+      ? ` (cuota del proyecto: ${meta.quota_limit_value} en ${meta.quota_metric ?? 'la metrica'})`
+      : '';
+    if (g?.message) {
+      return `Google rechazo la consulta [${status ?? 'sin status'} ${g.status ?? ''}]`.trim() +
+        `: ${g.message}${cuota}`;
+    }
+    const pistas: Record<number, string> = {
+      401: 'el access token fue rechazado',
+      403: 'puede faltar habilitar la API o el permiso sobre la cuenta',
+      404: 'el host de la API esta retirado, no habilitado, o el recurso no existe',
+      429: 'cuota agotada o sin acceso al programa de Business Profile',
+    };
+    const pista = status && pistas[status] ? ` — ${pistas[status]}` : '';
+    if (status) return `Google respondio ${status} sin detalle${cuota}${pista}`;
+    return `No pudimos hablar con Google: ${err?.message ?? 'error desconocido'}`;
+  }
+
+  /**
    * Lista las cuentas y ubicaciones de Google del negocio.
    * Necesario porque el OAuth NO devuelve accountId/locationId: hay que
    * elegirlos, y sin ellos la Business Profile API no se puede llamar.
@@ -241,24 +309,50 @@ export class GoogleService {
       throw new BadRequestException('Google no esta conectado o el token no es valido');
     }
 
-    const api = (process.env.GOOGLE_GBP_API_URL ?? GBP_REVIEWS).replace(/\/$/, '');
     const cab = { headers: { Authorization: `Bearer ${token}` }, timeout: 12_000 };
 
-    const { data: cuentas } = await axios.get(`${api}/accounts`, cab);
-    const accounts: Array<Record<string, any>> = cuentas?.accounts ?? [];
+    // Las cuentas van SIEMPRE envueltas: si Google falla, el panel tiene que ver el
+    // motivo real (cuota, API sin habilitar, host retirado), no un 500 sin detalle.
+    let accounts: Array<Record<string, any>> = [];
+    try {
+      const { data: cuentas } = await axios.get(`${GBP_ACCOUNTS}/accounts`, cab);
+      accounts = cuentas?.accounts ?? [];
+    } catch (e) {
+      const motivo = this.motivoDeGoogle(e);
+      this.logger.error(`Google ${negocioId} (ubicaciones): ${motivo}`);
+      if (this.rompeLasCredenciales(e)) {
+        await this.marcarError(negocioId, motivo);
+      } else {
+        // A PROPOSITO no se llama a marcarError() aca: marcar la integracion como ERROR
+        // la saca de 'CONECTADO', y con eso el panel dice "Sin conectar", desaparece la
+        // lista de ubicaciones y `accessTokenValido` corta el sync de resenas. Una cuota
+        // agotada o un host caido NO significan que haya que reconectar. Queda en
+        // auditoria para tener el rastro.
+        await this.auditoria.registrar({
+          negocioId, accion: 'google.error', detalle: { motivo, contexto: 'ubicaciones' },
+        });
+      }
+      throw new BadRequestException(motivo);
+    }
 
     const ubicaciones: Array<Record<string, unknown>> = [];
     for (const c of accounts) {
       const accountId = String(c.name ?? '').replace('accounts/', '');
       if (!accountId) continue;
       try {
-        const { data: locs } = await axios.get(`${api}/accounts/${accountId}/locations`, cab);
+        // `readMask` es obligatorio en la API moderna: sin el, la respuesta viene vacia.
+        const { data: locs } = await axios.get(`${GBP_INFO}/accounts/${accountId}/locations`, {
+          ...cab,
+          params: { readMask: 'name,title,storefrontAddress' },
+        });
         for (const l of (locs?.locations ?? []) as Array<Record<string, any>>) {
           ubicaciones.push({
             accountId,
             accountName: c.accountName ?? null,
-            locationId: String(l.name ?? '').replace(`accounts/${accountId}/locations/`, ''),
-            locationName: l.locationName ?? l.title ?? null,
+            // El recurso viene con nombre completo (accounts/{a}/locations/{l}):
+            // guardamos SOLO el id y lo rearmamos donde haga falta.
+            locationId: String(l.name ?? '').split('/').pop() ?? '',
+            locationName: l.title ?? null,
             direccion: l.storefrontAddress?.addressLines?.join(', ') ?? null,
           });
         }
@@ -331,7 +425,8 @@ export class GoogleService {
       });
       if (integracion?.googleAccountId && integracion.googleLocationId) {
         try {
-          const url = `${process.env.GOOGLE_GBP_API_URL ?? GBP_REVIEWS}/accounts/${integracion.googleAccountId}/locations/${integracion.googleLocationId}/reviews`;
+          // Nombre completo del recurso moderno: accounts/{a}/locations/{l}/reviews.
+          const url = `${GBP_REVIEWS}/accounts/${integracion.googleAccountId}/locations/${integracion.googleLocationId}/reviews`;
           const { data } = await axios.get(url, {
             headers: { Authorization: `Bearer ${token}` }, timeout: 12_000,
             params: { pageSize: 50 },

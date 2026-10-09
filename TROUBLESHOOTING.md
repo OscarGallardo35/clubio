@@ -458,6 +458,24 @@ compartido), asi que el hook va en la funcion que CONTIENE el link, no en la pri
 verificar que cada archivo IMPORTE lo que usa (buscar el string `useTenant` da falso OK cuando el
 nombre ya aparece en el cuerpo).
 
+### Un estado terminal debe limpiar el store igual que un fallo (404/410)
+
+Un pedido CANCELADO, RECHAZADO o ENTREGADO tiene que soltar el pedido guardado: si no, el banner "Ver
+estado de tu pedido" del menu queda huerfano y toca llevarte al seguimiento de un pedido muerto.
+
+Lo que hace que esto se pase por alto: **los estados terminales llegan como 200 con `estado`, no como
+error**. La logica de limpieza que solo mira fallos (`debeOlvidarPedido`, que cubre 404 y 410) no los
+ve, y ademas el backend **conserva `linkExpiraEn` al cancelar**, asi que cualquier guard que mire solo
+el vencimiento sigue dando "vigente" para siempre.
+
+Se resuelve en los DOS caminos, porque un pedido puede morir por el staff o por el propio cliente: el
+gate del banner (`pedidoVigente`) rechaza los terminales, y el seguimiento despacha `OLVIDAR_PEDIDO` al
+sincronizar uno (mismo criterio que el 404/410).
+
+OJO con la regla que no se puede invertir: `estado === undefined` cuenta como **activo**. `PEDIDO_OK` no
+setea estado, asi que justo despues de pedir no hay estado sincronizado; si la condicion pide un estado
+activo, el banner desaparece para un pedido recien creado.
+
 ### Los links al staff llevan el slug del NEGOCIO, nunca uno hardcodeado
 
 El link del WhatsApp que abre el staff un pedido (`/{slug}/validar-pedido?ref=…`) y el de una visita

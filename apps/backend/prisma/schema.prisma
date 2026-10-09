@@ -175,6 +175,10 @@ model Negocio {
   logoUrl            String?
   colorPrimario      String       @default("#000000")
   colorSecundario    String       @default("#FFFFFF")
+  /// Personalizacion visual de la tarjeta del cliente (JSON libre por tenant).
+  /// Nullable a proposito: un negocio SIN theme conserva el diseno por defecto
+  /// de la PWA Cliente (regresion de /bar-la-esquina/tarjeta intacta).
+  theme              Json?
   placeId            String?
   urlMenu            String?
   urlClub            String?

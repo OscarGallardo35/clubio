@@ -100,6 +100,18 @@ export interface TarjetaSellosProps {
 }
 
 // --- geometria por tamano -------------------------------------------------
+
+/**
+ * La estrella del sello (rama CON theme): al doble del icono historico.
+ *
+ * Va aparte de `CONFIG.icono` a proposito: esa clave la consume tambien la rama historica
+ * (bar-la-esquina), que no se puede tocar. El `?? config.icono` cubre los tamaños sin entrada.
+ */
+const ICONO_SELLO_THEME: Partial<Record<TamanoTarjeta, string>> = {
+  full: 'size-12', // 24px -> 48px: llena el sello (el path del SVG ya trae margen propio)
+  medium: 'size-10',
+  small: 'size-7',
+}
 const CONFIG: Record<
   TamanoTarjeta,
   {
@@ -291,6 +303,7 @@ function Sello({
   esPremio,
   esUltimoNuevo,
   pulsar,
+  tamaño,
   config,
   colorPrimario,
   theme,
@@ -301,6 +314,8 @@ function Sello({
   esPremio: boolean
   esUltimoNuevo: boolean
   pulsar: boolean
+  /** Solo lo usa la rama con theme (la estrella agrandada sale de ICONO_SELLO_THEME). */
+  tamaño: TamanoTarjeta
   config: (typeof CONFIG)[TamanoTarjeta]
   colorPrimario: string
   theme: TemaTarjeta | null
@@ -343,7 +358,7 @@ function Sello({
             data-slot="tarjeta-sello-svg"
             aria-hidden="true"
             viewBox="0 0 24 24"
-            className={config.icono}
+            className={ICONO_SELLO_THEME[tamaño] ?? config.icono}
             style={{ transform: `rotate(${rot}deg)` }}
             fill={theme.colores.accent}
             stroke={theme.colores.brandDark}
@@ -353,7 +368,7 @@ function Sello({
             <path d="M12 2.6l2.72 5.5 6.08.88-4.4 4.28 1.04 6.05L12 16.9l-5.44 2.41 1.04-6.05-4.4-4.28 6.08-.88z" />
           </svg>
         ) : (
-          <Circle aria-hidden="true" className={config.icono} />
+          <Circle aria-hidden="true" className={ICONO_SELLO_THEME[tamaño] ?? config.icono} />
         )}
       </motion.span>
     )
@@ -760,6 +775,7 @@ export function TarjetaSellos({
               config={config}
               colorPrimario={colorPrimario}
               theme={theme}
+              tamaño={tamaño}
             />
           ))}
         </motion.div>

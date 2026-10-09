@@ -38,7 +38,12 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     <>
       {/* pb-24 (96px) deja lugar para la barra fija + la safe-area. Con `env()` la cuenta es real:
           un iPhone con notch tiene ~34px de safe-area y 56px de barra = 90px, justo al limite. */}
-      <div className="mx-auto w-full max-w-md pb-[calc(6rem+env(safe-area-inset-bottom))]">{children}</div>
+      {/* overflow-x-clip: red de seguridad. Si alguna pantalla vuelve a meter un hijo mas ancho que el
+          contenedor (el caso `w-max` del TabsList de pedidos), el desborde horizontal agrandaba el
+          viewport y empujaba la barra fija fuera de la vista. `clip` (no `hidden`) NO crea scroll
+          container, asi no toca los footers `sticky` de los sheets (que ademas son `fixed` y escapan
+          al clip). El nav es hermano de este div, asi que no lo recorta nunca. */}
+      <div className="mx-auto w-full max-w-md overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))]">{children}</div>
       <BottomNav />
     </>
   );

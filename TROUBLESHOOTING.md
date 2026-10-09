@@ -3399,3 +3399,8 @@ con arreglar la app: hay que liberar cuota (nueva DB o upgrade) Y cortar el loop
 
 Diagnostico rapido: `curl https://api.clubio.lat/api/health` (mirar `redis`) y probar el login del
 negocio por DEFECTO, que es el que confirma si el fallo es sistémico y no del tenant.
+
+**Fix aplicado** (`push.processor.ts`): el worker escucha su propio evento `error` y, ante un fallo de
+Redis, **pausa la cola** y la reanuda solo a los 5 minutos (con el error logueado una vez por pausa, no
+en loop); ademas `drainDelay` paso de 5s a 30s, porque cada vuelta del worker es un comando. El backoff
+de los JOBS ya estaba bien (`attempts: 3` + `backoff: custom` -> 5s/30s/5min) y no se toco.

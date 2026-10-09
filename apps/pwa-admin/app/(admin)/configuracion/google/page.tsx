@@ -34,23 +34,50 @@ import type { GoogleEstado, UbicacionGoogle } from '@/types/api';
 export default function GooglePage() {
   const [estado, setEstado] = React.useState<GoogleEstado | null>(null);
   const [ubicaciones, setUbicaciones] = React.useState<UbicacionGoogle[] | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
+  // Dos errores SEPARADOS: el estado sale de nuestra DB (casi nunca falla) y las
+  // ubicaciones dependen de Google. Un fallo de Google no tiene que tapar el estado
+  // ni mostrarse como si el problema fuera la conexion.
+  const [errorEstado, setErrorEstado] = React.useState<string | null>(null);
+  const [errorUbicaciones, setErrorUbicaciones] = React.useState<string | null>(null);
   const [ocupado, setOcupado] = React.useState(false);
   const [aDesconectar, setADesconectar] = React.useState(false);
   const [aviso, setAviso] = React.useState<string | null>(null);
 
-  const cargar = React.useCallback(async () => {
+  const cargarEstado = React.useCallback(async () => {
     try {
       const e = await googleApi.estado();
       setEstado(e);
-      setError(null);
-      // Solo tiene sentido listar ubicaciones si hay token: sin conexion el backend da 400.
-      setUbicaciones(e.conectado ? (await googleApi.ubicaciones()).data : []);
+      setErrorEstado(null);
+      return e;
     } catch (err) {
       const { status, mensaje } = normalizarError(err);
-      if (status !== 401) setError(mensaje);
+      if (status !== 401) setErrorEstado(mensaje);
+      return null;
     }
   }, []);
+
+  // Solo tiene sentido listar ubicaciones si hay token: sin conexion el backend da 400.
+  const cargarUbicaciones = React.useCallback(async (conectado: boolean) => {
+    if (!conectado) {
+      setUbicaciones([]);
+      setErrorUbicaciones(null);
+      return;
+    }
+    try {
+      const { data } = await googleApi.ubicaciones();
+      setUbicaciones(data);
+      setErrorUbicaciones(null);
+    } catch (err) {
+      const { status, mensaje } = normalizarError(err);
+      setUbicaciones([]);
+      if (status !== 401) setErrorUbicaciones(mensaje);
+    }
+  }, []);
+
+  const cargar = React.useCallback(async () => {
+    const e = await cargarEstado();
+    await cargarUbicaciones(!!e?.conectado);
+  }, [cargarEstado, cargarUbicaciones]);
 
   React.useEffect(() => {
     // El `?conectado=1` viene del redirect del callback de Google. Se lee de `window` y no de
@@ -61,8 +88,13 @@ export default function GooglePage() {
   }, [cargar]);
 
   React.useEffect(() => {
-    if (error) toast.error('No pudimos leer el estado de Google', { description: error });
-  }, [error]);
+    if (errorEstado) toast.error('No pudimos leer el estado de Google', { description: errorEstado });
+  }, [errorEstado]);
+
+  React.useEffect(() => {
+    if (errorUbicaciones)
+      toast.error('No pudimos leer las ubicaciones de Google', { description: errorUbicaciones });
+  }, [errorUbicaciones]);
 
   const conectar = React.useCallback(async () => {
     setOcupado(true);
@@ -135,7 +167,7 @@ export default function GooglePage() {
         </p>
       ) : null}
 
-      {estado === null && !error ? <Skeleton className="h-32 w-full" /> : null}
+      {estado === null && !errorEstado ? <Skeleton className="h-32 w-full" /> : null}
 
       {estado ? (
         <div className="space-y-4 rounded-2xl border bg-card p-5">
@@ -204,9 +236,17 @@ export default function GooglePage() {
       {estado?.conectado ? (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold">Ubicaciones de la cuenta</h2>
+          {errorUbicaciones ? (
+            <p
+              role="alert"
+              className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+            >
+              No pudimos listar las ubicaciones: {errorUbicaciones}
+            </p>
+          ) : null}
           {ubicaciones === null ? (
             <Skeleton className="h-24 w-full" />
-          ) : ubicaciones.length === 0 ? (
+          ) : errorUbicaciones ? null : ubicaciones.length === 0 ? (
             <p className="rounded-xl border px-4 py-3 text-sm text-muted-foreground">
               La cuenta no tiene ubicaciones cargadas en Google Business.
             </p>

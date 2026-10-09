@@ -98,15 +98,11 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
    * local confirme en el momento que los sellos/premio son reales, sin login.
    */
   const numeroAtendiente = configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null
-  // El token lo devuelve /visitas/mi-tarjeta (lazy). La URL se arma absoluta con el origin del
-  // navegador: en prod es https://app.clubio.lat (== PUBLIC_APP_URL). El boton solo se renderiza
-  // del lado del cliente (con la tarjeta ya cargada), asi que `window` siempre existe aca.
-  const tokenVerificacion = tarjeta.cliente?.tokenVerificacion ?? null
-  const slugVerificacion = negocio?.slug ?? slugNegocio
-  const urlVerificacion =
-    tokenVerificacion && typeof window !== 'undefined'
-      ? `${window.location.origin}/${slugVerificacion}/verificar/${tokenVerificacion}`
-      : null
+  // La URL la arma el SERVIDOR (`urlVerificacion` en GET /visitas/mi-tarjeta) con PUBLIC_APP_URL.
+  // NO reconstruirla con `window.location.origin`: si el cliente esta en el subdominio del tenant
+  // (`que-lomitos.clubio.lat`) el link saldria con el slug dos veces y la pagina publica de
+  // verificacion devuelve "este enlace no es valido".
+  const urlVerificacion = tarjeta.urlVerificacion ?? null
   const waCanje =
     premiosDesbloqueados.length > 0 && numeroAtendiente
       ? `https://wa.me/${numeroAtendiente.replace(/\D/g, '')}?text=${encodeURIComponent(

@@ -234,6 +234,13 @@ export interface MiTarjetaRespuesta extends Omit<EstadoVisitaRespuesta, 'estado'
   modoFidelizacion?: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO' | undefined
   premioPorPuntos?: number | undefined
   premioTextoPuntos?: string | null | undefined
+  /**
+   * Link absoluto y canonico a la pagina publica de verificacion. Lo arma el SERVIDOR con
+   * `PUBLIC_APP_URL` + el slug del negocio. El front NO debe reconstruirlo con
+   * `window.location.origin`: en un subdominio de tenant (`<slug>.clubio.lat`) el slug quedaria
+   * duplicado y la pagina responderia "enlace no valido".
+   */
+  urlVerificacion?: string | null
 }
 
 /**

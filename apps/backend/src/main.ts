@@ -21,6 +21,11 @@ async function bootstrap() {
     .map((o) => o.trim())
     .filter(Boolean);
   const dinamicos = [
+    // UN nivel: `bar-la-esquina.clubio.lat`. Es el formato que usa el DNS y el que cubre el
+    // certificado universal de Cloudflare (un wildcard de DOS niveles no lo cubre: ver
+    // TROUBLESHOOTING).
+    /^https:\/\/[a-z0-9-]+\.clubio\.lat$/i,
+    // Se mantienen por las dudas de una topologia vieja o de un acceso por el subdominio de la app.
     /^https:\/\/[a-z0-9-]+\.app\.clubio\.lat$/i,
     /^https:\/\/[a-z0-9-]+\.staff\.clubio\.lat$/i,
   ];

@@ -34,6 +34,10 @@ export { GoogleReviews } from './components/google-reviews'
 export type { GoogleReviewsProps, Resena } from './components/google-reviews'
 export { BottomSheet } from './components/bottom-sheet'
 export type { BottomSheetProps, AlturaSheet } from './components/bottom-sheet'
+export { BannerInstalacion } from './components/banner-instalacion'
+export type { BannerInstalacionProps } from './components/banner-instalacion'
+export { usePWAInstall, detectarDispositivo, detectarNavegadorInApp, esIPadConUaDeEscritorio } from './hooks/use-pwa-install'
+export type { EstadoPWAInstall, DeteccionDispositivo, EventoAntesDeInstalar, NavegadorInApp } from './hooks/use-pwa-install'
 
 // Utilidades
 export { cn } from './lib/utils'

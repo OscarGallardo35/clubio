@@ -24,8 +24,20 @@
  * SIN efectos: solo hace requests GET/HEAD.
  */
 const crypto = require('crypto');
-require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
-require('dotenv').config({ path: require('path').join(__dirname, '../../../.env.secrets') });
+const fs = require('fs');
+const path = require('path');
+
+// Sin dependencias: la PWA no tiene dotenv instalado, asi que los .env de la raiz se leen a mano.
+function cargarEnv(archivo) {
+  if (!fs.existsSync(archivo)) return;
+  for (const linea of fs.readFileSync(archivo, 'utf8').split(/\r?\n/)) {
+    const m = linea.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (!m) continue;
+    if (!(m[1] in process.env)) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+  }
+}
+cargarEnv(path.join(__dirname, '../../../.env'));
+cargarEnv(path.join(__dirname, '../../../.env.secrets'));
 
 const DEFAULT_TENANT = process.env.NEXT_PUBLIC_DEFAULT_TENANT || 'bar-la-esquina';
 const OTRO = 'otro-negocio-de-prueba';

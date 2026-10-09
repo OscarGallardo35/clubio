@@ -36,8 +36,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
   return (
     <>
-      {/* pb-24 deja lugar para la barra fija + la safe-area */}
-      <div className="mx-auto w-full max-w-md pb-24">{children}</div>
+      {/* pb-24 (96px) deja lugar para la barra fija + la safe-area. Con `env()` la cuenta es real:
+          un iPhone con notch tiene ~34px de safe-area y 56px de barra = 90px, justo al limite. */}
+      <div className="mx-auto w-full max-w-md pb-[calc(6rem+env(safe-area-inset-bottom))]">{children}</div>
       <BottomNav />
     </>
   );

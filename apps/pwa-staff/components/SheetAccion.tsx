@@ -78,7 +78,9 @@ export function SheetAccion({
           </div>
         ) : null}
 
-        <div className="flex gap-2">
+        {/* Fijos al pie del sheet: el contenido de arriba es el que scrollea. Sin esto, al escribir
+            el motivo el teclado del celular empuja estos botones fuera de la parte visible. */}
+        <div className="sticky bottom-0 -mx-5 mt-1 flex gap-2 border-t border-border bg-background px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3">
           <Button variant="outline" className="min-h-12 flex-1" onClick={onCerrar} disabled={ocupado}>
             Volver
           </Button>

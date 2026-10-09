@@ -271,6 +271,8 @@ export const endpoints = {
     pendientes: '/api/visitas/pendientes',
     misAprobaciones: '/api/visitas/mis-aprobaciones',
     historial: '/api/visitas/historial',
+    /** Fase 2: corrige el monto de una visita ya aprobada (recalcula los puntos). */
+    editarMonto: (id: string) => `/api/visitas/${id}/monto`,
   },
   carta: {
     list: '/api/carta',

@@ -251,7 +251,7 @@ export function Disparos({
         </p>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {disparos?.map((d) => {
           const planta = listaPlantillas.find((p) => p.id === d.plantillaId);
           const regalo = etiquetaRegalo(d.regalo);
@@ -564,7 +564,7 @@ function FormularioDisparo({
 
       {/* Config segun el tipo. */}
       {tipo === 'COMPRA' ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="d-estado">Estado del pedido</Label>
             <Select
@@ -599,7 +599,7 @@ function FormularioDisparo({
       ) : null}
 
       {tipo === 'SELLOS' ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="d-cuando">Momento</Label>
             <Select
@@ -643,7 +643,7 @@ function FormularioDisparo({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {diaModo === 'semana' ? (
               <div className="space-y-2">
                 <Label htmlFor="d-diasemana">Dia</Label>
@@ -755,7 +755,7 @@ function FormularioDisparo({
             Si completas sellos o puntos, el disparo <strong>acredita saldo real</strong> al cliente.
           </p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="d-sellos">Sellos</Label>
             <Input
@@ -787,7 +787,7 @@ function FormularioDisparo({
             Cuanto puede acreditar este disparo a UN mismo cliente. Vacio = sin tope.
           </p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="d-pordia">Por dia</Label>
             <Input

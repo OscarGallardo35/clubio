@@ -189,7 +189,7 @@ export default function NotificacionesPage() {
         </p>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {plantillas?.map((p) => {
           const prev = renderizar(p.titulo, ejemplo);
           const prevCuerpo = renderizar(p.cuerpo, ejemplo);

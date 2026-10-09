@@ -98,6 +98,9 @@ export function FlujoVisita() {
         actuales={actualesConfirmados}
         premioDesbloqueado={premioConfirmado}
         nombreCliente={cliente?.nombre ?? null}
+        // Mismo numero que usa la espera: config del club -> negocio. Si no hay, el boton no se
+        // muestra (PasoConfirmado lo decide).
+        numeroAtendiente={configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null}
         mostrarResena={configuracion?.mostrarResenaPostVisita === true}
         placeId={negocio?.placeId ?? null}
         // Lo que OTORGO la visita (viene del WS): con HIBRIDO la confirmacion muestra los dos

@@ -28,6 +28,12 @@ export interface PasoConfirmadoProps {
   puntosOtorgados?: SellosTrasAprobar['puntosOtorgados']
   /** Saldo de puntos DESPUES de la visita (para el "ahora tenes N puntos"). */
   puntosActuales?: SellosTrasAprobar['puntosActuales']
+  /**
+   * Numero del local para el boton "Avisarle al local". Sale de la config del club (o del negocio);
+   * si no hay, el boton NO se muestra (mismo criterio que en PasoEspera).
+   */
+  numeroAtendiente?: string | null
+  mensajeWhatsApp?: string | null
   onVerTarjeta: () => void
   onVolver: () => void
 }
@@ -48,10 +54,20 @@ export function PasoConfirmado({
   sellosOtorgados,
   puntosOtorgados,
   puntosActuales,
+  numeroAtendiente,
+  mensajeWhatsApp,
   onVerTarjeta,
   onVolver,
 }: PasoConfirmadoProps) {
   const completo = premioDesbloqueado || actuales >= meta
+
+  // Avisarle al local: solo si hay numero. El mensaje sale del contexto de la visita (quien es y
+  // donde), que es lo unico que el local necesita para ubicarlo.
+  const wa = numeroAtendiente
+    ? `https://wa.me/${numeroAtendiente.replace(/\D/g, '')}?text=${encodeURIComponent(
+        mensajeWhatsApp ?? `Hola, soy ${nombreCliente ?? 'un cliente'}. Sumé mi visita en ${nombreNegocio}.`,
+      )}`
+    : null
 
   // El texto de "que sumaste" sale de una funcion PURA (testeable sin renderizar). El modo manda:
   // con SOLO_VISITAS no se nombran puntos, y con SOLO_PUNTOS no se nombran sellos.
@@ -123,6 +139,16 @@ export function PasoConfirmado({
       {mostrarResena && placeId && <BloqueResena placeId={placeId} nombreNegocio={nombreNegocio} />}
 
       <div className="flex w-full flex-col gap-3">
+        {wa ? (
+          <a
+            href={wa}
+            target="_blank"
+            rel="noreferrer"
+            className="flex min-h-12 items-center justify-center rounded-xl border border-white/40 px-4 text-center text-base font-medium text-white underline-offset-4 hover:bg-white/10"
+          >
+            Avisarle al local por WhatsApp
+          </a>
+        ) : null}
         <Button size="lg" className="min-h-12 text-base" onClick={onVerTarjeta}>
           Ver mi tarjeta
         </Button>

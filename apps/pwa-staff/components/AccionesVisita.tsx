@@ -373,7 +373,10 @@ export function AccionesVisita({
               ) : null}
             </div>
           </div>
-          <div className="flex gap-2">
+          {/* Fijo al pie del sheet: el contenido de arriba es el que scrollea. Sin esto, al escribir
+              el motivo el teclado empuja estos botones fuera de la parte visible (mismo bug que en
+              el sheet de pedidos). */}
+          <div className="sticky bottom-0 -mx-5 mt-1 flex gap-2 border-t border-border bg-background px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3">
             <Button variant="outline" className="min-h-12 flex-1" onClick={() => setSheet(false)} disabled={rechazando}>
               Cancelar
             </Button>

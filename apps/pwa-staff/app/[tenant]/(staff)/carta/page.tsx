@@ -295,9 +295,14 @@ function FormularioItem({ item, onGuardado }: { item: ItemCarta; onGuardado: () 
         </p>
       ) : null}
 
-      <Button className="min-h-12 w-full" onClick={() => void guardar()} disabled={!precioValido || guardando}>
-        {guardando ? 'Guardando...' : cambioPrecio ? 'Guardar nuevo precio' : 'Guardar'}
-      </Button>
+      {/* El boton de guardar queda fijo al pie del sheet: la descripcion tiene textarea y con el
+          teclado abierto este boton era el que se iba fuera de la vista (mismo bug que en pedidos
+          y en el rechazo de visitas). */}
+      <div className="sticky bottom-0 -mx-5 mt-1 border-t border-border bg-background px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3">
+        <Button className="min-h-12 w-full" onClick={() => void guardar()} disabled={!precioValido || guardando}>
+          {guardando ? 'Guardando...' : cambioPrecio ? 'Guardar nuevo precio' : 'Guardar'}
+        </Button>
+      </div>
     </div>
   );
 }

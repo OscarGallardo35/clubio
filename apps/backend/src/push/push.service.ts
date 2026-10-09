@@ -2,13 +2,63 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import * as webpush from 'web-push';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { LimitesService } from '../planes/limites.service';
 import type { EnviarPromocionDto } from './dto/enviar-promocion.dto';
 import type { SuscribirPushDto } from './dto/suscribir-push.dto';
+import type { CrearPlantillaDto } from './dto/crear-plantilla.dto';
+import type { ActualizarPlantillaDto } from './dto/actualizar-plantilla.dto';
+import type { EnviarPlantillaDto, SegmentoEnvio } from './dto/enviar-plantilla.dto';
 
 export const COLA_PUSH = 'push-send';
+
+/** Variables soportadas por las plantillas de push. */
+export const VARIABLES_PLANTILLA = [
+  'nombre',
+  'negocio',
+  'premio',
+  'actuales',
+  'meta',
+  'faltantes',
+  'numero',
+] as const;
+
+export interface VariablesPlantilla {
+  nombre?: string;
+  negocio?: string;
+  premio?: string;
+  actuales?: number | string;
+  meta?: number | string;
+  faltantes?: number | string;
+  numero?: number | string;
+}
+
+/**
+ * Plantillas default sugeridas (el admin puede crearlas de un toque). Viven aca
+ * para que la lista de sugerencias y el seed usen la MISMA definicion.
+ */
+export const PLANTILLAS_DEFAULT = [
+  {
+    nombre: 'Sello sumado',
+    titulo: '¡Sumaste un sello!',
+    cuerpo: 'Llevas {{actuales}} de {{meta}}. Te faltan {{faltantes}}.',
+    url: '/tarjeta',
+  },
+  {
+    nombre: 'Premio desbloqueado',
+    titulo: '¡Premio desbloqueado!',
+    cuerpo: 'Mostra esta pantalla en {{negocio}} para canjear tu {{premio}}.',
+    url: '/tarjeta',
+  },
+  {
+    nombre: 'Pedido listo',
+    titulo: 'Tu pedido esta listo',
+    cuerpo: 'Pedido #{{numero}} listo para retirar.',
+    url: '/tarjeta',
+  },
+] as const;
 
 /** Payload que viaja en el job de BullMQ. */
 export interface PushJob {
@@ -319,5 +369,304 @@ export class PushService {
       accion: ok ? 'push.enviado' : 'push.fallido',
       detalle,
     });
+  }
+
+  // ==========================================================================
+  // PLANTILLAS DE PUSH
+  // ==========================================================================
+
+  /** Reemplaza {{var}} por su valor. Una variable sin valor se borra (no deja el {{token}}). */
+  renderizar(texto: string, vars: VariablesPlantilla): string {
+    return texto.replace(/\{\{\s*([a-zA-Z]+)\s*\}\}/g, (_todo, clave: string) => {
+      const valor = (vars as Record<string, unknown>)[clave];
+      return valor === undefined || valor === null ? '' : String(valor);
+    });
+  }
+
+  /** Sugerencias de plantilla + variables soportadas (las consume el admin). */
+  catalogoPlantillas() {
+    return { variables: [...VARIABLES_PLANTILLA], sugeridas: PLANTILLAS_DEFAULT };
+  }
+
+  listarPlantillas(negocioId: string) {
+    return this.prisma.plantillaPush.findMany({
+      where: { negocioId },
+      orderBy: [{ activa: 'desc' }, { creadoEn: 'asc' }],
+    });
+  }
+
+  async crearPlantilla(negocioId: string, dto: CrearPlantillaDto, empleadoId?: string) {
+    const plantilla = await this.prisma.plantillaPush.create({
+      data: {
+        negocioId,
+        nombre: dto.nombre,
+        titulo: dto.titulo,
+        cuerpo: dto.cuerpo,
+        ...(dto.icono !== undefined ? { icono: dto.icono } : {}),
+        ...(dto.url !== undefined ? { url: dto.url } : {}),
+        ...(dto.activa !== undefined ? { activa: dto.activa } : {}),
+      },
+    });
+    await this.auditoria.registrar({
+      negocioId,
+      accion: 'push.plantilla_creada',
+      empleadoId,
+      detalle: { plantillaId: plantilla.id, nombre: plantilla.nombre },
+    });
+    return plantilla;
+  }
+
+  async actualizarPlantilla(
+    negocioId: string,
+    id: string,
+    dto: ActualizarPlantillaDto,
+    empleadoId?: string,
+  ) {
+    const existente = await this.prisma.plantillaPush.findFirst({
+      where: { id, negocioId },
+      select: { id: true },
+    });
+    if (!existente) throw new NotFoundException('Plantilla no encontrada');
+
+    const plantilla = await this.prisma.plantillaPush.update({
+      where: { id },
+      data: {
+        ...(dto.nombre !== undefined ? { nombre: dto.nombre } : {}),
+        ...(dto.titulo !== undefined ? { titulo: dto.titulo } : {}),
+        ...(dto.cuerpo !== undefined ? { cuerpo: dto.cuerpo } : {}),
+        ...(dto.icono !== undefined ? { icono: dto.icono } : {}),
+        ...(dto.url !== undefined ? { url: dto.url } : {}),
+        ...(dto.activa !== undefined ? { activa: dto.activa } : {}),
+      },
+    });
+    await this.auditoria.registrar({
+      negocioId,
+      accion: 'push.plantilla_actualizada',
+      empleadoId,
+      detalle: { plantillaId: plantilla.id, nombre: plantilla.nombre },
+    });
+    return plantilla;
+  }
+
+  async eliminarPlantilla(negocioId: string, id: string, empleadoId?: string) {
+    const existente = await this.prisma.plantillaPush.findFirst({
+      where: { id, negocioId },
+      select: { id: true, nombre: true },
+    });
+    if (!existente) throw new NotFoundException('Plantilla no encontrada');
+    await this.prisma.plantillaPush.delete({ where: { id } });
+    await this.auditoria.registrar({
+      negocioId,
+      accion: 'push.plantilla_eliminada',
+      empleadoId,
+      detalle: { plantillaId: id, nombre: existente.nombre },
+    });
+    return { ok: true };
+  }
+
+  /** Configuracion resuelta para armar las variables de una campana. */
+  private async contextoPlantilla(negocioId: string) {
+    const [negocio, cfg] = await Promise.all([
+      this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { nombre: true } }),
+      this.prisma.configuracionClub.findUnique({
+        where: { negocioId },
+        select: { sellosParaPremio: true, premioTexto: true },
+      }),
+    ]);
+    return {
+      nombreNegocio: negocio?.nombre ?? 'el local',
+      meta: cfg?.sellosParaPremio ?? 0,
+      premioTexto: cfg?.premioTexto ?? 'tu premio',
+    };
+  }
+
+  /**
+   * Datos de EJEMPLO (un cliente real del negocio si hay, si no placeholders) para
+   * previsualizar y para la prueba a un dispositivo.
+   */
+  async datosEjemplo(negocioId: string) {
+    const { nombreNegocio, meta, premioTexto } = await this.contextoPlantilla(negocioId);
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { negocioId, eliminadoEn: null },
+      orderBy: { creadoEn: 'asc' },
+      select: { nombre: true, sellosActuales: true },
+    });
+    const actuales = cliente?.sellosActuales ?? Math.max(1, Math.floor(meta / 2));
+    return {
+      nombre: cliente?.nombre ?? 'Cliente de ejemplo',
+      negocio: nombreNegocio,
+      premio: premioTexto,
+      actuales,
+      meta,
+      faltantes: Math.max(0, meta - actuales),
+      numero: '1042',
+    } satisfies VariablesPlantilla;
+  }
+
+  /**
+   * Destinatarios de un segmento: solo clientes con una suscripcion push activa.
+   * - TODOS: todos los suscritos.
+   * - PREMIO_DESBLOQUEADO: sellosActuales >= meta.
+   * - INACTIVO_30: sin visita hace mas de 30 dias (incluye a los que nunca vinieron).
+   */
+  private async destinatariosDeSegmento(negocioId: string, segmento: SegmentoEnvio, meta: number) {
+    const base: Prisma.NotificacionPushWhereInput = {
+      negocioId,
+      activa: true,
+      cliente: { eliminadoEn: null },
+    };
+    if (segmento === 'PREMIO_DESBLOQUEADO') {
+      base.cliente = { eliminadoEn: null, sellosActuales: { gte: meta } };
+    } else if (segmento === 'INACTIVO_30') {
+      const corte = new Date(Date.now() - 30 * 86_400_000);
+      base.cliente = {
+        eliminadoEn: null,
+        OR: [{ ultimaVisita: { lt: corte } }, { ultimaVisita: null }],
+      };
+    }
+
+    const subs = await this.prisma.notificacionPush.findMany({
+      where: base,
+      select: {
+        clienteId: true,
+        cliente: { select: { nombre: true, sellosActuales: true } },
+      },
+    });
+
+    // Dedupe por cliente (un cliente puede tener varios dispositivos suscritos).
+    const porCliente = new Map<string, { id: string; nombre: string; sellosActuales: number }>();
+    for (const s of subs) {
+      if (!porCliente.has(s.clienteId)) {
+        porCliente.set(s.clienteId, {
+          id: s.clienteId,
+          nombre: s.cliente.nombre,
+          sellosActuales: s.cliente.sellosActuales,
+        });
+      }
+    }
+    return [...porCliente.values()];
+  }
+
+  /**
+   * Envia una plantilla. Con `endpoint` es una PRUEBA a ese dispositivo; sin el,
+   * una campana por `segmento` a todos los suscritos del segmento.
+   */
+  async enviarConPlantilla(negocioId: string, dto: EnviarPlantillaDto, empleadoId?: string) {
+    this.exigirVapid();
+
+    const plantilla = await this.prisma.plantillaPush.findFirst({
+      where: { id: dto.plantillaId, negocioId },
+    });
+    if (!plantilla) throw new NotFoundException('Plantilla no encontrada');
+
+    const ctx = await this.contextoPlantilla(negocioId);
+    const titulo = dto.titulo ?? plantilla.titulo;
+    const cuerpo = dto.cuerpo ?? plantilla.cuerpo;
+    const url = dto.url ?? plantilla.url ?? undefined;
+
+    // --- Prueba a UN dispositivo ---
+    if (dto.endpoint) {
+      const vars = await this.datosEjemplo(negocioId);
+      const [cliente, empleado] = await Promise.all([
+        this.prisma.notificacionPush.findFirst({
+          where: { endpoint: dto.endpoint, activa: true },
+          select: { id: true, endpoint: true, auth: true, p256dh: true },
+        }),
+        this.prisma.notificacionPushEmpleado.findFirst({
+          where: { endpoint: dto.endpoint, activa: true },
+          select: { id: true, endpoint: true, auth: true, p256dh: true },
+        }),
+      ]);
+      const sub = cliente ?? empleado;
+      if (!sub) throw new NotFoundException('Ese dispositivo no tiene una suscripcion activa');
+
+      try {
+        await this.enviarAPayload(sub, {
+          title: this.renderizar(titulo, vars),
+          body: this.renderizar(cuerpo, vars),
+          url: url ? this.renderizar(url, vars) : undefined,
+          icon: plantilla.icono ?? undefined,
+          timestamp: Date.now(),
+        });
+      } catch (e) {
+        const status = (e as { statusCode?: number }).statusCode;
+        if (status === 404 || status === 410) {
+          await this.desuscribir(sub.endpoint);
+          throw new BadRequestException('La suscripcion de ese dispositivo ya no es valida');
+        }
+        throw e;
+      }
+
+      await this.auditoria.registrar({
+        negocioId,
+        accion: 'push.prueba_enviada',
+        empleadoId,
+        detalle: { plantillaId: plantilla.id, endpoint: sub.endpoint.slice(0, 60) },
+      });
+      return { prueba: true, enviados: 1 };
+    }
+
+    // --- Campana por segmento ---
+    if (!dto.segmento) {
+      throw new BadRequestException('Indica un segmento o un endpoint de prueba');
+    }
+    await this.limites.exigirLimite(negocioId, 'CAMPANAS_PUSH_MES');
+
+    const destinatarios = await this.destinatariosDeSegmento(negocioId, dto.segmento, ctx.meta);
+
+    const jobs = await Promise.all(
+      destinatarios.map((c) => {
+        const vars: VariablesPlantilla = {
+          nombre: c.nombre,
+          negocio: ctx.nombreNegocio,
+          premio: ctx.premioTexto,
+          actuales: c.sellosActuales,
+          meta: ctx.meta,
+          faltantes: Math.max(0, ctx.meta - c.sellosActuales),
+          numero: '',
+        };
+        return this.cola.add(
+          'enviar',
+          {
+            negocioId,
+            destino: 'cliente',
+            id: c.id,
+            titulo: this.renderizar(titulo, vars),
+            cuerpo: this.renderizar(cuerpo, vars),
+            ...(url ? { url: this.renderizar(url, vars) } : {}),
+          },
+          { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
+        );
+      }),
+    );
+
+    await this.prisma.campanaMarketing.create({
+      data: {
+        negocioId,
+        titulo,
+        mensaje: cuerpo,
+        url: url ?? null,
+        segmento: dto.segmento,
+        canal: 'PUSH',
+        esAutomatizacion: false,
+        enviadaEn: new Date(),
+        totalEnviados: jobs.length,
+      },
+    });
+
+    await this.auditoria.registrar({
+      negocioId,
+      accion: 'push.plantilla_encolada',
+      empleadoId,
+      detalle: {
+        plantillaId: plantilla.id,
+        segmento: dto.segmento,
+        destinatarios: destinatarios.length,
+      },
+    });
+
+    await this.limites.incrementarUso(negocioId, 'CAMPANAS_PUSH_MES');
+
+    return { encolados: jobs.length, destinatarios: destinatarios.length };
   }
 }

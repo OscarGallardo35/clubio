@@ -207,6 +207,7 @@ model Negocio {
   notificacionesPush    NotificacionPush[]
   notificacionesPushEmp NotificacionPushEmpleado[]
   campanas              CampanaMarketing[]
+  plantillasPush        PlantillaPush[]
   tokensValidacion      TokenValidacion[]
   usoMensual            UsoMensual[]
   eventosAuditoria      EventoAuditoria[]
@@ -930,6 +931,26 @@ model CampanaMarketing {
 
   @@index([negocioId, enviadaEn])
   @@index([negocioId, esAutomatizacion])
+}
+
+// Plantilla de notificacion push reutilizable (CRUD del admin).
+// El cuerpo/titulo pueden tener variables: {{nombre}}, {{negocio}}, {{premio}},
+// {{actuales}}, {{meta}}, {{faltantes}}, {{numero}}.
+model PlantillaPush {
+  id            String   @id @default(cuid())
+  negocioId     String
+  nombre        String
+  titulo        String
+  cuerpo        String   @db.Text
+  icono         String?
+  url           String?
+  activa        Boolean  @default(true)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId, activa])
 }
 
 // ============================================================================

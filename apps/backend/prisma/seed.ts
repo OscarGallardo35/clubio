@@ -198,6 +198,33 @@ async function seedNegocioCompleto() {
     },
   });
 
+  // 2a. Plantillas push default (mismas que PLANTILLAS_DEFAULT del PushService).
+  await prisma.plantillaPush.createMany({
+    data: [
+      {
+        negocioId: negocio.id,
+        nombre: 'Sello sumado',
+        titulo: '¡Sumaste un sello!',
+        cuerpo: 'Llevas {{actuales}} de {{meta}}. Te faltan {{faltantes}}.',
+        url: '/tarjeta',
+      },
+      {
+        negocioId: negocio.id,
+        nombre: 'Premio desbloqueado',
+        titulo: '¡Premio desbloqueado!',
+        cuerpo: 'Mostra esta pantalla en {{negocio}} para canjear tu {{premio}}.',
+        url: '/tarjeta',
+      },
+      {
+        negocioId: negocio.id,
+        nombre: 'Pedido listo',
+        titulo: 'Tu pedido esta listo',
+        cuerpo: 'Pedido #{{numero}} listo para retirar.',
+        url: '/tarjeta',
+      },
+    ],
+  });
+
   // 2. Configuración del club (global)
   await prisma.configuracionClub.create({
     data: {

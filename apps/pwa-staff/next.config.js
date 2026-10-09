@@ -56,7 +56,10 @@ const nextConfig = {
      * entradas se pueden borrar (nadie deberia estar entrando sin slug).
      */
     const D = process.env.NEXT_PUBLIC_DEFAULT_TENANT || 'bar-la-esquina';
-    const SIN_TENANT = ['login', 'turnos', 'visitas', 'pedidos', 'perfil', 'carta', 'validar', 'validar-pedido'];
+    // OJO: `/login` NO esta en la lista a proposito. El healthcheck de Railway pega ahi y rechaza un
+    // 3xx (deploy en FAILED): esa ruta la sirve una pagina que responde 200 y reenvia desde el
+    // cliente (ver `app/login/page.tsx` y el middleware).
+    const SIN_TENANT = ['turnos', 'visitas', 'pedidos', 'perfil', 'carta', 'validar', 'validar-pedido'];
     return [
       { source: '/pedido/:token', destination: `/${D}/validar-pedido?ref=:token`, permanent: true },
       { source: '/', destination: `/${D}/turnos`, permanent: false },

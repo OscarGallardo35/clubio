@@ -34,6 +34,13 @@ export function middleware(req: NextRequest) {
 
   const tenant = tenantDePath(pathname);
 
+  // `/login` (la URL vieja, sin slug) NO se redirige: sirve una pagina propia que devuelve 200 y
+  // reenvia desde el cliente. El healthcheck de Railway pega justo ahi y rechaza cualquier 3xx: con
+  // un redirect el deploy queda en FAILED ("1/1 replicas never became healthy").
+  if (pathname === '/login' || pathname.startsWith('/login/')) {
+    return NextResponse.next();
+  }
+
   if (!tenant) {
     const url = req.nextUrl.clone();
     url.pathname = `/${DEFAULT_TENANT}${pathname === '/' ? RUTA_INICIO : pathname}`;

@@ -97,6 +97,9 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
         mostrarUltimaVisita
         reducedMotion={reducedMotion}
         theme={theme}
+        // Icono de esquina (solo rama con theme): se deriva del slug. Prefiere
+        // el slug del branding resuelto; cae al de la URL si todavia no cargo.
+        slugTenant={negocio?.slug ?? slugNegocio}
         {...(v.ultimaVisita ? { ultimaVisita: v.ultimaVisita } : {})}
       />
 

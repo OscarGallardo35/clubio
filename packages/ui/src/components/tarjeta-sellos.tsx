@@ -90,6 +90,12 @@ export interface TarjetaSellosProps {
   reducedMotion?: boolean | undefined
   /** Theme del tenant. null/undefined = diseno por defecto (regresion intacta). */
   theme?: TemaTarjeta | null | undefined
+  /**
+   * Slug del tenant, para derivar el icono de esquina `/icons/<slug>-icono.jpg`
+   * (con fallback al generico `/icons/icono.jpg`). Solo se usa en la rama CON
+   * theme; la rama historica lo ignora, asi que no afecta la regresion.
+   */
+  slugTenant?: string | undefined
   className?: string | undefined
 }
 
@@ -232,6 +238,33 @@ function Confeti({ cantidad, global, colorPrimario, colorSecundario }: {
         />
       ))}
     </div>
+  )
+}
+
+// --- icono de esquina del tenant ------------------------------------------
+/**
+ * Icono del tenant, discreto, en la esquina superior derecha del header.
+ *
+ * Fuente en ese orden: `/icons/<slug>-icono.jpg` (override multi-tenant) y, si
+ * no existe, el generico `/icons/icono.jpg`. Si tampoco existe, se oculta solo
+ * via `onError`: nunca deja cuadro roto. Es decorativo (el nombre del negocio ya
+ * esta en el header), asi que va con `alt=""` y `aria-hidden`.
+ */
+function IconoEsquina({ slug, className }: { slug: string; className: string }) {
+  // 0 = override por slug | 1 = generico | 2 = oculto
+  const [etapa, setEtapa] = React.useState<0 | 1 | 2>(slug ? 0 : 1)
+  if (etapa === 2) return null
+  const src = etapa === 0 ? `/icons/${slug}-icono.jpg` : '/icons/icono.jpg'
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      data-slot="tarjeta-icono-tenant"
+      src={src}
+      alt=""
+      aria-hidden="true"
+      onError={() => setEtapa((e) => (e === 0 ? 1 : 2))}
+      className={className}
+    />
   )
 }
 
@@ -379,6 +412,7 @@ export function TarjetaSellos({
   onClick,
   reducedMotion = false,
   theme = null,
+  slugTenant,
   className,
 }: TarjetaSellosProps) {
   const config = CONFIG[tamaño]
@@ -527,8 +561,12 @@ export function TarjetaSellos({
       }
     : { minHeight: 'inherit' as const }
 
-  const overlayTheme = theme ? hexARgba(theme.colores.brandDark, 0.55) : null
-  const overlayTop = theme ? hexARgba(theme.colores.brandDark, 0.12) : null
+  // Capa de color de marca sobre la imagen de fondo: 70% arriba a 85% abajo.
+  // Es lo que GARANTIZA el contraste >= 4.5:1 del texto blanco sobre la foto
+  // (incluso si la imagen tiene zonas claras/blancas): con brandDark #7A0A1C al
+  // 70% un pixel blanco compuesto queda en ~5.3:1 con blanco; al 85%, ~8:1.
+  const overlayTheme = theme ? hexARgba(theme.colores.brandDark, 0.85) : null
+  const overlayTop = theme ? hexARgba(theme.colores.brandDark, 0.7) : null
 
   return (
     <motion.div
@@ -642,12 +680,21 @@ export function TarjetaSellos({
               <p className={cn('truncate font-bold text-white', config.titulo)}>{nombreNegocio}</p>
             )}
           </div>
-          {completa ? (
-            theme ? (
-              <Crown aria-hidden="true" className={cn('ml-auto shrink-0', config.icono)} style={{ color: theme.colores.accent }} />
-            ) : (
-              <Crown aria-hidden="true" className={cn('ml-auto shrink-0 text-white', config.icono)} />
-            )
+          {theme ? (
+            // Rama CON theme: grupo a la derecha = corona (si completo) + icono
+            // del tenant en la esquina superior derecha. Va EN FLUJO (ml-auto),
+            // asi nunca tapa nombre, sellos ni el banner de premio.
+            <span className="ml-auto flex shrink-0 items-center gap-2">
+              {completa ? (
+                <Crown aria-hidden="true" className={cn('shrink-0', config.icono)} style={{ color: theme.colores.accent }} />
+              ) : null}
+              <IconoEsquina
+                slug={slugTenant ?? ''}
+                className={cn('shrink-0 rounded-xl object-cover ring-1 ring-white/25', tamaño === 'full' ? 'size-8' : 'size-6')}
+              />
+            </span>
+          ) : completa ? (
+            <Crown aria-hidden="true" className={cn('ml-auto shrink-0 text-white', config.icono)} />
           ) : null}
         </header>
 

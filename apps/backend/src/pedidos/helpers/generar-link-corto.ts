@@ -15,13 +15,14 @@ export function calcularExpiracion(horas = HORAS_EXPIRACION): Date {
 /**
  * URL que abre el atendiente en la PWA Staff.
  *
- * Apunta a `/validar-pedido?ref=TOKEN` (una pantalla del staff que resuelve el linkToken y
- * entra al detalle del pedido). Antes apuntaba a `/pedido/TOKEN`, una ruta que NO existe en
- * la PWA Staff: el staff hacia click y comia un "This page could not be found".
+ * Apunta a `/<slug>/validar-pedido?ref=TOKEN`: la PWA Staff es multi-tenant y el slug es el del
+ * **negocio del pedido**. Sin el, el middleware manda al tenant por defecto y el pedido de otro
+ * local aparece como "no encontrado" (el backend lo busca en el negocio equivocado). El slug
+ * llega por parametro: sale del pedido, nunca de una variable global.
  */
-export function construirUrlCorta(linkToken: string): string {
+export function construirUrlCorta(linkToken: string, slugNegocio: string): string {
   const base = (process.env.STAFF_APP_URL ?? 'https://staff.dominio.com').replace(/\/$/, '');
-  return `${base}/validar-pedido?ref=${linkToken}`;
+  return `${base}/${slugNegocio}/validar-pedido?ref=${linkToken}`;
 }
 
 /** ¿El link ya vencio? */

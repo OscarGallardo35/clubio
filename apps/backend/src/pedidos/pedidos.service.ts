@@ -267,7 +267,7 @@ export class PedidosService {
     });
     if (!pedido) throw new BadRequestException('No se pudo generar el link del pedido');
 
-    const urlCorta = construirUrlCorta(linkToken);
+    const urlCorta = construirUrlCorta(linkToken, await this.slugDelNegocio(negocioId));
     const mensajeWhatsApp = generarMensajeWhatsApp({
       nombreCliente: pedido.nombreCliente, items, subtotal, costoEnvio, total,
       tipo: dto.tipo, mesa: pedido.mesa, modoPago: dto.modoPago, notas: pedido.notas, urlCorta,
@@ -501,8 +501,24 @@ export class PedidosService {
       // reenviarselo al cliente desde el detalle. Antes el detalle lo leia del response y
       // siempre venia `undefined` (solo lo armaba crearPedido), asi que el boton abria
       // WhatsApp SIN texto.
-      ...(this.mensajeWhatsAppDelPedido(pedido) ?? {}),
+      ...(this.mensajeWhatsAppDelPedido(pedido, await this.slugDelNegocio(negocioId)) ?? {}),
     };
+  }
+
+  /**
+   * Slug del negocio, para armar los links que van a la PWA Staff multi-tenant.
+   *
+   * El slug SIEMPRE sale del negocio (del pedido / de la visita), nunca de una variable global: con
+   * un slug fijo, el pedido de un local termina en la pantalla de otro y el backend lo busca en el
+   * negocio equivocado ("pedido no encontrado").
+   */
+  private async slugDelNegocio(negocioId: string): Promise<string> {
+    const negocio = await this.prisma.negocio.findUnique({
+      where: { id: negocioId },
+      select: { slug: true },
+    });
+    if (!negocio) throw new NotFoundException('Negocio no encontrado');
+    return negocio.slug;
   }
 
   /**
@@ -516,7 +532,7 @@ export class PedidosService {
     nombreCliente: string; items: unknown; subtotal: unknown; costoEnvio: unknown;
     total: unknown; tipo: string; mesa: string | null; modoPago: string; notas: string | null;
     linkToken: string | null; linkExpiraEn: Date | null;
-  }): { mensajeWhatsApp: string } | null {
+  }, slugNegocio: string): { mensajeWhatsApp: string } | null {
     if (!pedido.linkToken || linkVencido(pedido.linkExpiraEn)) return null;
 
     // El JSON guardado puede venir de versiones viejas: se normaliza `modificadores` porque
@@ -537,7 +553,7 @@ export class PedidosService {
         mesa: pedido.mesa,
         modoPago: pedido.modoPago,
         notas: pedido.notas,
-        urlCorta: construirUrlCorta(pedido.linkToken),
+        urlCorta: construirUrlCorta(pedido.linkToken, slugNegocio),
       }),
     };
   }

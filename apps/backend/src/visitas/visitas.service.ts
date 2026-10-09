@@ -154,13 +154,15 @@ export class VisitasService {
     }
 
     const telefonoEnmascarado = enmascararTelefono(cliente.telefono);
-    // El link de validacion va en el mensaje: el staff lo abre desde el WhatsApp y cae
-    // directo en la pantalla de aprobacion, con el token ya puesto.
-    const urlValidacion = `${(process.env.STAFF_APP_URL ?? 'https://staff.clubio.lat').replace(/\/$/, '')}/validar?ref=${token.token}`;
     const negocio = await this.prisma.negocio.findUnique({
       where: { id: negocioId },
-      select: { nombre: true },
+      select: { nombre: true, slug: true },
     });
+    // El link de validacion va en el mensaje: el staff lo abre desde el WhatsApp y cae directo en la
+    // pantalla de aprobacion, con el token ya puesto. Lleva el SLUG del negocio: la PWA Staff es
+    // multi-tenant y sin el, el middleware manda al tenant por defecto (la visita de otro local
+    // aparecia como "no encontrada").
+    const urlValidacion = `${(process.env.STAFF_APP_URL ?? 'https://staff.clubio.lat').replace(/\/$/, '')}/${negocio?.slug ?? ''}/validar?ref=${token.token}`;
     const mensajeWhatsApp =
       `Hola, soy ${cliente.nombre}. Quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}. ` +
       `Ref: ${token.token}. Validar aqui: ${urlValidacion}`;
@@ -180,8 +182,8 @@ export class VisitasService {
 
     return {
       token: token.token,
-      // E (#3.0): la URL del staff sale del entorno, no hardcodeada.
-      urlValidacion: `${(process.env.STAFF_APP_URL ?? 'https://staff.clubio.lat').replace(/\/$/, '')}/validar?ref=${token.token}`,
+      // E (#3.0): la URL del staff sale del entorno + el SLUG del negocio (nunca hardcodeado).
+      urlValidacion,
       mensajeWhatsApp,
       expiraEn: token.expiraEn,
       reutilizado: !!activo,

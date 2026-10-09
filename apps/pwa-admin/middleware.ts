@@ -33,10 +33,23 @@ export function middleware(req: NextRequest) {
 
   const tenant = tenantDePath(pathname);
 
-  // `/login` (la URL vieja, sin slug) NO se redirige: sirve una pagina propia que devuelve 200 y
-  // reenvia desde el cliente. El healthcheck de Railway pega justo ahi y rechaza cualquier 3xx: con
-  // un redirect el deploy queda en FAILED ("1/1 replicas never became healthy").
+  // `/login` (la URL vieja, sin slug) NO se redirige a un local por defecto. Antes, la pagina
+  // reenviaba a `DEFAULT_TENANT` (el slug del seed: `bar-la-esquina`), asi que el dueno de OTRO
+  // local que entraba por un bookmark/link sin slug terminaba en el login del seed y sus
+  // credenciales daban 401 (bug reportado con `que-lomitos`).
+  //
+  // Ahora: si YA hay sesion, se sigue al negocio DEL TOKEN (`slugDelToken`); si no, la pagina
+  // muestra un selector de local (devuelve 200). El healthcheck de Railway NO manda cookie, asi
+  // que nunca cae en el redirect y sigue viendo 200 (un 3xx lo dejaria en FAILED).
   if (pathname === '/login' || pathname.startsWith('/login/')) {
+    const cookieLogin = req.cookies.get(COOKIE_SESION)?.value;
+    const slugSesion = slugDelToken(cookieLogin);
+    if (slugSesion) {
+      const url = req.nextUrl.clone();
+      url.pathname = `/${slugSesion}${RUTA_INICIO}`;
+      url.search = '';
+      return NextResponse.redirect(url);
+    }
     return NextResponse.next();
   }
 

@@ -313,6 +313,13 @@ export const endpoints = {
   push: {
     vapidPublicKey: '/api/push/vapid-public-key',
     suscribir: '/api/push/suscribir',
+    suscribirEmpleado: '/api/push/suscribir-empleado',
+    suscripciones: '/api/push/suscripciones',
+    /** Plantillas de notificacion (CRUD del admin). */
+    plantillas: '/api/push/plantillas',
+    plantilla: (id: string) => `/api/push/plantillas/${encodeURIComponent(id)}`,
+    /** Envio por plantilla: segmento o prueba a un dispositivo. */
+    enviar: '/api/push/enviar',
   },
   media: {
     /**

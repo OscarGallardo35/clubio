@@ -5,6 +5,7 @@ import { useTenant } from '@/hooks/useTenant';
 import { rutaDe } from '@/lib/tenant';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Separator, buttonVariants } from '@repo/ui';
 import { useEmpleado } from '@/hooks/useEmpleado';
+import { CardNotificaciones } from '@/components/notificaciones/CardNotificaciones';
 
 /** Quien soy, donde trabajo, con que plan, y como salir. */
 export default function PerfilPage() {
@@ -76,6 +77,9 @@ export default function PerfilPage() {
           </Link>
         </CardContent>
       </Card>
+
+      {/* Solo si el plan del local incluye push (si no, el backend responde 403 al suscribir). */}
+      {negocio?.features?.['push']?.habilitada ? <CardNotificaciones /> : null}
 
       <Separator />
       <Button variant="destructive" className="min-h-12 w-full" onClick={() => void logout()}>

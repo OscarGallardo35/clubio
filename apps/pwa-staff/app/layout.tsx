@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Toaster } from '@repo/ui';
+import { RegistroServiceWorker } from '@/components/RegistroServiceWorker';
 import './globals.css';
 
 const COLOR_PRIMARIO_DEFECTO = 'hsl(0 84.2% 60.2%)';
@@ -23,6 +24,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es-AR">
       <body className="min-h-dvh bg-background text-foreground antialiased">
+        {/* Registra /sw.js: sin SW no existe pushManager.subscribe(). */}
+        <RegistroServiceWorker />
         {children}
         <Toaster />
       </body>

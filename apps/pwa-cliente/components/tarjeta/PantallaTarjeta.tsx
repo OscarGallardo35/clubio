@@ -23,6 +23,7 @@ import { useCliente } from '@/hooks/useCliente'
 import { useMiTarjeta } from '@/hooks/useMiTarjeta'
 import { useSucursalActiva } from '@/hooks/useSucursalActiva'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { CardNotificaciones } from '@/components/notificaciones/CardNotificaciones'
 import { COLOR_PRIMARIO_DEFECTO, COLOR_SECUNDARIO_DEFECTO, RUTAS } from '@/lib/constants'
 import { vistaDeTarjeta } from '@/lib/tarjeta'
 
@@ -34,7 +35,7 @@ const DEMO_HABILITADO =
   process.env.NEXT_PUBLIC_DEMO_TARJETA === 'true' || process.env.NODE_ENV !== 'production'
 
 export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
-  const { negocio, configuracion, cargando: cargandoBranding } = useBranding()
+  const { negocio, configuracion, cargando: cargandoBranding, tieneFeature } = useBranding()
   const { slugParaApi } = useSucursalActiva()
   // Auto-login: pega a /auth/cliente/me con la cookie. `resuelto` dice si ya se sabe si hay sesion.
   const { autenticado, resuelto, sesionDeOtroLocal, logout } = useCliente()
@@ -229,6 +230,9 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
       {v.sucursalNombre ? (
         <p className="text-center text-xs text-white/70">Tarjeta de {v.sucursalNombre}</p>
       ) : null}
+
+      {/* Solo si el plan del local incluye push (si no, el backend responde 403 al suscribir). */}
+      {tieneFeature('push') ? <CardNotificaciones /> : null}
     </div>
   )
 }

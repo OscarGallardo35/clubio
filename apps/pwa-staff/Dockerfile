@@ -30,8 +30,9 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-staff/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-staff/.next/static ./apps/pwa-staff/.next/static
-# Esta PWA no tiene public/ (no hay assets estaticos propios). Un COPY de una fuente
-# inexistente rompe el build con "failed to compute cache key".
+# Esta PWA ahora SI tiene public/ (manifest, iconos y screenshots de instalacion). El COPY se
+# agrega junto con los assets: si se omite, `next start` los busca en el disco del runner y da 404.
+COPY --from=builder --chown=nextjs:nodejs /app/apps/pwa-staff/public ./apps/pwa-staff/public
 USER nextjs
 EXPOSE 3000
 CMD ["node", "apps/pwa-staff/server.js"]

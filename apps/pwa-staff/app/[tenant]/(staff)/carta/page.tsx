@@ -151,7 +151,7 @@ export default function CartaPage() {
 
       {categorias.length > 1 ? (
         <Tabs value={categoria} onValueChange={setCategoria}>
-          <TabsList className="flex w-max gap-1 overflow-x-auto">
+          <TabsList className="gap-1">
             <TabsTrigger value="todas">Todas</TabsTrigger>
             {categorias.map((c) => (
               <TabsTrigger key={c} value={c}>

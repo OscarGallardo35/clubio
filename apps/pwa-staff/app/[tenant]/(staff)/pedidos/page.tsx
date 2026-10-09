@@ -95,7 +95,7 @@ export default function PedidosPage() {
       </header>
 
       <Tabs value={filtro} onValueChange={(v) => setFiltro(v as '' | EstadoPedido)}>
-        <TabsList className="flex w-max gap-1 overflow-x-auto">
+        <TabsList className="gap-1">
           {FILTROS.map((f) => (
             <TabsTrigger key={f.valor || 'activos'} value={f.valor}>
               {f.etiqueta}

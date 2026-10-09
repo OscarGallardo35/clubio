@@ -92,7 +92,7 @@ export default function ConfiguracionPage() {
       {cfg ? (
         <>
           <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="flex w-max gap-1">
+            <TabsList className="gap-1">
               <TabsTrigger value="programa">Programa</TabsTrigger>
               <TabsTrigger value="local">Local</TabsTrigger>
               <TabsTrigger value="pagos">Pagos</TabsTrigger>

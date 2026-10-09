@@ -117,6 +117,60 @@ export class PushService {
     }
   }
 
+  // ==========================================================================
+  // URLs de los pushes
+  // ==========================================================================
+
+  /** Base de la PWA Cliente (regla de la casa: link del cliente = PUBLIC_APP_URL + slug). */
+  private baseCliente(): string {
+    return (process.env.PUBLIC_APP_URL ?? 'https://app.dominio.com').replace(/\/+$/, '');
+  }
+
+  /** Base de la PWA Staff (link del staff = STAFF_APP_URL + slug, igual que `construirUrlCorta`). */
+  private baseStaff(): string {
+    return (process.env.STAFF_APP_URL ?? 'https://staff.dominio.com').replace(/\/+$/, '');
+  }
+
+  private async slugDelNegocio(negocioId: string): Promise<string | null> {
+    const n = await this.prisma.negocio.findUnique({
+      where: { id: negocioId },
+      select: { slug: true },
+    });
+    return n?.slug ?? null;
+  }
+
+  /**
+   * Normaliza la ruta de un push a una URL ABSOLUTA y con el slug del tenant.
+   *
+   * Regla de la casa (identica a `urlVerificacion` de visitas y a los QR de negocios):
+   * el link que abre el celular es `<base>/<slug>/<ruta>`. Una ruta relativa (p. ej.
+   * `/tarjeta`) NO alcanza: en una app multi-tenant resuelve por cookie/subdominio y
+   * puede caer en otra pantalla o en "Todavia no tenes tarjeta".
+   *
+   *  - vacio/undefined -> undefined (el SW cae a su ruta por defecto; no se rompe).
+   *  - ya absoluta (http/https) -> se respeta tal cual (compatibilidad).
+   *  - relativa -> `<base>/<slug>/<ruta>`.
+   *  - si la ruta ya trae el slug, NO se duplica.
+   *  - sin slug (negocio sin slug) se degrada a `<base>/<ruta>`.
+   */
+  async urlDePush(
+    negocioId: string,
+    ruta: string | null | undefined,
+    destino: 'cliente' | 'staff',
+  ): Promise<string | undefined> {
+    const limpia = (ruta ?? '').trim();
+    if (!limpia) return undefined;
+    if (/^https?:\/\//i.test(limpia)) return limpia; // absoluta cargada a mano: respetar
+
+    const base = destino === 'cliente' ? this.baseCliente() : this.baseStaff();
+    const rel = limpia.replace(/^\/+/, '');
+    const slug = await this.slugDelNegocio(negocioId);
+
+    if (!slug) return `${base}/${rel}`;
+    if (rel === slug || rel.startsWith(`${slug}/`)) return `${base}/${rel}`;
+    return `${base}/${slug}/${rel}`;
+  }
+
   /** Suscribe un CLIENTE (upsert por endpoint: un endpoint es de un solo dispositivo). */
   async suscribirCliente(negocioId: string, clienteId: string, dto: SuscribirPushDto) {
     this.exigirVapid();
@@ -181,6 +235,9 @@ export class PushService {
     // CAMPANAS_PUSH_MES: cuenta campanas por mes.
     await this.limites.exigirLimite(negocioId, 'CAMPANAS_PUSH_MES');
 
+    // La URL sale ABSOLUTA y con el slug del tenant (link del cliente = PUBLIC_APP_URL + slug).
+    const url = await this.urlDePush(negocioId, dto.url, 'cliente');
+
     let clienteIds: string[];
     if (dto.clienteIds?.length) {
       const propios = await this.prisma.cliente.findMany({
@@ -207,7 +264,7 @@ export class PushService {
       clienteIds.map((id) =>
         this.cola.add(
           'enviar',
-          { negocioId, destino: 'cliente', id, titulo: dto.titulo, cuerpo: dto.cuerpo, url: dto.url },
+          { negocioId, destino: 'cliente', id, titulo: dto.titulo, cuerpo: dto.cuerpo, url },
           {
             attempts: 3,
             backoff: { type: 'custom' }, // 5s, 30s, 5min (ver PushProcessor.backoffStrategy)
@@ -224,7 +281,7 @@ export class PushService {
     await this.prisma.campanaMarketing.create({
       data: {
         negocioId, titulo: dto.titulo, mensaje: dto.cuerpo,
-        url: dto.url ?? null, segmento: dto.segmento ?? 'TODOS',
+        url: url ?? null, segmento: dto.segmento ?? 'TODOS',
         canal: 'PUSH', esAutomatizacion: false,
         enviadaEn: new Date(), totalEnviados: jobs.length,
       },
@@ -251,6 +308,9 @@ export class PushService {
   ) {
     if (!this.habilitado) return { encolados: 0, motivo: 'VAPID no configurado' };
 
+    // Staff: link absoluto con el slug (link del staff = STAFF_APP_URL + slug).
+    const url = await this.urlDePush(negocioId, payload.url, 'staff');
+
     const suscripciones = await this.prisma.notificacionPushEmpleado.findMany({
       where: {
         negocioId, activa: true,
@@ -265,7 +325,7 @@ export class PushService {
       suscripciones.map((s) =>
         this.cola.add(
           'enviar',
-          { negocioId, destino: 'empleado', id: s.empleadoId, titulo: payload.title, cuerpo: payload.body, url: payload.url },
+          { negocioId, destino: 'empleado', id: s.empleadoId, titulo: payload.title, cuerpo: payload.body, url },
           { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
         ),
       ),
@@ -284,9 +344,12 @@ export class PushService {
     });
     if (!activas) return { encolados: 0, motivo: 'sin suscripciones' };
 
+    // Staff: link absoluto con el slug (link del staff = STAFF_APP_URL + slug).
+    const url = await this.urlDePush(negocioId, payload.url, 'staff');
+
     const job = await this.cola.add(
       'enviar',
-      { negocioId, destino: 'empleado', id: empleadoId, titulo: payload.title, cuerpo: payload.body, url: payload.url },
+      { negocioId, destino: 'empleado', id: empleadoId, titulo: payload.title, cuerpo: payload.body, url },
       { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
     );
     return { encolados: 1, jobId: job.id };
@@ -305,11 +368,14 @@ export class PushService {
     });
     if (!suscripciones) return { encolados: 0, motivo: 'sin suscripciones' };
 
+    // Cliente: link absoluto con el slug del negocio al que pertenece la suscripcion.
+    const url = await this.urlDePush(suscripciones.negocioId, payload.url, 'cliente');
+
     const job = await this.cola.add(
       'enviar',
       {
         negocioId: suscripciones.negocioId, destino: 'cliente', id: clienteId,
-        titulo: payload.title, cuerpo: payload.body, url: payload.url,
+        titulo: payload.title, cuerpo: payload.body, url,
       },
       { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
     );
@@ -580,11 +646,18 @@ export class PushService {
       const sub = cliente ?? empleado;
       if (!sub) throw new NotFoundException('Ese dispositivo no tiene una suscripcion activa');
 
+      // El dispositivo puede ser de un cliente o de un empleado: la base del link depende de eso.
+      const urlDestino = await this.urlDePush(
+        negocioId,
+        url ? this.renderizar(url, vars) : undefined,
+        cliente ? 'cliente' : 'staff',
+      );
+
       try {
         await this.enviarAPayload(sub, {
           title: this.renderizar(titulo, vars),
           body: this.renderizar(cuerpo, vars),
-          url: url ? this.renderizar(url, vars) : undefined,
+          url: urlDestino,
           icon: plantilla.icono ?? undefined,
           timestamp: Date.now(),
         });
@@ -613,6 +686,8 @@ export class PushService {
     await this.limites.exigirLimite(negocioId, 'CAMPANAS_PUSH_MES');
 
     const destinatarios = await this.destinatariosDeSegmento(negocioId, dto.segmento, ctx.meta);
+    // Campana a clientes: el link sale absoluto y con el slug del tenant.
+    const urlCampana = await this.urlDePush(negocioId, url, 'cliente');
 
     const jobs = await Promise.all(
       destinatarios.map((c) => {
@@ -633,7 +708,7 @@ export class PushService {
             id: c.id,
             titulo: this.renderizar(titulo, vars),
             cuerpo: this.renderizar(cuerpo, vars),
-            ...(url ? { url: this.renderizar(url, vars) } : {}),
+            ...(urlCampana ? { url: this.renderizar(urlCampana, vars) } : {}),
           },
           { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
         );
@@ -645,7 +720,7 @@ export class PushService {
         negocioId,
         titulo,
         mensaje: cuerpo,
-        url: url ?? null,
+        url: urlCampana ?? null,
         segmento: dto.segmento,
         canal: 'PUSH',
         esAutomatizacion: false,

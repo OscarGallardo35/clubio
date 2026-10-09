@@ -678,15 +678,15 @@ export function TarjetaSellos({
           <header className="relative flex flex-col items-center gap-2 text-center">
             <span
               aria-hidden="true"
-              className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full', tamaño === 'full' ? 'size-[52px]' : 'size-9')}
+              className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-full', tamaño === 'full' ? 'size-[76px]' : 'size-9')}
               style={{ backgroundColor: theme.colores.accent }}
             >
               <IconoEsquina
                 slug={slugTenant ?? ''}
-                className={cn('rounded-full object-cover', tamaño === 'full' ? 'size-11' : 'size-7')}
+                className={cn('rounded-full object-cover', tamaño === 'full' ? 'size-16' : 'size-7')}
                 fallback={
                   <span
-                    className={cn('flex size-full items-center justify-center rounded-full font-bold', tamaño === 'full' ? 'text-2xl' : 'text-sm')}
+                    className={cn('flex size-full items-center justify-center rounded-full font-bold', tamaño === 'full' ? 'text-3xl' : 'text-sm')}
                     style={{ color: theme.colores.brandDark }}
                   >
                     {nombreNegocio.slice(0, 1).toUpperCase()}

@@ -174,7 +174,10 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
               hace nada seria peor que esta instruccion. */}
           <p className="mt-2 text-xs text-white/80">Mostrala en el local para canjearlo.</p>
         </section>
-      ) : (
+      ) : theme ? null : (
+        // Con theme, la tarjeta YA dice el progreso en su mensaje unico: repetirlo aca era la
+        // contradiccion del reporte (la tarjeta mostraba 8/8 y esta linea, con el dato real, 5).
+        // Sin theme se mantiene tal cual.
         <p className="text-center text-sm text-white/80">{faltanteTexto}</p>
       )}
 

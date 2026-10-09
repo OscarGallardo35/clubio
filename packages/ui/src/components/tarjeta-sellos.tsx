@@ -113,7 +113,10 @@ const CONFIG: Record<
   }
 > = {
   full: {
-    caja: 'w-[360px] max-w-full min-h-[560px]',
+    // `w-full max-w-[360px]`: en un telefono chico la tarjeta se achica con la pantalla en vez de
+    // desbordar; `min-h-[440px]` (antes 560) mantiene la proporcion vertical sin dejar el hueco
+    // enorme que quedaba entre el bloque de sellos y la barra cuando el contenido es corto.
+    caja: 'w-full max-w-[360px] min-h-[440px]',
     padding: 'p-7',
     sello: 'size-12',
     icono: 'size-6',
@@ -490,8 +493,12 @@ export function TarjetaSellos({
   // Con theme, el premio tambien aparece con `reducedMotion`: solo fade, sin pop
   // ni confeti (spec: "con prefers-reduced-motion solo fade").
   const mostrarPremio = completa && (animar ? etapa >= 5 : reducedMotion)
-  // Mensaje unico del diseno con theme.
-  const mensajeThemed = theme ? `Llevas ${llenos} de ${total} · Te faltan ${faltan} para tu ${premioTexto}` : null
+  // Mensaje unico del diseno con theme. Al completar cambia: "Te faltan 0" no es un mensaje util.
+  const mensajeThemed = theme
+    ? completa
+      ? '¡Completaste tu tarjeta! Mostrale esta pantalla al personal'
+      : `Llevas ${llenos} de ${total} · Te faltan ${faltan} para tu ${premioTexto}`
+    : null
 
   // --- confeti del premio (canvas-confetti, solo con theme) ---------------
   React.useEffect(() => {

@@ -62,12 +62,17 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
   // El demo suma sobre el contador principal (sellos); se corta en la meta.
   const actualesConDemo = Math.min(v.actuales + sellosDemo, v.meta)
   const demoAlTope = actualesConDemo >= v.meta
+  // El premio por SELLOS tambien cuenta si la DEMO llego a la meta. Sin esto la tarjeta se ve
+  // completa (8/8 con su celebracion) pero el boton de WhatsApp de canje nunca aparece, porque
+  // `sellosDemo` vive solo en memoria y el server sigue contando los sellos reales.
+  const premioSellosDesbloqueado =
+    v.sellos.premioDesbloqueado || (DEMO_HABILITADO && sellosDemo > 0 && v.meta > 0 && demoAlTope)
   // Con theme.mostrarPuntos === false, el bloque de puntos se oculta.
   const mostrarPuntos = v.mostrarPuntos && (theme ? theme.mostrarPuntos !== false : true)
 
   // Con HIBRIDO el cliente puede tener los DOS premios: se listan los que esten desbloqueados.
   const premiosDesbloqueados = [
-    v.mostrarSellos && v.sellos.premioDesbloqueado ? v.sellos.premioTexto : null,
+    v.mostrarSellos && premioSellosDesbloqueado ? v.sellos.premioTexto : null,
     v.mostrarPuntos && v.puntos.premioDesbloqueado ? v.puntos.premioTexto : null,
   ].filter((x): x is string => Boolean(x))
 

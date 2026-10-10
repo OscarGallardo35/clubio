@@ -457,10 +457,12 @@ export function TarjetaSellos({
   const themed = Boolean(theme)
 
   // Icono del header CON theme: escala con el tamano de la tarjeta para que el flujo
-  // (medium/small) muestre el MISMO diseno que /tarjeta (full, 76/64), no un avatar chico.
-  const circuloThemed = tamaño === 'full' ? 'size-[76px]' : tamaño === 'medium' ? 'size-14' : 'size-11'
-  const iconoThemed = tamaño === 'full' ? 'size-16' : tamaño === 'medium' ? 'size-12' : 'size-9'
-  const inicialThemed = tamaño === 'full' ? 'text-3xl' : tamaño === 'medium' ? 'text-xl' : 'text-lg'
+  // (medium/small) muestre el MISMO diseno que /tarjeta (full), no un avatar chico.
+  // El circulo con el logo va ~40% mas grande (106/90 full, 78/67 medium, 62/50 small)
+  // manteniendo la proporcion circulo/imagen; aplica a la tarjeta real y a la de demo.
+  const circuloThemed = tamaño === 'full' ? 'size-[106px]' : tamaño === 'medium' ? 'size-[78px]' : 'size-[62px]'
+  const iconoThemed = tamaño === 'full' ? 'size-[90px]' : tamaño === 'medium' ? 'size-[67px]' : 'size-[50px]'
+  const inicialThemed = tamaño === 'full' ? 'text-4xl' : tamaño === 'medium' ? 'text-2xl' : 'text-xl'
 
   // --- secuencia de animacion (fases 1 a 6 de la especificacion) ----------
   const previos = React.useRef(llenos)

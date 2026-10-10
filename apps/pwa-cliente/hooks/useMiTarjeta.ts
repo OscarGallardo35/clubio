@@ -68,5 +68,24 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
     }
   }, [habilitado, token, refetch])
 
+  /**
+   * Al VOLVER a la app, re-consultar la tarjeta.
+   *
+   * El WS `visita:aprobada` solo empuja mientras la app esta en primer plano: si el cliente la
+   * manda al fondo (o el telefono se duerme) y despues abre la notificacion, el service worker
+   * solo ENFOCA la ventana que ya estaba en `/tarjeta` (no la navega ni la recarga), asi que la
+   * tarjeta seguia mostrando el saldo viejo — sin premio y sin el boton de canje. Re-consultar al
+   * hacerse visible cierra ese hueco. No hay parpadeo: `cargando && !tarjeta` es el unico caso
+   * que dibuja el esqueleto.
+   */
+  React.useEffect(() => {
+    if (!habilitado) return undefined
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') void refetch()
+    }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => document.removeEventListener('visibilitychange', alVolver)
+  }, [habilitado, refetch])
+
   return { tarjeta, cargando, error, tenantMismatch, refetch }
 }

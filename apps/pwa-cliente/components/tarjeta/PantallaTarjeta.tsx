@@ -117,6 +117,41 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
     // 343px, asi que se baja a `px-2` (en 375 da ~359px, entra con margen). La pantalla
     // historica (sin theme) mantiene `px-4` y su ancho intacto.
     <div className={`mx-auto flex w-full max-w-md flex-col gap-5 py-6 ${theme ? 'px-2' : 'px-4'}`}>
+      {/* PREMIO PRIMERO. Este bloque es la vista a la que lleva la push de premio: en un celular
+          (375px) la tarjeta + el boton demo + la barra de puntos dejaban el premio y el boton de
+          WhatsApp con top ~832px, POR DEBAJO del primer viewport (~812px), asi que al abrir la
+          notificacion el cliente no encontraba ni el premio ni la accion. Aca va arriba de la
+          tarjeta para que se vea sin scrollear. El canje sigue siendo PRESENCIAL (lo valida el
+          staff): esta seccion solo muestra el premio y ofrece el chat con el local. */}
+      {premiosDesbloqueados.length > 0 ? (
+        <section
+          role="status"
+          className="rounded-2xl bg-emerald-500/20 p-4 text-center ring-1 ring-emerald-400/50"
+        >
+          <p className="text-lg font-bold text-white drop-shadow">
+            {premiosDesbloqueados.length > 1 ? 'Tenes dos premios' : 'Tenes un premio'}
+          </p>
+          {premiosDesbloqueados.map((premio) => (
+            <p key={premio} className="text-sm font-medium text-white/90">
+              {premio}
+            </p>
+          ))}
+          {/* No hay canje en la app: el canje es presencial y lo valida el staff. Un boton que no
+              hace nada seria peor que esta instruccion. */}
+          <p className="mt-2 text-xs text-white/80">Mostrala en el local para canjearlo.</p>
+          {waCanje ? (
+            <a
+              href={waCanje}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 flex min-h-11 items-center justify-center rounded-xl bg-white/95 px-4 text-sm font-semibold text-emerald-900 shadow"
+            >
+              Avisarle al local por WhatsApp
+            </a>
+          ) : null}
+        </section>
+      ) : null}
+
       <TarjetaSellos
         nombreCliente={v.nombreCliente}
         nombreNegocio={negocio?.nombre ?? ''}
@@ -193,37 +228,11 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
         </section>
       ) : null}
 
-      {premiosDesbloqueados.length > 0 ? (
-        <section
-          role="status"
-          className="rounded-2xl bg-emerald-500/20 p-4 text-center ring-1 ring-emerald-400/50"
-        >
-          <p className="text-lg font-bold text-white drop-shadow">
-            {premiosDesbloqueados.length > 1 ? 'Tenes dos premios' : 'Tenes un premio'}
-          </p>
-          {premiosDesbloqueados.map((premio) => (
-            <p key={premio} className="text-sm font-medium text-white/90">
-              {premio}
-            </p>
-          ))}
-          {/* No hay canje en la app: el canje es presencial y lo valida el staff. Un boton que no
-              hace nada seria peor que esta instruccion. */}
-          <p className="mt-2 text-xs text-white/80">Mostrala en el local para canjearlo.</p>
-          {waCanje ? (
-            <a
-              href={waCanje}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 flex min-h-11 items-center justify-center rounded-xl bg-white/95 px-4 text-sm font-semibold text-emerald-900 shadow"
-            >
-              Avisarle al local por WhatsApp
-            </a>
-          ) : null}
-        </section>
-      ) : theme ? null : (
+      {premiosDesbloqueados.length > 0 ? null : theme ? null : (
         // Con theme, la tarjeta YA dice el progreso en su mensaje unico: repetirlo aca era la
         // contradiccion del reporte (la tarjeta mostraba 8/8 y esta linea, con el dato real, 5).
-        // Sin theme se mantiene tal cual.
+        // Sin theme se mantiene tal cual. Con el premio desbloqueado la seccion de arriba ya lo
+        // dice todo: repetir el faltante seria contradictorio.
         <p className="text-center text-sm text-white/80">{faltanteTexto}</p>
       )}
 

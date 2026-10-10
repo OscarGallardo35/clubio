@@ -179,8 +179,16 @@ export class DisparosService {
         const det = (f.detalle ?? {}) as {
           push?: { encolados?: unknown; motivo?: unknown };
           origen?: unknown;
+          // En los OMITIDO_LIMITE el `detalle` es el objeto del tope (no cuelga de `push`):
+          // { tipo:'porDia'|'porMes', usado, max, desde }.
+          tipo?: unknown;
+          usado?: unknown;
+          max?: unknown;
         };
         const encolados = Number(det.push?.encolados ?? 0);
+        const omitidoMotivo = f.accion.startsWith('OMITIDO')
+          ? this.motivoOmitido(f.accion, det)
+          : null;
         return {
           id: f.id,
           disparoId: f.disparoId,
@@ -195,6 +203,7 @@ export class DisparosService {
           puntosAcreditados: f.puntosAcreditados,
           pushEncolados: Number.isFinite(encolados) ? encolados : 0,
           pushMotivo: typeof det.push?.motivo === 'string' ? det.push.motivo : null,
+          omitidoMotivo,
           origen: typeof det.origen === 'string' ? det.origen : null,
           creadoEn: f.creadoEn,
         };
@@ -203,6 +212,28 @@ export class DisparosService {
       page,
       pageSize,
     );
+  }
+
+  /**
+   * Motivo legible de una fila OMITIDA. Hoy el motor SOLO emite `OMITIDO_LIMITE`
+   * (el caso "repetido" es el candado existente y no genera fila nueva; "sin
+   * suscripcion" viaja como `detalle.push.motivo` en la fila ENVIADO). Los otros
+   * dos literales se contemplan por si el motor los empieza a emitir.
+   */
+  private motivoOmitido(
+    accion: string,
+    det: { tipo?: unknown; usado?: unknown; max?: unknown },
+  ): string | null {
+    if (accion === 'OMITIDO_LIMITE') {
+      const tipo = typeof det.tipo === 'string' ? det.tipo : 'tope';
+      const usado = Number(det.usado ?? 0);
+      const max = Number(det.max ?? 0);
+      const etiqueta = tipo === 'porMes' ? 'tope mensual' : 'tope diario';
+      return Number.isFinite(max) && max > 0 ? `${etiqueta} alcanzado (${usado}/${max})` : etiqueta;
+    }
+    if (accion === 'OMITIDO_DUP') return 'evento repetido';
+    if (accion === 'OMITIDO_SIN_SUSCRIPCION') return 'cliente sin suscripcion push';
+    return null;
   }
 
   async crear(negocioId: string, dto: CrearDisparoDto, empleadoId?: string) {

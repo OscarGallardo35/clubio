@@ -201,6 +201,8 @@ export function Historial() {
                       </span>
                     )}
                   </p>
+                ) : f.omitidoMotivo ? (
+                  <p className="text-sm text-amber-700">Motivo: {f.omitidoMotivo}</p>
                 ) : null}
                 <p className="text-sm tabular-nums">
                   <span className="text-muted-foreground">Saldo: </span>

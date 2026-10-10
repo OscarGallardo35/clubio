@@ -667,6 +667,8 @@ export interface DisparoPushLogItem {
   pushEncolados: number
   /** Motivo por el que el push no se encolo (ej. 'sin suscripciones'). */
   pushMotivo: string | null
+  /** Motivo legible de una fila OMITIDA (ej. 'tope diario alcanzado (1/1)'); null si no es omitida. */
+  omitidoMotivo: string | null
   /** Evento que origino la ejecucion: 'COMPRA' | 'SELLOS' | 'BIENVENIDA' | 'DIA' | 'INACTIVIDAD'. */
   origen: string | null
   creadoEn: string

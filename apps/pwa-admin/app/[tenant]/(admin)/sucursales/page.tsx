@@ -36,7 +36,7 @@ import {
   toast,
 } from '@repo/ui';
 import type { DataTableColumn } from '@repo/ui';
-import { cartaApi, itemsOverrideApi, sucursalConfigApi, sucursalesApi } from '@/lib/api';
+import { cartaApi, configuracionApi, itemsOverrideApi, sucursalConfigApi, sucursalesApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import type {
   CartaAdminRespuesta,
@@ -67,6 +67,10 @@ export default function SucursalesPage() {
   const [aEliminar, setAEliminar] = React.useState<SucursalAdmin | null>(null);
   const [forzando, setForzando] = React.useState<SucursalAdmin | null>(null);
   const [ocupado, setOcupado] = React.useState(false);
+  // Switch del LOCAL (`ConfiguracionClub.usarNumeroAtendienteDistinto`): habilita que cada
+  // sucursal use su propio WhatsApp. `null` = todavia no se leyo (no se inventa un default).
+  const [usarDistinto, setUsarDistinto] = React.useState<boolean | null>(null);
+  const [guardandoDistinto, setGuardandoDistinto] = React.useState(false);
 
   const refetch = React.useCallback(async () => {
     try {
@@ -86,6 +90,35 @@ export default function SucursalesPage() {
   React.useEffect(() => {
     if (error) toast.error('No pudimos traer las sucursales', { description: error });
   }, [error]);
+
+  // El switch vive en `ConfiguracionClub` (una por negocio), asi que se lee aparte del listado.
+  React.useEffect(() => {
+    void (async () => {
+      try {
+        const cfg = await configuracionApi.obtener();
+        setUsarDistinto(cfg.usarNumeroAtendienteDistinto);
+      } catch {
+        // Si no se pudo leer, se oculta el switch: no se asume un valor.
+        setUsarDistinto(null);
+      }
+    })();
+  }, []);
+
+  const alternarUsarDistinto = React.useCallback(async (v: boolean) => {
+    setUsarDistinto(v);
+    setGuardandoDistinto(true);
+    try {
+      await configuracionApi.actualizar({ usarNumeroAtendienteDistinto: v });
+      toast.success(
+        v ? 'Las sucursales con WhatsApp propio lo van a usar' : 'El local vuelve a usar su WhatsApp',
+      );
+    } catch (e) {
+      setUsarDistinto(!v);
+      toast.error(`No se pudo actualizar el ajuste. ${normalizarError(e).mensaje}`);
+    } finally {
+      setGuardandoDistinto(false);
+    }
+  }, []);
 
   // Hooks siempre ARRIBA del primer return (React #310; ver TROUBLESHOOTING).
   const lista = sucursales ?? [];
@@ -254,6 +287,28 @@ export default function SucursalesPage() {
         </div>
         <Button onClick={() => setCreando(true)}>+ Nueva sucursal</Button>
       </header>
+
+      {usarDistinto !== null ? (
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border bg-card p-4">
+          <div className="min-w-0 space-y-1">
+            <Label htmlFor="wa-distinto">Usar un numero distinto al del local</Label>
+            <p className="text-xs text-muted-foreground">
+              Con esto activado, cada sucursal que tenga cargado su{' '}
+              <strong>WhatsApp propio de esta sucursal</strong> lo usa en el cliente (canje del
+              premio, flujo del club y pedidos) en vez del{' '}
+              <strong>WhatsApp del local</strong>. Apagado, todas las sucursales usan el del local.
+              Es un ajuste del local, no de una sucursal sola.
+            </p>
+          </div>
+          <Switch
+            id="wa-distinto"
+            checked={usarDistinto}
+            disabled={guardandoDistinto}
+            onCheckedChange={(v) => void alternarUsarDistinto(v)}
+            aria-label="Usar un numero distinto al del local"
+          />
+        </div>
+      ) : null}
 
       <DataTable
         data={lista}
@@ -559,12 +614,18 @@ function FormularioSucursal({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="wa">WhatsApp que atiende (opcional)</Label>
+          <Label htmlFor="wa">WhatsApp propio de esta sucursal (opcional)</Label>
           <Input
             id="wa"
             value={numeroAtendiente}
             onChange={(e) => setNumeroAtendiente(e.target.value.slice(0, 40))}
+            inputMode="tel"
+            placeholder="+5491123456789"
           />
+          <p className="text-xs text-muted-foreground">
+            Solo se usa si esta activado <strong>Usar un numero distinto al del local</strong>. Si
+            no, esta sucursal usa el WhatsApp del local.
+          </p>
         </div>
       </div>
 

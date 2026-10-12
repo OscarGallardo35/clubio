@@ -445,13 +445,18 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="atendiente">WhatsApp que atiende (opcional)</Label>
+        <Label htmlFor="atendiente">WhatsApp del local (donde te escriben los clientes)</Label>
         <Input
           id="atendiente"
           value={atendiente}
           onChange={(e) => setAtendiente(e.target.value.slice(0, 40))}
           inputMode="tel"
+          placeholder="+5491123456789"
         />
+        <p className="text-xs text-muted-foreground">
+          Se usa en el canje del premio, el flujo del club y los pedidos. Formato internacional, ej.
+          +54911...
+        </p>
       </div>
 
       <div className="space-y-2">

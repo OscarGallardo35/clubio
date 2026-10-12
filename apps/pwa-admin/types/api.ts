@@ -292,6 +292,11 @@ export interface ConfiguracionAdmin {
   modoPagoPorDefecto: ModoPago
   tipoPedidoPorDefecto: TipoPedido
   numeroAtendiente: string | null
+  /**
+   * Fuente primaria del WhatsApp del local es `numeroAtendiente`. Con este switch en `true`, una
+   * sucursal con su propio `Sucursal.numeroAtendiente` lo usa en vez del del local (con fallback).
+   */
+  usarNumeroAtendienteDistinto: boolean
   modoAsignacionPedidos: ModoAsignacionPedidos
   transferenciaAlias: string | null
   transferenciaCbu: string | null
@@ -334,6 +339,7 @@ export interface ActualizarConfiguracionBody {
   tipoPedidoPorDefecto?: TipoPedido | undefined
   modoAsignacionPedidos?: ModoAsignacionPedidos | undefined
   numeroAtendiente?: string | undefined
+  usarNumeroAtendienteDistinto?: boolean | undefined
   transferenciaAlias?: string | undefined
   transferenciaCbu?: string | undefined
   transferenciaTitular?: string | undefined

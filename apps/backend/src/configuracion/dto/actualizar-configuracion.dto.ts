@@ -29,6 +29,13 @@ export class ActualizarConfiguracionDto {
   @IsOptional() @IsEnum(TipoPedido) tipoPedidoPorDefecto?: TipoPedido;
   @IsOptional() @IsEnum(ModoAsignacionPedidos) modoAsignacionPedidos?: ModoAsignacionPedidos;
   @IsOptional() @IsString() @MaxLength(40) numeroAtendiente?: string;
+  /**
+   * Fuente PRIMARIA del WhatsApp del local es `numeroAtendiente` del club; este switch decide
+   * si el numero PROPIO de una sucursal (`Sucursal.numeroAtendiente`) lo reemplaza para esa
+   * sucursal. `false` (default) = manda el del club; `true` = manda el de la sucursal (con
+   * fallback al del club). Ver `SucursalResolverService.resolverNumeroAtendiente`.
+   */
+  @IsOptional() @IsBoolean() usarNumeroAtendienteDistinto?: boolean;
 
   @IsOptional() @IsString() @MaxLength(120) transferenciaAlias?: string;
   @IsOptional() @IsString() @MaxLength(40) transferenciaCbu?: string;

@@ -146,12 +146,21 @@ export class SucursalResolverService {
   }
 
   /**
-   * Numero de atencion (WhatsApp) EFECTIVO:
-   *   Sucursal.numeroAtendiente -> ConfiguracionClub.numeroAtendiente -> null
+   * Numero de atencion (WhatsApp) EFECTIVO del local o de una sucursal.
    *
-   * OJO: si el negocio activa `usarNumeroAtendienteDistinto`, el de la sucursal
-   * tiene prioridad. Si no, se respeta el del club. En ambos casos, si el de la
-   * sucursal es null se cae al del club.
+   * Fuente PRIMARIA: `ConfiguracionClub.numeroAtendiente` (el "WhatsApp del local", que el dueno
+   * edita en Admin -> Configuracion -> Local).
+   *
+   * El switch `ConfiguracionClub.usarNumeroAtendienteDistinto` decide si el numero PROPIO de la
+   * sucursal (`Sucursal.numeroAtendiente`, el "WhatsApp propio de esta sucursal") lo reemplaza:
+   *   - switch = false (default): GANA el club. La sucursal solo aporta si el club esta vacio.
+   *   - switch = true:            GANA la sucursal, con FALLBACK al club si esta vacia.
+   *
+   * Sin `sucursalId` devuelve SIEMPRE el del club (es el caso de la marca/negocio publico cuando
+   * no se pide una sucursal).
+   *
+   * Este metodo es la UNICA fuente de verdad: los flujos del cliente NO deben rearmar el fallback
+   * con el valor crudo del club (ver `numeroAtencionEfectivo` en la PWA Cliente, que lo espeja).
    */
   async resolverNumeroAtendiente(negocioId: string, sucursalId?: string | null): Promise<string | null> {
     const club = await this.prisma.configuracionClub.findUnique({

@@ -63,11 +63,11 @@ export class NegociosService {
     if (!negocio) throw new NotFoundException('Negocio no encontrado');
 
     // Sucursal pedida (si viene): tiene que ser del negocio y estar activa.
-    let sucursal = null as { id: string; nombre: string; slug: string; esPrincipal: boolean; direccion: string | null; telefono: string | null } | null;
+    let sucursal = null as { id: string; nombre: string; slug: string; esPrincipal: boolean; direccion: string | null; telefono: string | null; numeroAtendiente: string | null } | null;
     if (sucursalSlug) {
       sucursal = await this.prisma.sucursal.findFirst({
         where: { negocioId: negocio.id, slug: sucursalSlug.toLowerCase(), activa: true },
-        select: { id: true, nombre: true, slug: true, esPrincipal: true, direccion: true, telefono: true },
+        select: { id: true, nombre: true, slug: true, esPrincipal: true, direccion: true, telefono: true, numeroAtendiente: true },
       });
       if (!sucursal) throw new NotFoundException(`La sucursal "${sucursalSlug}" no existe o no esta activa`);
     }
@@ -78,12 +78,12 @@ export class NegociosService {
         select: {
           modoFidelizacion: true, sellosParaPremio: true, premioTexto: true, menuActivo: true,
           tiposPedidoHabilitados: true, modosPagoHabilitados: true, mostrarResenaPostVisita: true,
-          numeroAtendiente: true,
+          numeroAtendiente: true, usarNumeroAtendienteDistinto: true,
         },
       }),
       this.prisma.sucursal.findMany({
         where: { negocioId: negocio.id, activa: true },
-        select: { id: true, nombre: true, slug: true, esPrincipal: true, direccion: true, telefono: true },
+        select: { id: true, nombre: true, slug: true, esPrincipal: true, direccion: true, telefono: true, numeroAtendiente: true },
         orderBy: { esPrincipal: 'desc' },
       }),
     ]);

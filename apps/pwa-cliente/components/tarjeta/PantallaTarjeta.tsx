@@ -26,6 +26,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { CardNotificaciones } from '@/components/notificaciones/CardNotificaciones'
 import { COLOR_PRIMARIO_DEFECTO, COLOR_SECUNDARIO_DEFECTO, RUTAS } from '@/lib/constants'
 import { vistaDeTarjeta } from '@/lib/tarjeta'
+import { numeroAtencionEfectivo } from '@/lib/numero-atencion'
 
 /**
  * El boton demo "+1 sello" se ve siempre en desarrollo y en prod solo con
@@ -36,7 +37,7 @@ const DEMO_HABILITADO =
 
 export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
   const { negocio, configuracion, cargando: cargandoBranding, tieneFeature } = useBranding()
-  const { slugParaApi } = useSucursalActiva()
+  const { sucursal: sucursalActiva, slugParaApi } = useSucursalActiva()
   // Auto-login: pega a /auth/cliente/me con la cookie. `resuelto` dice si ya se sabe si hay sesion.
   const { autenticado, resuelto, sesionDeOtroLocal, logout } = useCliente()
   const { tarjeta, cargando, error, refetch, tenantMismatch } = useMiTarjeta(slugParaApi, resuelto && autenticado)
@@ -90,15 +91,17 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
    * no alcanza. El canje sigue siendo PRESENCIAL (lo valida el staff), asi que el boton solo abre el
    * chat con el local.
    *
-   * Condiciones: premio desbloqueado y numero de atencion configurado (config del club -> negocio,
-   * el mismo que usa PasoEspera). NO depende del theme: se ve tambien en los locales SIN theme
-   * (bar-la-esquina). Si no hay numero, no hay boton. Cuando el cliente ya canjeo (los sellos se
-   * restan y el premio deja de estar desbloqueado) el boton desaparece solo.
+   * Condiciones: premio desbloqueado y numero de atencion configurado. Se resuelve con
+   * `numeroAtencionEfectivo` (el mismo criterio que el backend): el WhatsApp del local o, si el
+   * local activo "usar un numero distinto", el de la sucursal activa. NO depende del theme: se ve
+   * tambien en los locales SIN theme (bar-la-esquina). Si no hay numero, no hay boton. Cuando el
+   * cliente ya canjeo (los sellos se restan y el premio deja de estar desbloqueado) el boton
+   * desaparece solo.
    *
    * El mensaje incluye el LINK PUBLICO de verificacion (`/<slug>/verificar/<token>`) para que el
    * local confirme en el momento que los sellos/premio son reales, sin login.
    */
-  const numeroAtendiente = configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null
+  const numeroAtendiente = numeroAtencionEfectivo(negocio, sucursalActiva)
   // La URL la arma el SERVIDOR (`urlVerificacion` en GET /visitas/mi-tarjeta) con PUBLIC_APP_URL.
   // NO reconstruirla con `window.location.origin`: si el cliente esta en el subdominio del tenant
   // (`que-lomitos.clubio.lat`) el link saldria con el slug dos veces y la pagina publica de

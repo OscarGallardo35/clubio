@@ -15,6 +15,7 @@ import { PasoConfirmado } from './PasoConfirmado'
 import { PasoNoSumada } from './PasoNoSumada'
 import { PasoError } from './PasoError'
 import { RUTAS } from '@/lib/constants'
+import { numeroAtencionEfectivo } from '@/lib/numero-atencion'
 
 /**
  * Orquestador del flujo del club (QR #2).
@@ -93,7 +94,7 @@ export function FlujoVisita() {
         token={visita.flujo.token}
         expiraEn={visita.flujo.expiraEn}
         ws={visita.ws}
-        numeroAtendiente={configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null}
+        numeroAtendiente={numeroAtencionEfectivo(negocio, sucursal)}
         mensajeWhatsApp={visita.mensajeWhatsApp ?? `Hola, quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}`}
         // La misma tarjeta de /tarjeta, con el progreso de AHORA. `comun` ya trae
         // nombreNegocio, logoUrl, colores, premioTexto, meta y actuales.
@@ -115,9 +116,9 @@ export function FlujoVisita() {
         nombreCliente={cliente?.nombre ?? null}
         theme={theme}
         slugTenant={slugTenant}
-        // Mismo numero que usa la espera: config del club -> negocio. Si no hay, el boton no se
+        // Mismo numero que usa la espera (`numeroAtencionEfectivo`). Si no hay, el boton no se
         // muestra (PasoConfirmado lo decide).
-        numeroAtendiente={configuracion?.numeroAtendiente ?? negocio?.numeroAtendiente ?? null}
+        numeroAtendiente={numeroAtencionEfectivo(negocio, sucursal)}
         mostrarResena={configuracion?.mostrarResenaPostVisita === true}
         placeId={negocio?.placeId ?? null}
         // Lo que OTORGO la visita (viene del WS): con HIBRIDO la confirmacion muestra los dos

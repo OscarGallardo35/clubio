@@ -246,8 +246,11 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   // staff en vez de WhatsApp. El mensaje ya incluye el link del staff adentro.
   const mensajeWhatsApp =
     pedidoGuardado && pedidoGuardado.linkToken === linkToken ? pedidoGuardado.mensajeWhatsApp : undefined
-  // El numero sale del pedido (lo resuelve el backend al crearlo) y, si esa sucursal no tenia
-  // atendiente configurado, del default del negocio.
+  // El numero sale del SNAPSHOT del pedido: el backend lo resolvio con `resolverNumeroAtendiente`
+  // (sucursal -> club segun el switch) en el momento de crearlo (asignacion-pedidos.service). Se
+  // queda con el snapshot a proposito: el pedido ya se creo con ESE numero y el cliente tiene que
+  // ver el mismo aunque despues cambie la config. Solo si el pedido es viejo (sin numero) cae al
+  // del local resuelto.
   const numeroAtendiente = pedido.numeroAtendiente ?? negocio?.numeroAtendiente ?? null
   // Un pedido cancelado o rechazado NO ofrece "Abrir WhatsApp": no hay nada que coordinar con el
   // local. El resto de la vista final (badge rojo, motivoRechazo y "Volver al menu") sale mas abajo.

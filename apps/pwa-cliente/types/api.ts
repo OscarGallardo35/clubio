@@ -49,6 +49,8 @@ export interface ConfiguracionPublica {
   upsellActivo?: boolean
   upsellMaxSugerencias?: number
   numeroAtendiente?: string | null
+  /** Switch del LOCAL: con `true`, una sucursal con su propio numero lo usa en vez del del local. */
+  usarNumeroAtendienteDistinto?: boolean
   overrideAplicado?: boolean
   transferenciaAlias?: string | null
   transferenciaCbu?: string | null

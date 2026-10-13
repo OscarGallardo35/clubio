@@ -101,8 +101,13 @@ export const superadminApi = {
   actualizarPlan: (negocioId: string, body: ActualizarPlanNegocioBody) =>
     api.patch<EstadoPlanNegocio>(endpoints.superadmin.localPlan(negocioId), body),
 
-  /** Firma una subida directa a Cloudinary con la sesion de PLATAFORMA (nunca envia el binario). */
-  firmarSubida: (body: { tipo?: string } = {}) =>
+  /**
+   * Firma una subida directa a Cloudinary con la sesion de PLATAFORMA (nunca envia el binario).
+   *
+   * El `negocioId` es OBLIGATORIO y va en el body: el super-admin no tiene tenant (el panel
+   * administra varios locales) y el backend firma SIEMPRE para el local que se le pasa.
+   */
+  firmarSubida: (body: { negocioId: string; tipo?: string }) =>
     api.post<FirmaSubidaMedia>(endpoints.superadmin.mediaFirmarSubida, body),
 
   /**

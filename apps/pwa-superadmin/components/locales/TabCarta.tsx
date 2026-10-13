@@ -365,8 +365,12 @@ function FormularioItem({
   const [error, setError] = React.useState<string | null>(null);
 
   // La firma la pide ESTE panel (sesion de plataforma): el componente de subida es el mismo
-  // que usa el admin del dueno, pero cada app le inyecta su propio endpoint de firma.
-  const firmar = React.useCallback((tipo: string) => superadminApi.firmarSubida({ tipo }), []);
+  // que usa el admin del dueno, pero cada app le inyecta su propio endpoint de firma. El
+  // `negocioId` es obligatorio: el super-admin no tiene tenant y el local es de este item.
+  const firmar = React.useCallback(
+    (tipo: string) => superadminApi.firmarSubida({ negocioId, tipo }),
+    [negocioId],
+  );
   const mensajeDeError = React.useCallback((e: unknown) => normalizarError(e).mensaje, []);
 
   const precioNum = Number(precio.replace(',', '.'));

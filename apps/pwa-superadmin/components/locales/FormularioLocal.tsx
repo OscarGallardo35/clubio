@@ -81,10 +81,21 @@ export function FormularioLocal({
   const slugOk = slugValido(slug);
   const paso1Valido = nombre.trim().length >= 2 && slugOk;
   const puedeGuardar = nombre.trim().length >= 2 && !guardando;
+  // Los colores son columnas NOT NULL con default: NO pueden quedar vacios (el backend responde
+  // 400 "no se puede vaciar"). Un campo vaciado se avisa y bloquea el guardado; nunca se manda
+  // `null` ni un string vacio.
+  const hexOk = (v: string) => /^#[0-9a-fA-F]{6}$/.test(v);
+  const coloresOk = hexOk(colorPrimario) && hexOk(colorSecundario);
+  const MENSAJE_COLORES =
+    'Los colores no pueden quedar vacios: elegi un hex de 6 digitos (ej. #E11D48) o usa el selector.';
 
   async function crear(evento: React.FormEvent) {
     evento.preventDefault();
     if (!paso1Valido || guardando) return;
+    if (!coloresOk) {
+      setError(MENSAJE_COLORES);
+      return;
+    }
     setGuardando(true);
     setError(null);
     try {
@@ -115,18 +126,23 @@ export function FormularioLocal({
   async function guardar(evento: React.FormEvent) {
     evento.preventDefault();
     if (!puedeGuardar || !local || guardando) return;
+    // Los colores son NOT NULL: si el operador los vacio, se avisa ANTES de mandar (el backend
+    // responde 400) y no se guarda nada. Antes se omitian en silencio y el cambio no se notaba.
+    if (!coloresOk) {
+      setError(MENSAJE_COLORES);
+      return;
+    }
     setGuardando(true);
     setError(null);
     try {
       const wa = whatsapp.trim();
       const waAntes = (local.numeroAtendiente ?? '').trim();
-      const hexOk = (v: string) => /^#[0-9a-fA-F]{6}$/.test(v);
       await superadminApi.actualizarLocal(local.id, {
         nombre: nombre.trim(),
         plan,
-        // Los colores solo se mandan si son un hex valido: mandar '' (campo vaciado) da 400.
-        ...(hexOk(colorPrimario) ? { colorPrimario } : {}),
-        ...(hexOk(colorSecundario) ? { colorSecundario } : {}),
+        // Los colores ya se validaron arriba: van siempre como hex valido.
+        colorPrimario,
+        colorSecundario,
         // WhatsApp: si quedo con valor, se manda; si el operador BORRO uno que existia, se manda
         // `null` EXPLICITO para que el backend lo limpie; si ya estaba vacio y sigue vacio, no se
         // toca (un `null` a ciegas borraria el numero que cargo el dueno desde otra pantalla).
@@ -228,7 +244,7 @@ export function FormularioLocal({
             Siguiente
           </Button>
         ) : (
-          <Button type="submit" disabled={!paso1Valido || guardando}>
+          <Button type="submit" disabled={!paso1Valido || !coloresOk || guardando}>
             {guardando ? 'Creando...' : 'Crear local'}
           </Button>
         )}
@@ -445,9 +461,11 @@ function CampoColor({
           placeholder="#E11D48"
         />
       </div>
-      {!hexValido && valor !== '' ? (
+      {!hexValido ? (
         <p role="alert" className="text-xs text-destructive">
-          El color va en hex de 6 digitos (ej: #E11D48).
+          {valor === ''
+            ? 'El color no puede quedar vacio: elegi un hex de 6 digitos (ej: #E11D48).'
+            : 'El color va en hex de 6 digitos (ej: #E11D48).'}
         </p>
       ) : null}
     </div>

@@ -60,8 +60,13 @@ export class SuperadminLocalesService {
   // HELPERS
   // =========================================================================
 
-  /** Local existente (no eliminado). Es la validacion del `negocioId` explicito. */
-  private async exigirNegocio(negocioId: string) {
+  /**
+   * Local existente (no eliminado). Es la validacion del `negocioId` explicito.
+   *
+   * PUBLICO a proposito: los controllers del panel que reciben el `negocioId` en el body
+   * (`superadmin-media.controller.ts`) tienen que validarlo contra la DB antes de operar.
+   */
+  async exigirNegocio(negocioId: string) {
     const negocio = await this.prisma.negocio.findFirst({
       where: { id: negocioId, eliminadoEn: null },
       select: { id: true, slug: true, nombre: true, colorPrimario: true, theme: true },

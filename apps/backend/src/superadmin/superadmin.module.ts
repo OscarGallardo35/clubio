@@ -7,8 +7,10 @@ import { SuperadminRecursosService } from './superadmin-recursos.service';
 import { SuperAdminAuthController } from './superadmin-auth.controller';
 import { SuperAdminLocalesController } from './superadmin-locales.controller';
 import { SuperAdminLocalesAdminController } from './superadmin-locales-admin.controller';
+import { SuperAdminMediaController } from './superadmin-media.controller';
 import { JwtSuperAdminStrategy } from './strategies/jwt-superadmin.strategy';
 import { ConfiguracionModule } from '../configuracion/configuracion.module';
+import { MediaModule } from '../media/media.module';
 
 /**
  * Panel del operador de la PLATAFORMA (PWA Superadmin).
@@ -21,10 +23,18 @@ import { ConfiguracionModule } from '../configuracion/configuracion.module';
  * `ConfiguracionModule` se importa para que el `PATCH .../configuracion` del panel
  * delegue en el MISMO servicio que usa el admin del dueno (no hay una segunda
  * implementacion de la config del club).
+ *
+ * `MediaModule` se importa para lo mismo con la FIRMA de subidas: el panel firma con
+ * `MediaService.firmarSubida`, el mismo metodo que usa `POST /media/firmar-subida` del dueno.
  */
 @Module({
-  imports: [PassportModule, JwtModule.register({}), ConfiguracionModule],
-  controllers: [SuperAdminAuthController, SuperAdminLocalesController, SuperAdminLocalesAdminController],
+  imports: [PassportModule, JwtModule.register({}), ConfiguracionModule, MediaModule],
+  controllers: [
+    SuperAdminAuthController,
+    SuperAdminLocalesController,
+    SuperAdminLocalesAdminController,
+    SuperAdminMediaController,
+  ],
   providers: [SuperAdminService, SuperadminLocalesService, SuperadminRecursosService, JwtSuperAdminStrategy],
   exports: [SuperAdminService],
 })

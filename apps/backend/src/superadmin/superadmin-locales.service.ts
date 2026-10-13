@@ -170,7 +170,14 @@ export class SuperadminLocalesService {
     return negocio;
   }
 
-  /** Edita los datos base. `activo: false` desactiva el local; `numeroAtendiente` va a la config. */
+  /**
+   * Edita los datos base. `activo: false` desactiva el local; `numeroAtendiente` va a la config.
+   *
+   * Limpieza de valores (misma semantica en todos los campos de texto de este PATCH):
+   *  - `undefined` (ausente) o `''`  -> NO tocar (el admin del dueno depende de esto);
+   *  - `null` EXPLICITO              -> BORRAR (queda en null).
+   * Ojo: `null` es un valor, asi que el chequeo NO es `!== undefined` a secas.
+   */
   async actualizar(negocioId: string, dto: ActualizarLocalSuperAdminDto) {
     await this.exigirNegocio(negocioId);
 
@@ -191,7 +198,9 @@ export class SuperadminLocalesService {
       select: SELECT_LOCAL,
     });
 
-    if (dto.numeroAtendiente !== undefined) {
+    // `undefined` y `''` = "no tocar"; `null` = borrar (setea null). El vacio NO cambia de
+    // semantica: el admin del dueno manda `undefined` cuando el campo esta vacio.
+    if (dto.numeroAtendiente !== undefined && dto.numeroAtendiente !== '') {
       await this.prisma.configuracionClub.upsert({
         where: { negocioId },
         update: { numeroAtendiente: dto.numeroAtendiente },
@@ -250,6 +259,12 @@ export class SuperadminLocalesService {
    *  - cliente demo con sellos (+ su tarjeta por sucursal) para poder mostrar la tarjeta.
    *
    * Volver a llamarlo NO duplica: los conteos quedan iguales.
+   *
+   * Dos flags OPCIONALES (aditivos; ausentes = comportamiento historico):
+   *  - `reemplazarCarta`: `true` sincroniza la carta (borra los items que sobran del local);
+   *    ausente/`false` sigue ACUMULANDO.
+   *  - `forzarTheme`: `true` reaplica el theme de la plantilla SIEMPRE; ausente/`false` solo lo
+   *    aplica si el local NO tiene theme (no pisa un branding elegido a mano).
    */
   async provisionar(negocioId: string, dto: ProvisionarLocalSuperAdminDto) {
     const negocio = await this.exigirNegocio(negocioId);
@@ -260,6 +275,13 @@ export class SuperadminLocalesService {
     const theme = (dto.theme ?? plantilla.theme) as Record<string, unknown> | null;
     const items = dto.carta ?? plantilla.items;
     const empleados = dto.empleados ?? this.empleadosDemo(negocio.slug);
+
+    // Theme: por DEFAULT (sin `forzarTheme`) solo se aplica si el local TODAVIA NO tiene uno,
+    // para no pisar un branding elegido a mano. `forzarTheme: true` recupera el comportamiento
+    // historico (reaplica el de la plantilla siempre).
+    const tieneTheme = negocio.theme !== null;
+    const aplicaTheme = dto.forzarTheme === true || !tieneTheme;
+    const reemplazarCarta = dto.reemplazarCarta === true;
 
     // Los hashes se calculan FUERA de la transaccion: bcrypt es CPU-bound (~100ms por hash)
     // y no queremos estirar la transaccion de la DB por eso.
@@ -300,15 +322,19 @@ export class SuperadminLocalesService {
         // --- Branding / theme ---
         // `DbNull` y no `null`: son cosas distintas para Prisma en un campo Json? (la plantilla
         // `basica` limpia el theme; un `null` de JS no alcanza para eso).
-        const dataNegocio: Prisma.NegocioUpdateInput = {
-          theme: theme === null ? Prisma.DbNull : (theme as Prisma.InputJsonValue),
-        };
+        const dataNegocio: Prisma.NegocioUpdateInput = {};
+        if (aplicaTheme) {
+          dataNegocio.theme = theme === null ? Prisma.DbNull : (theme as Prisma.InputJsonValue);
+        }
         const bg = theme?.colores && typeof (theme.colores as Record<string, unknown>).bg === 'string'
           ? ((theme.colores as Record<string, unknown>).bg as string)
           : null;
-        // Solo se pisa el color si el local todavia tiene el default (no se pisa una marca elegida a mano).
-        if (bg && negocio.colorPrimario === '#000000') dataNegocio.colorPrimario = bg;
-        await tx.negocio.update({ where: { id: negocioId }, data: dataNegocio });
+        // Solo se pisa el color si se esta aplicando el theme de la plantilla Y el local todavia
+        // tiene el default (no se pisa una marca elegida a mano).
+        if (aplicaTheme && bg && negocio.colorPrimario === '#000000') dataNegocio.colorPrimario = bg;
+        if (Object.keys(dataNegocio).length > 0) {
+          await tx.negocio.update({ where: { id: negocioId }, data: dataNegocio });
+        }
 
         // --- Items de carta (clave natural: negocioId + nombre, igual que el seed) ---
         // UN solo findMany + createMany en vez de un findOne+create por item: Neon tiene ~200ms
@@ -341,6 +367,17 @@ export class SuperadminLocalesService {
           }
         }
         if (itemsNuevos.length > 0) await tx.itemCarta.createMany({ data: itemsNuevos });
+
+        // --- Sync de carta (solo con `reemplazarCarta: true`) ---
+        // Borra los items del local que NO estan en la plantilla: queda SOLO la carta de la
+        // plantilla. Sin el flag no se toca nada (el provisioning sigue ACUMULANDO como antes).
+        let cartaBorrados = 0;
+        if (reemplazarCarta) {
+          const borrados = await tx.itemCarta.deleteMany({
+            where: { negocioId, nombre: { notIn: items.map((i) => i.nombre) } },
+          });
+          cartaBorrados = borrados.count;
+        }
 
         // --- Empleados de ejemplo (clave natural: negocioId + nombre, igual que el seed) ---
         const existentesEmpleados = await tx.empleado.findMany({
@@ -408,6 +445,7 @@ export class SuperadminLocalesService {
           items: { creados: itemsCreados, actualizados: itemsActualizados },
           empleados: { creados: empleadosCreados, actualizados: empleadosActualizados },
           clienteDemo: { id: cliente.id, telefono: DEMO_TELEFONO, sellos: DEMO_SELLOS },
+          cartaBorrados,
         };
       },
       // El default de Prisma son 5s. Con Neon (latencia por query del orden de 200ms) el
@@ -428,6 +466,10 @@ export class SuperadminLocalesService {
       slug: negocio.slug,
       plantilla: dto.plantilla,
       theme: theme === null ? null : 'aplicado',
+      // Aditivos: si se aplico el theme de verdad (el local no tenia, o vino `forzarTheme`) y
+      // cuantos items se borraron por el sync de carta (0 cuando no se reemplaza).
+      themeAplicado: aplicaTheme,
+      cartaBorrados: resultado.cartaBorrados,
       ...resultado,
       items: { ...resultado.items, total: totalItems },
       empleados: { ...resultado.empleados, total: totalEmpleados },

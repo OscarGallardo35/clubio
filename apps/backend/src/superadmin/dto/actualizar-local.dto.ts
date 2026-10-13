@@ -24,6 +24,11 @@ export class ActualizarLocalSuperAdminDto {
   @IsOptional() @IsString() @MaxLength(500) logoUrl?: string;
   @IsOptional() @IsEnum(ModoClientes) modoClientes?: ModoClientes;
 
-  /** Se escribe en `ConfiguracionClub` (es la fuente real del WhatsApp del local). */
-  @IsOptional() @IsString() @MaxLength(40) numeroAtendiente?: string;
+  /**
+   * Se escribe en `ConfiguracionClub` (es la fuente real del WhatsApp del local).
+   *
+   * Semantica de limpieza (el vacio NO cambia): ausente o `''` = NO tocar; `null`
+   * EXPLICITO = borrar el valor (queda en null).
+   */
+  @IsOptional() @IsString() @MaxLength(40) numeroAtendiente?: string | null;
 }

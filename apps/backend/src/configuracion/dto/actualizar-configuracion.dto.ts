@@ -1,7 +1,17 @@
+import { Transform } from 'class-transformer';
 import {
   IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min,
 } from 'class-validator';
 import { ModoAsignacionPedidos, ModoFidelizacion, ModoPago, TipoPedido } from '@prisma/client';
+
+/**
+ * `''` = "NO tocar" (el campo se descarta antes de escribir); `null` EXPLICITO = BORRAR (el
+ * valor queda en null). El admin del dueno manda `undefined` cuando un campo esta vacio, asi
+ * que su semantica NO cambia; el panel de plataforma usa `null` para limpiar un valor.
+ *
+ * Se aplica SOLO a los campos de texto que el modelo admite en null / pueden quedar vacios.
+ */
+const VacioNoToca = () => Transform(({ value }) => (value === '' ? undefined : value));
 
 export class ActualizarConfiguracionDto {
   @IsOptional() @IsEnum(ModoFidelizacion) modoFidelizacion?: ModoFidelizacion;
@@ -12,7 +22,7 @@ export class ActualizarConfiguracionDto {
   /** Tasa del programa por puntos: cuantos puntos por cada $1000 de consumo. */
   @IsOptional() @IsInt() @Min(1) @Max(1000) puntosPorMil?: number;
   /** Texto del premio de puntos (el de sellos es `premioTexto`). */
-  @IsOptional() @IsString() @MaxLength(160) premioTextoPuntos?: string;
+  @IsOptional() @VacioNoToca() @IsString() @MaxLength(160) premioTextoPuntos?: string | null;
   @IsOptional() @IsInt() @Min(0) @Max(100) sellosBienvenida?: number;
   @IsOptional() @IsInt() @Min(1) @Max(10) limiteVisitasPorDia?: number;
   @IsOptional() @IsInt() @Min(0) @Max(72) horasMinimasEntreVisitas?: number;
@@ -21,14 +31,14 @@ export class ActualizarConfiguracionDto {
   @IsOptional() @IsBoolean() mostrarResenaPostVisita?: boolean;
   @IsOptional() @IsBoolean() menuActivo?: boolean;
   /** Mensaje que ve el cliente en su tarjeta. Faltaba en el DTO (estaba solo en el modelo). */
-  @IsOptional() @IsString() @MaxLength(500) mensajeBienvenida?: string;
+  @IsOptional() @VacioNoToca() @IsString() @MaxLength(500) mensajeBienvenida?: string | null;
 
   @IsOptional() @IsArray() tiposPedidoHabilitados?: TipoPedido[];
   @IsOptional() @IsArray() modosPagoHabilitados?: ModoPago[];
   @IsOptional() @IsEnum(ModoPago) modoPagoPorDefecto?: ModoPago;
   @IsOptional() @IsEnum(TipoPedido) tipoPedidoPorDefecto?: TipoPedido;
   @IsOptional() @IsEnum(ModoAsignacionPedidos) modoAsignacionPedidos?: ModoAsignacionPedidos;
-  @IsOptional() @IsString() @MaxLength(40) numeroAtendiente?: string;
+  @IsOptional() @VacioNoToca() @IsString() @MaxLength(40) numeroAtendiente?: string | null;
   /**
    * Fuente PRIMARIA del WhatsApp del local es `numeroAtendiente` del club; este switch decide
    * si el numero PROPIO de una sucursal (`Sucursal.numeroAtendiente`) lo reemplaza para esa
@@ -37,11 +47,11 @@ export class ActualizarConfiguracionDto {
    */
   @IsOptional() @IsBoolean() usarNumeroAtendienteDistinto?: boolean;
 
-  @IsOptional() @IsString() @MaxLength(120) transferenciaAlias?: string;
-  @IsOptional() @IsString() @MaxLength(40) transferenciaCbu?: string;
-  @IsOptional() @IsString() @MaxLength(120) transferenciaTitular?: string;
-  @IsOptional() @IsString() @MaxLength(120) transferenciaBanco?: string;
-  @IsOptional() @IsString() linkMercadoPago?: string;
+  @IsOptional() @VacioNoToca() @IsString() @MaxLength(120) transferenciaAlias?: string | null;
+  @IsOptional() @VacioNoToca() @IsString() @MaxLength(40) transferenciaCbu?: string | null;
+  @IsOptional() @VacioNoToca() @IsString() @MaxLength(120) transferenciaTitular?: string | null;
+  @IsOptional() @VacioNoToca() @IsString() @MaxLength(120) transferenciaBanco?: string | null;
+  @IsOptional() @VacioNoToca() @IsString() linkMercadoPago?: string | null;
 
   @IsOptional() @IsBoolean() upsellActivo?: boolean;
   @IsOptional() @IsInt() @Min(1) @Max(10) upsellMaxSugerencias?: number;

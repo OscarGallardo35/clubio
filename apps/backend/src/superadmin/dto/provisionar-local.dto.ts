@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  IsArray, IsEnum, IsIn, IsObject, IsOptional, IsString, Length, Matches, MaxLength, MinLength,
+  IsArray, IsBoolean, IsEnum, IsIn, IsObject, IsOptional, IsString, Length, Matches, MaxLength, MinLength,
   ValidateNested,
 } from 'class-validator';
 import { RolEmpleado } from '@prisma/client';
@@ -58,4 +58,20 @@ export class ProvisionarLocalSuperAdminDto {
 
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => EmpleadoDemoDto)
   empleados?: EmpleadoDemoDto[];
+
+  /**
+   * `true` = SINCRONIZA la carta: ademas de crear/actualizar los items de la plantilla,
+   * BORRA los items del local que no estan en ella. Ausente/`false` = sigue ACUMULANDO
+   * (comportamiento historico: no se borra nada).
+   */
+  @IsOptional() @IsBoolean()
+  reemplazarCarta?: boolean;
+
+  /**
+   * `true` = reaplica el theme de la plantilla SIEMPRE (comportamiento historico, pisa un
+   * theme puesto a mano). Ausente/`false` = solo aplica el theme si el local NO tiene uno
+   * (este es el default nuevo: no pisa una marca elegida a mano).
+   */
+  @IsOptional() @IsBoolean()
+  forzarTheme?: boolean;
 }

@@ -34,6 +34,7 @@ import { ResenasModule } from './resenas/resenas.module';
 import { EstadisticasModule } from './estadisticas/estadisticas.module';
 import { MediaModule } from './media/media.module';
 import { VerificacionModule } from './verificacion/verificacion.module';
+import { SuperadminModule } from './superadmin/superadmin.module';
 
 @Module({
   imports: [
@@ -79,6 +80,8 @@ import { VerificacionModule } from './verificacion/verificacion.module';
     MediaModule,
     // --- Verificacion publica de sellos/premio (link de WhatsApp, sin auth) ---
     VerificacionModule,
+    // --- Panel del operador de la plataforma (PWA Superadmin) ---
+    SuperadminModule,
   ],
   providers: [
     // Rate limiting global. Los JWT guards NO se registran globalmente:

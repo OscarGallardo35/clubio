@@ -23,6 +23,15 @@ export const COOKIE_EMPLEADO = 'empleado_token';
 /** Cookie de sesion del DUENO (PWA Admin). Mismas banderas que las otras dos. */
 export const COOKIE_DUENO = 'dueno_token';
 
+/**
+ * Cookie de sesion del SUPER-ADMIN (panel de PLATAFORMA).
+ *
+ * OJO — es la unica cookie de sesion que NO se comparte por dominio: ver
+ * `opcionesCookieSuperAdmin`. El nombre propio (`superadmin_token`) hace que ni
+ * siquiera se pueda confundir con las otras tres en el header `Cookie`.
+ */
+export const COOKIE_SUPERADMIN = 'superadmin_token';
+
 export function esProduccion(): boolean {
   return (process.env.NODE_ENV ?? 'development') === 'production';
 }
@@ -69,6 +78,49 @@ export const opcionesCookieDueno = opcionesCookieSesion;
 export const opcionesBorrarCookieCliente = opcionesBorrarCookieSesion;
 export const opcionesBorrarCookieEmpleado = opcionesBorrarCookieSesion;
 export const opcionesBorrarCookieDueno = opcionesBorrarCookieSesion;
+
+/**
+ * Cookie de sesion del SUPER-ADMIN: HOST-ONLY (sin `domain`).
+ *
+ * Decision de seguridad deliberada, y la unica excepcion a la simetria de arriba.
+ * Las cookies de cliente/empleado/dueno llevan `Domain=.clubio.lat` porque las tres
+ * PWAs son el MISMO negocio (la misma cookie de dueno tiene que viajar de
+ * `admin.clubio.lat` a `api.clubio.lat`).
+ *
+ * El panel del operador de la plataforma NO es de ese negocio: si su cookie tambien
+ * fuera de `.clubio.lat`, el navegador la mandaria a las apps de los locales
+ * (`app/staff/admin.clubio.lat`) y cualquier endpoint que aceptara ese token quedaria
+ * expuesto a traves de una pestaña del local. Host-only la ata al host que la emitio
+ * (el de la API): no viaja a ninguna otra app, y ninguna cookie de local puede
+ * presentarse como sesion de plataforma (cada guard lee SU nombre de cookie).
+ *
+ * Por eso aca NO se lee `COOKIE_DOMAIN` (esa variable es la de las 3 PWAs de tenant).
+ * El resto de las banderas (HttpOnly, Secure, SameSite, path) se mantienen iguales.
+ */
+export function opcionesCookieSuperAdmin(maxAgeSegundos: number): CookieOptions {
+  const prod = esProduccion();
+
+  const sameSite = (process.env.COOKIE_SAMESITE?.trim() ||
+    (prod ? 'none' : 'lax')) as CookieOptions['sameSite'];
+  const secure = process.env.COOKIE_SECURE
+    ? process.env.COOKIE_SECURE.trim() === 'true'
+    : prod;
+
+  // Sin `domain`: cookie host-only a proposito.
+  return {
+    httpOnly: true,
+    secure,
+    sameSite,
+    path: '/',
+    maxAge: Math.max(0, Math.floor(maxAgeSegundos)) * 1000,
+  };
+}
+
+/** Borra la cookie del super-admin con LAS MISMAS banderas (si no, el navegador la ignora). */
+export function opcionesBorrarCookieSuperAdmin(): CookieOptions {
+  const { maxAge: _maxAge, ...resto } = opcionesCookieSuperAdmin(0);
+  return resto;
+}
 
 /**
  * Lee una cookie del header crudo `Cookie: a=1; b=2`.

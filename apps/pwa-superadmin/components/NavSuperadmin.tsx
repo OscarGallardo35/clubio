@@ -19,8 +19,8 @@ import { useSuperAdmin } from '@/hooks/useSuperAdmin';
  */
 export const SECCIONES = [
   { ruta: '/locales', etiqueta: 'Locales', listo: true },
+  { ruta: '/demos', etiqueta: 'Crear demo', listo: true },
   { ruta: '/resumen', etiqueta: 'Resumen', listo: true },
-  { ruta: '/demos', etiqueta: 'Crear demo', listo: false },
   { ruta: '/planes', etiqueta: 'Planes', listo: false },
   { ruta: '/auditoria', etiqueta: 'Auditoria', listo: false },
 ] as const;

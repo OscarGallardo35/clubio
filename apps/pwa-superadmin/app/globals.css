@@ -65,3 +65,20 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* --- fades de los bordes del TabsList (navegacion scrolleable) ---
+   Copiados de packages/ui/src/styles/globals.css: el componente `TabsList` los referencia
+   por clase, pero cada app genera su propio Tailwind (y solo tiene copiadas estas). Sin
+   esto, el fade de los bordes simplemente no existe. */
+.tabs-fade-derecha {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 1rem), transparent 100%);
+}
+.tabs-fade-izquierda {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 1rem);
+  mask-image: linear-gradient(to right, transparent 0, black 1rem);
+}
+.tabs-fade-ambos {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 1rem, black calc(100% - 1rem), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 1rem, black calc(100% - 1rem), transparent 100%);
+}

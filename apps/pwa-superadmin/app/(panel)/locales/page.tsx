@@ -1,30 +1,65 @@
 'use client';
 
 import * as React from 'react';
-import { Input, Label, Skeleton } from '@repo/ui';
+import Link from 'next/link';
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Skeleton,
+  buttonVariants,
+  toast,
+} from '@repo/ui';
 import { superadminApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
-import type { LocalPlataforma } from '@/types/api';
+import { FormularioLocal } from '@/components/locales/FormularioLocal';
+import { FabricaDemo } from '@/components/locales/FabricaDemo';
+import { PLANES } from '@/types/api';
+import type { LocalPlataforma, PlanLocal } from '@/types/api';
+
+/** Un local con lo minimo para la fabrica (sirve para el recien creado y para una fila). */
+interface LocalParaProvisionar {
+  id: string;
+  nombre: string;
+  slug: string;
+}
 
 /**
- * Listado de locales de la plataforma (READ-ONLY en esta fase).
+ * Locales de la plataforma: listado + alta + las acciones de cada fila.
  *
- * Es la pantalla que prueba que el cableado y la sesion funcionan: si se ven los
- * locales REALES (que-lomitos, bar-la-esquina), la cookie host-only, el guard y el
- * endpoint de scope global estan bien. La escritura (crear el demo con nombre, colores,
- * carta, empleados y dueno) es la fase siguiente.
+ * El buscador y los filtros pegan al backend (`?search=&plan=&activo=`), no filtran en
+ * memoria: la plataforma puede tener cientos de locales. Va con debounce de 300ms para no
+ * disparar una request por tecla.
  *
- * El buscador pega al backend (`?search=`), no filtra en memoria: la plataforma puede
- * tener cientos de locales. Va con debounce de 300ms para no disparar una request por
- * tecla.
+ * La cadena IMPORTANTE es "Nuevo local" -> "Crear demo": al crear, el backend devuelve el
+ * local real y el wizard encadena la fabrica con ese id. Es el camino que el operador hace
+ * para vender: crear el local y dejarlo listo sin buscar nada en la lista.
  */
 export default function LocalesPage() {
   const [busqueda, setBusqueda] = React.useState('');
   const [termino, setTermino] = React.useState('');
+  const [plan, setPlan] = React.useState<'todos' | PlanLocal>('todos');
+  const [activo, setActivo] = React.useState<'todos' | 'true' | 'false'>('todos');
+
   const [locales, setLocales] = React.useState<LocalPlataforma[] | null>(null);
   const [total, setTotal] = React.useState(0);
   const [cargando, setCargando] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+
+  const [creando, setCreando] = React.useState(false);
+  const [editando, setEditando] = React.useState<LocalPlataforma | null>(null);
+  const [fabricando, setFabricando] = React.useState<LocalParaProvisionar | null>(null);
 
   // Debounce del buscador.
   React.useEffect(() => {
@@ -35,7 +70,11 @@ export default function LocalesPage() {
   const cargar = React.useCallback(async () => {
     setCargando(true);
     try {
-      const r = await superadminApi.locales(termino ? { search: termino } : {});
+      const r = await superadminApi.locales({
+        ...(termino ? { search: termino } : {}),
+        ...(plan !== 'todos' ? { plan } : {}),
+        ...(activo !== 'todos' ? { activo } : {}),
+      });
       setLocales(r.data);
       setTotal(r.total);
       setError(null);
@@ -46,35 +85,71 @@ export default function LocalesPage() {
     } finally {
       setCargando(false);
     }
-  }, [termino]);
+  }, [termino, plan, activo]);
 
   React.useEffect(() => {
     void cargar();
   }, [cargar]);
 
-  const filtrando = termino.length > 0;
+  const filtrando = termino.length > 0 || plan !== 'todos' || activo !== 'todos';
 
   return (
     <div className="flex w-full flex-col gap-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Locales</h1>
-        <p className="text-sm text-muted-foreground">
-          Todos los locales de la plataforma (sin filtro de tenant).
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold">Locales</h1>
+          <p className="text-sm text-muted-foreground">
+            Todos los locales de la plataforma (sin filtro de tenant).
+          </p>
+        </div>
+        <Button onClick={() => setCreando(true)}>+ Nuevo local</Button>
       </header>
 
-      <div className="w-full max-w-md space-y-2">
-        <Label htmlFor="busqueda">Buscar</Label>
-        <Input
-          id="busqueda"
-          name="busqueda"
-          type="search"
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Nombre o slug (ej: lomitos)"
-          autoComplete="off"
-          spellCheck={false}
-        />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-full max-w-xs space-y-2">
+          <Label htmlFor="busqueda">Buscar</Label>
+          <Input
+            id="busqueda"
+            name="busqueda"
+            type="search"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Nombre o slug (ej: lomitos)"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="filtro-plan">Plan</Label>
+          <Select value={plan} onValueChange={(v) => setPlan(v as 'todos' | PlanLocal)}>
+            <SelectTrigger id="filtro-plan" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos los planes</SelectItem>
+              {PLANES.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="filtro-activo">Estado</Label>
+          <Select value={activo} onValueChange={(v) => setActivo(v as 'todos' | 'true' | 'false')}>
+            <SelectTrigger id="filtro-activo" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="true">Activos</SelectItem>
+              <SelectItem value="false">Inactivos</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {error ? (
@@ -94,7 +169,7 @@ export default function LocalesPage() {
         <>
           <p className="text-sm text-muted-foreground" data-testid="conteo-locales">
             {total} {total === 1 ? 'local' : 'locales'}
-            {filtrando ? ` para "${termino}"` : ''}
+            {filtrando ? ' con los filtros aplicados' : ''}
           </p>
 
           {locales.length === 0 ? (
@@ -111,27 +186,40 @@ export default function LocalesPage() {
                       <p className="truncate text-xs text-muted-foreground">/{l.slug}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="rounded-full border px-2 py-0.5 text-xs font-medium">
-                        {l.plan}
-                      </span>
-                      <span
-                        className={
-                          l.activo
-                            ? 'rounded-full border border-emerald-600/40 px-2 py-0.5 text-xs text-emerald-700'
-                            : 'rounded-full border px-2 py-0.5 text-xs text-muted-foreground'
-                        }
-                      >
-                        {l.activo ? 'activo' : 'inactivo'}
-                      </span>
-                      {l.tieneTheme ? (
-                        <span className="rounded-full border px-2 py-0.5 text-xs">theme</span>
-                      ) : null}
+                      <Badge variant="outline">{l.plan}</Badge>
+                      {l.activo ? (
+                        <Badge variant="success">activo</Badge>
+                      ) : (
+                        <Badge variant="secondary">inactivo</Badge>
+                      )}
+                      {l.tieneTheme ? <Badge variant="outline">theme</Badge> : null}
                     </div>
                   </div>
+
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span>{l.sucursales} sucursales</span>
                     <span>{l.empleados} empleados</span>
                     <span>{l.clientes} clientes</span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {/* Abrir = el detalle (5 pestanas). Provisionar = la fabrica. Editar = datos base. */}
+                    <Link
+                      href={`/locales/${encodeURIComponent(l.id)}`}
+                      className={buttonVariants({ variant: 'default', size: 'sm' })}
+                    >
+                      Abrir
+                    </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFabricando({ id: l.id, nombre: l.nombre, slug: l.slug })}
+                    >
+                      Provisionar
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setEditando(l)}>
+                      Editar
+                    </Button>
                   </div>
                 </li>
               ))}
@@ -139,6 +227,94 @@ export default function LocalesPage() {
           )}
         </>
       ) : null}
+
+      {/* Alta: wizard de 2 pasos. Al terminar, encadena la fabrica con el local recien creado. */}
+      <Dialog
+        open={creando}
+        onOpenChange={(abierto) => {
+          if (!abierto) setCreando(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuevo local</DialogTitle>
+            <DialogDescription>
+              Se crea el local y su sucursal principal. Despues podes dejarlo listo para la demo
+              con una plantilla.
+            </DialogDescription>
+          </DialogHeader>
+          <FormularioLocal
+            local={null}
+            onCreado={(nuevo) => {
+              setCreando(false);
+              setFabricando(nuevo);
+              toast.message('Podes dejarlo listo para la demo');
+              void cargar();
+            }}
+            onCancelar={() => setCreando(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editando !== null}
+        onOpenChange={(abierto) => {
+          if (!abierto) setEditando(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar local</DialogTitle>
+            <DialogDescription>
+              El slug no se cambia: ya esta en la URL y en el QR que el local repartio.
+            </DialogDescription>
+          </DialogHeader>
+          {editando ? (
+            <FormularioLocal
+              key={editando.id}
+              local={{
+                id: editando.id,
+                nombre: editando.nombre,
+                slug: editando.slug,
+                plan: editando.plan,
+                numeroAtendiente: null,
+              }}
+              onGuardado={async () => {
+                setEditando(null);
+                await cargar();
+              }}
+              onCancelar={() => setEditando(null)}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fabricando !== null}
+        onOpenChange={(abierto) => {
+          if (!abierto) setFabricando(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Crear demo de {fabricando?.nombre}</DialogTitle>
+            <DialogDescription>
+              Deja el local listo para mostrar: club, carta, personal y un cliente demo.
+            </DialogDescription>
+          </DialogHeader>
+          {fabricando ? (
+            <FabricaDemo
+              local={fabricando}
+              onProvisionado={cargar}
+              onListo={async () => {
+                setFabricando(null);
+                await cargar();
+              }}
+              onVolver={() => setFabricando(null)}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

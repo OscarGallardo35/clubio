@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { motion, type Variants } from 'framer-motion'
+import { motion, useMotionValue, useSpring, type MotionValue, type Variants } from 'framer-motion'
 import { Circle, Clock, Crown, Gift, Stamp } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -217,6 +217,15 @@ export function hexARgba(hex: string, alpha: number): string | null {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
+/**
+ * `hexARgba` con fallback: si el color del theme NO es hex (cualquier color CSS
+ * valido lo es para el tipo), devuelve el color tal cual. Asi el reverso nunca
+ * queda con un `rgba(null,...)` invalido.
+ */
+export function conAlpha(color: string, alpha: number): string {
+  return hexARgba(color, alpha) ?? color
+}
+
 /** Rotacion ESTABLE por indice (no random): misma posicion -> mismo angulo. */
 export function rotacionSello(indice: number, base = 0): number {
   return base + ((indice * 37) % 21) - 10
@@ -424,6 +433,80 @@ function Sello({
   )
 }
 
+/**
+ * Envoltura del giro 3D (solo CON theme). El contenedor es LOCAL: aplica
+ * `perspective` aca (y no en un ancestro compartido) y NO tiene descendientes
+ * `position: fixed`, asi que la barra inferior del cliente no se mueve. El tilt y
+ * el brillo van `pointer-events-none`.
+ *
+ * Cuando NO hay theme devuelve los hijos tal cual (una sola cara): el DOM de la
+ * tarjeta historica (bar-la-esquina) queda IDENTICO.
+ */
+function GiroTarjeta({
+  theme,
+  reducedMotion,
+  tiltX,
+  tiltY,
+  giro,
+  volteada,
+  alMover,
+  alSalir,
+  brilloRef,
+  children,
+}: {
+  theme: TemaTarjeta | null
+  reducedMotion: boolean
+  tiltX: MotionValue<number>
+  tiltY: MotionValue<number>
+  giro: MotionValue<number>
+  volteada: boolean
+  alMover: React.PointerEventHandler<HTMLDivElement>
+  alSalir: () => void
+  brilloRef: React.RefObject<HTMLDivElement>
+  children: React.ReactNode
+}) {
+  if (!theme) return <>{children}</>
+  return (
+    <div
+      className="relative w-full"
+      style={{ perspective: '1400px', minHeight: 'inherit' }}
+      onPointerMove={alMover}
+      onPointerLeave={alSalir}
+      onPointerUp={alSalir}
+      onPointerCancel={alSalir}
+    >
+      <motion.div
+        className="relative w-full"
+        // preserve-3d en cada nivel para que el rotateY del giro NO se aplane.
+        style={{ transformStyle: 'preserve-3d', minHeight: 'inherit', rotateX: tiltX, rotateY: tiltY }}
+      >
+        <motion.div
+          data-slot="tarjeta-giro"
+          data-cara={volteada ? 'reverso' : 'frente'}
+          className="relative grid w-full"
+          style={{ transformStyle: 'preserve-3d', minHeight: 'inherit', gridTemplateColumns: 'minmax(0, 1fr)', rotateY: giro }}
+        >
+          {children}
+        </motion.div>
+      </motion.div>
+      {/* Capa de brillo que sigue al puntero (pointer-events-none, no bloquea nada). */}
+      {!reducedMotion ? (
+        <div
+          ref={brilloRef}
+          aria-hidden="true"
+          data-slot="tarjeta-brillo"
+          className="pointer-events-none absolute inset-0 rounded-3xl"
+          style={{
+            background: `radial-gradient(circle at var(--shine-x, 50%) var(--shine-y, 50%), ${conAlpha(theme.colores.text, 0.28)}, transparent 45%)`,
+            opacity: 0,
+            transition: 'opacity 320ms ease',
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
 export function TarjetaSellos({
   nombreCliente,
   nombreNegocio,
@@ -456,6 +539,69 @@ export function TarjetaSellos({
   const completa = estadoReal === 'completa' || estadoReal === 'canjeada'
   const themed = Boolean(theme)
 
+  // --- reverso + giro 3D (SOLO rama con theme) -----------------------------
+  // El contenedor del giro es LOCAL y no tiene descendientes `position: fixed`.
+  // Meter `transform`/`perspective`/`will-change` en un ANCESTRO de un fixed lo
+  // vuelve relativo a ese ancestro: ese fue exactamente el bug que hizo
+  // DESAPARECER la barra inferior del staff. Aca no hay ningun fixed adentro, asi
+  // que es seguro. Tampoco se deja `will-change` pegado: el transform va directo
+  // sobre las caras / springs.
+  const [volteada, setVolteada] = React.useState(false)
+  const yaGiroAuto = React.useRef(false)
+  const giroTimers = React.useRef<ReturnType<typeof setTimeout>[]>([])
+  const brilloRef = React.useRef<HTMLDivElement | null>(null)
+
+  // Tilt y giro se manejan con MOTION VALUES (van en `style`, NO en `animate`) para
+  // no cortar la propagacion de variantes con la que entran los sellos.
+  const tiltX = useMotionValue(0) // rotateX
+  const tiltY = useMotionValue(0) // rotateY
+  const tiltXSpring = useSpring(tiltX, { stiffness: 220, damping: 20, mass: 0.5 })
+  const tiltYSpring = useSpring(tiltY, { stiffness: 220, damping: 20, mass: 0.5 })
+  const giroObjetivo = useMotionValue(0)
+  const giroAngulo = useSpring(giroObjetivo, { stiffness: 200, damping: 24, mass: 0.7 })
+
+  React.useEffect(() => {
+    giroObjetivo.set(!reducedMotion && volteada ? 180 : 0)
+  }, [volteada, reducedMotion, giroObjetivo])
+
+  /**
+   * Tilt sutil (~3deg por lado) + brillo siguiendo el puntero. NO hace pointer
+   * capture ni preventDefault: por eso no pelea con el scroll ni con el gesto de
+   * atras del celular. Actualiza motion values y variables CSS directo (sin
+   * re-render: en un telefono de gama baja eso importa).
+   */
+  const alMoverPuntero = React.useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (reducedMotion || !themed) return
+      const r = e.currentTarget.getBoundingClientRect()
+      if (!r.width || !r.height) return
+      const nx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+      const ny = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+      tiltY.set((nx - 0.5) * -6)
+      tiltX.set((ny - 0.5) * 6)
+      const brillo = brilloRef.current
+      if (brillo) {
+        brillo.style.setProperty('--shine-x', `${(nx * 100).toFixed(1)}%`)
+        brillo.style.setProperty('--shine-y', `${(ny * 100).toFixed(1)}%`)
+        brillo.style.opacity = '1'
+      }
+    },
+    [reducedMotion, themed, tiltX, tiltY],
+  )
+
+  const alSalirPuntero = React.useCallback(() => {
+    tiltX.set(0)
+    tiltY.set(0)
+    if (brilloRef.current) brilloRef.current.style.opacity = '0'
+  }, [tiltX, tiltY])
+
+  // Giro por toque: funciona SIEMPRE (es interaccion del usuario, no decoracion) y
+  // no rompe el onClick existente: lo sigue llamando si el caller lo paso.
+  const alTocar = React.useCallback(() => {
+    if (themed) setVolteada((v) => !v)
+    onClick?.()
+  }, [themed, onClick])
+
   // Icono del header CON theme: escala con el tamano de la tarjeta para que el flujo
   // (medium/small) muestre el MISMO diseno que /tarjeta (full), no un avatar chico.
   // El circulo con el logo va ~40% mas grande (106/90 full, 78/67 medium, 62/50 small)
@@ -463,6 +609,12 @@ export function TarjetaSellos({
   const circuloThemed = tamaño === 'full' ? 'size-[106px]' : tamaño === 'medium' ? 'size-[78px]' : 'size-[62px]'
   const iconoThemed = tamaño === 'full' ? 'size-[90px]' : tamaño === 'medium' ? 'size-[67px]' : 'size-[50px]'
   const inicialThemed = tamaño === 'full' ? 'text-4xl' : tamaño === 'medium' ? 'text-2xl' : 'text-xl'
+
+  // Icono del REVERSO (solo theme): mas grande que el del header porque es lo unico
+  // que hay en esa cara.
+  const circuloReverso = tamaño === 'full' ? 'size-[180px]' : tamaño === 'medium' ? 'size-[120px]' : 'size-[96px]'
+  const iconoReverso = tamaño === 'full' ? 'size-[152px]' : tamaño === 'medium' ? 'size-[100px]' : 'size-[80px]'
+  const inicialReverso = tamaño === 'full' ? 'text-6xl' : tamaño === 'medium' ? 'text-4xl' : 'text-3xl'
 
   // --- secuencia de animacion (fases 1 a 6 de la especificacion) ----------
   const previos = React.useRef(llenos)
@@ -504,6 +656,11 @@ export function TarjetaSellos({
       setCancelado(true)
       limpiar()
       setEtapa(0)
+      // El giro automatico tambien es NO critico: si el usuario interactua se
+      // cancela y la tarjeta vuelve al frente.
+      giroTimers.current.forEach(clearTimeout)
+      giroTimers.current = []
+      setVolteada(false)
     }
     const opciones: AddEventListenerOptions = { once: true, passive: true }
     window.addEventListener('pointerdown', abortar, opciones)
@@ -534,6 +691,17 @@ export function TarjetaSellos({
       ? '¡Completaste tu tarjeta! Mostrale esta pantalla al personal'
       : `Llevas ${llenos} de ${total} · Te faltan ${faltan} para tu ${premioTexto}`
     : null
+
+  // Giro automatico UNA vez cuando se desbloquea el premio: reverso ~1.2s y vuelta.
+  // Con reducedMotion NO hay giro automatico (solo el fade del premio, ya existente).
+  React.useEffect(() => {
+    if (reducedMotion || !themed || !mostrarPremio || yaGiroAuto.current) return
+    yaGiroAuto.current = true
+    setVolteada(true)
+    const t = setTimeout(() => setVolteada(false), 1200)
+    giroTimers.current.push(t)
+    return () => clearTimeout(t)
+  }, [mostrarPremio, reducedMotion, themed])
 
   // --- confeti del premio (canvas-confetti, solo con theme) ---------------
   React.useEffect(() => {
@@ -615,6 +783,44 @@ export function TarjetaSellos({
   const overlayTheme = theme ? hexARgba(theme.colores.brandDark, 0.85) : null
   const overlayTop = theme ? hexARgba(theme.colores.brandDark, 0.7) : null
 
+  // --- estilos de las dos caras del giro (solo theme) ---------------------
+  // Con reducedMotion NO hay rotacion: las caras se cruzan con un fade (opacity) y
+  // el reverso pierde su `rotateY`. Con movimiento, cada cara lleva su
+  // `backfaceVisibility: hidden` y el reverso va rotado 180 para no salir espejado.
+  const sinMovimiento = reducedMotion
+  const caraFrenteStyle: React.CSSProperties = {
+    ...fondoCard,
+    gridArea: '1 / 1',
+    backfaceVisibility: 'hidden',
+    WebkitBackfaceVisibility: 'hidden',
+    opacity: sinMovimiento ? (volteada ? 0 : 1) : 1,
+    transition: sinMovimiento ? 'opacity 320ms ease' : 'none',
+  }
+  const caraReversoStyle: React.CSSProperties = theme
+    ? {
+        gridArea: '1 / 1',
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
+        transform: sinMovimiento ? 'none' : 'rotateY(180deg)',
+        opacity: sinMovimiento ? (volteada ? 1 : 0) : 1,
+        transition: sinMovimiento ? 'opacity 320ms ease' : 'none',
+        minHeight: 'inherit',
+        borderColor: theme.colores.brandDark,
+        color: theme.colores.text,
+        // Decoracion (SIN datos): degradado de marca + hairlines diagonales + trama
+        // de puntos, todo con los colores del theme. Nada de imagenes.
+        backgroundColor: theme.colores.bg,
+        backgroundImage: [
+          `radial-gradient(130% 110% at 50% -10%, ${conAlpha(theme.colores.accent, 0.4)} 0%, transparent 55%)`,
+          `repeating-linear-gradient(45deg, ${conAlpha(theme.colores.text, 0.05)} 0 1px, transparent 1px 10px)`,
+          `radial-gradient(${conAlpha(theme.colores.accent, 0.22)} 1.3px, transparent 1.5px)`,
+          `linear-gradient(160deg, ${theme.colores.brandDark} 0%, ${theme.colores.bg} 100%)`,
+        ].join(', '),
+        backgroundSize: 'auto, auto, 16px 16px, auto',
+        backgroundRepeat: 'no-repeat, repeat, repeat, no-repeat',
+      }
+    : {}
+
   return (
     <motion.div
       data-slot="tarjeta-sellos"
@@ -626,11 +832,12 @@ export function TarjetaSellos({
       // lleva su propio aria-label.
       role="img"
       aria-label={etiquetaContenedor}
-      onClick={onClick}
+      // Con theme, el toque hace ademas el giro; sin theme se conserva el onClick de siempre.
+      onClick={themed ? alTocar : onClick}
       initial={animar ? 'oculto' : false}
       animate="visible"
       variants={variantesContenedor}
-      className={cn('relative', config.caja, onClick && 'cursor-pointer', className)}
+      className={cn('relative', config.caja, (themed || onClick) && 'cursor-pointer', className)}
       style={{
         // La tarjeta CON theme (tamano full) es mas grande que la historica: hasta 400px
         // de ancho (en mobile manda el ancho de la pantalla) y 580px de alto minimo. Va
@@ -666,13 +873,26 @@ export function TarjetaSellos({
         />
       ) : null}
 
+      <GiroTarjeta
+        theme={theme}
+        reducedMotion={reducedMotion}
+        tiltX={tiltXSpring}
+        tiltY={tiltYSpring}
+        giro={giroAngulo}
+        volteada={volteada}
+        alMover={alMoverPuntero}
+        alSalir={alSalirPuntero}
+        brilloRef={brilloRef}
+      >
       <div
         className={cn(
           'relative flex h-full w-full flex-col justify-between overflow-hidden rounded-3xl',
           themed ? 'border' : glass ? 'border border-white/20 bg-white/10 backdrop-blur-xl' : 'border border-border bg-card',
           config.padding,
         )}
-        style={fondoCard}
+        // Cara FRENTE: con theme lleva los estilos de cara (gridArea + backface);
+        // sin theme queda EXACTAMENTE el estilo de siempre (regresion intacta).
+        style={theme ? caraFrenteStyle : fondoCard}
       >
         {theme && overlayTheme && overlayTop ? (
           <span
@@ -869,6 +1089,49 @@ export function TarjetaSellos({
           </motion.div>
         ) : null}
       </div>
+
+        {/* CARA REVERSO: SIN datos. Solo el icono grande del local + decoracion
+            CSS/SVG con los colores del theme (degradado + hairlines + trama de puntos
+            + anillos + estrella de marca). Nada de imagenes generadas. */}
+        {theme ? (
+          <div
+            aria-hidden="true"
+            data-slot="tarjeta-reverso"
+            className={cn(
+              'pointer-events-none relative flex h-full w-full items-center justify-center overflow-hidden rounded-3xl border',
+              config.padding,
+            )}
+            style={caraReversoStyle}
+          >
+            {/* Anillos concentricos (marco decorativo) */}
+            <span className="pointer-events-none absolute inset-7 rounded-full" style={{ border: `1.5px dashed ${conAlpha(theme.colores.accent, 0.35)}` }} />
+            <span className="pointer-events-none absolute inset-14 rounded-full" style={{ border: `1px solid ${conAlpha(theme.colores.text, 0.1)}` }} />
+            {/* Estrella de marca gigante, muy tenue, detras del icono */}
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="pointer-events-none absolute size-[78%] opacity-[0.08]" style={{ transform: 'rotate(12deg)' }} fill={theme.colores.accent}>
+              <path d="M12 2.6l2.72 5.5 6.08.88-4.4 4.28 1.04 6.05L12 16.9l-5.44 2.41 1.04-6.05-4.4-4.28 6.08-.88z" />
+            </svg>
+            {/* Icono GRANDE del local: mismo criterio que el header
+                (override por slug -> generico -> inicial). */}
+            <span
+              className={cn('pointer-events-none flex shrink-0 items-center justify-center overflow-hidden rounded-full', circuloReverso)}
+              style={{
+                backgroundColor: conAlpha(theme.colores.accent, 0.16),
+                boxShadow: `0 0 0 2px ${conAlpha(theme.colores.text, 0.14)}, 0 18px 40px rgba(0,0,0,0.25)`,
+              }}
+            >
+              <IconoEsquina
+                slug={slugTenant ?? ''}
+                className={cn('rounded-full object-cover', iconoReverso)}
+                fallback={
+                  <span className={cn('flex size-full items-center justify-center rounded-full font-bold', inicialReverso)} style={{ color: theme.colores.text }}>
+                    {nombreNegocio.slice(0, 1).toUpperCase()}
+                  </span>
+                }
+              />
+            </span>
+          </div>
+        ) : null}
+      </GiroTarjeta>
     </motion.div>
   )
 }

@@ -9,11 +9,14 @@
  * registrado en el servicio devuelve 404 y ademas deja sin dominio a `app.clubio.lat`), asi que el
  * subdominio se resuelve en Cloudflare. El DNS `*.clubio.lat` (proxied) ya existe.
  *
- * Los hosts reservados (app, staff, admin, api, www) pasan SIN tocar: cada uno tiene su propio
+ * Los hosts reservados (app, staff, admin, api, www, ops) pasan SIN tocar: cada uno tiene su propio
  * servicio. Y los assets/API de Next tampoco se reescriben: `/_next/...` vive en la raiz del app, no
  * bajo `/[tenant]` (prefijarlos daba 404 en el css y los chunks).
+ *
+ * `ops` es el panel del operador de la plataforma (`ops.clubio.lat`): sin entrar en RESERVADOS, la
+ * ruta `*.clubio.lat/*` lo reescribiria a `app.clubio.lat/ops/login` y el panel daria 404.
  */
-const RESERVADOS = new Set(['app', 'staff', 'admin', 'api', 'www', 'localhost']);
+const RESERVADOS = new Set(['app', 'staff', 'admin', 'api', 'www', 'ops', 'localhost']);
 const DOMINIO = 'app.clubio.lat';
 // Rutas de sesion del cliente: viven en la RAIZ del app, no bajo /[tenant].
 const RUTAS_RAIZ = new Set(['historial', 'seleccionar-sucursal', 'offline', 'dev']);

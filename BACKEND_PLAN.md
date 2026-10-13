@@ -1233,3 +1233,16 @@ La carpeta se arma con el `negocioId` del **TOKEN** del dueno (nunca con uno del
 no puede escribir en el espacio de otro tenant. La transformacion firmada
 (`c_limit,w_800,h_800,q_auto,f_auto`) es una **derivada de entrega**: no recorta el original.
 
+### El panel de plataforma (PWA Superadmin)
+
+El panel administra VARIOS locales y el super-admin no tiene tenant, asi que tiene su propio
+endpoint: `POST /api/superadmin/media/firmar-subida`, con `SuperAdminGuard` (nada de `TenantGuard`)
+y el **`negocioId` en el body** (obligatorio; se valida contra la DB: local inexistente -> 404).
+**No hay una segunda firma**: delega en `MediaService.firmarSubida`, el mismo metodo del dueno, asi
+que la carpeta, la transformacion y el `signature_version` son identicos. Cada firma queda auditada
+como `superadmin.media.firmado`.
+
+El componente compartido (`SubirImagen` de `@repo/ui`) NO conoce la sesion: cada app le inyecta su
+propio `firmar`; el admin del dueno usa `/api/media/firmar-subida` (cookie del dueno) y el panel
+manda `{ negocioId, tipo }` a la ruta de plataforma. El harness `test:superadmin-media` cubre los dos
+caminos de punta a punta (firma + subida real + persistencia de la `fotoUrl` + aislamiento).

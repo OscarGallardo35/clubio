@@ -48,6 +48,14 @@ export { cn } from './lib/utils'
 // Cada app define su globals.css (y puede copiar los tokens de este package).
 export { ImagenOptimizada } from './components/imagen-optimizada'
 export type { ImagenOptimizadaProps } from './components/imagen-optimizada'
+// Subida firmada a Cloudinary: compartida por el admin del dueno y el panel de plataforma.
+export { SubirImagen } from './components/subir-imagen'
+export type {
+  SubirImagenProps,
+  EstadoSubida,
+  FirmaSubidaMedia,
+  RespuestaSubidaCloudinary,
+} from './components/subir-imagen'
 // Helpers puros de imagen: van aparte para poder testearlos desde node sin React.
 export { urlOptimizada, ANCHO_POR_TIPO, RATIO_POR_TIPO } from './lib/url-optimizada'
 export type { TipoImagenOptimizada } from './lib/url-optimizada'

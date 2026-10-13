@@ -340,5 +340,16 @@ export const endpoints = {
      */
     firmarSubida: '/api/media/firmar-subida',
   },
+  /** Rutas del panel de PLATAFORMA (PWA Superadmin). Cookie propia `superadmin_token`, host-only. */
+  superadmin: {
+    login: '/api/superadmin/auth/login',
+    verificar2FA: '/api/superadmin/auth/2fa',
+    refresh: '/api/superadmin/auth/refresh',
+    logout: '/api/superadmin/auth/logout',
+    me: '/api/superadmin/auth/me',
+    /** Todos los locales (sin filtro de tenant) + buscador por `search`/`plan`/`activo`. */
+    locales: '/api/superadmin/locales',
+    resumen: '/api/superadmin/resumen',
+  },
   health: '/api/health',
 } as const

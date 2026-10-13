@@ -1,10 +1,19 @@
 import { ApiClient, endpoints } from '@repo/api-client';
 import type {
+  DatosLocalBody,
+  EmpleadoBody,
+  EmpleadoLocal,
+  ItemCartaBody,
+  ItemCartaLocal,
   LocalesRespuesta,
   LoginSuperAdminRespuesta,
+  PlantillaDemo,
+  ResultadoProvision,
+  ResultadoResetDemo,
   ResumenPlataforma,
   SuperAdminSesion,
 } from '@/types/api';
+import type { TenantTheme } from '@repo/types';
 
 /**
  * Cliente HTTP unico del panel de plataforma.
@@ -46,4 +55,84 @@ export const superadminApi = {
   },
 
   resumen: () => api.get<ResumenPlataforma>(endpoints.superadmin.resumen),
+
+  /* --- detalle de un local ------------------------------------------------ */
+
+  /** Detalle de UN local: sus datos, su config, su theme y sus contadores. */
+  detalle: (negocioId: string) => api.get<unknown>(endpoints.superadmin.local(negocioId)),
+
+  /**
+   * Crea el local (el backend crea tambien su sucursal principal).
+   *
+   * Devuelve `unknown` y no `LocalDetalle` a proposito: la respuesta la tiene que pasar
+   * por `desenvolverLocal()`, que ademas de normalizar es la unica defensa contra un body
+   * envuelto (`{ local }`, `{ data }`). El wizard necesita el `id`/`slug` REALES para
+   * encadenar la provision: equivocarse de nivel significa provisionar `undefined`.
+   */
+  crearLocal: (body: DatosLocalBody) => api.post<unknown>(endpoints.superadmin.locales, body),
+
+  /** Edita datos base / activa-desactiva / cambia el plan. */
+  actualizarLocal: (negocioId: string, body: DatosLocalBody) =>
+    api.patch<unknown>(endpoints.superadmin.local(negocioId), body),
+
+  /**
+   * Campos del club (modo de fidelizacion, sellos, premio, WhatsApp).
+   *
+   * Se mandan SOLO los campos del formulario: el backend valida con el `ActualizarConfiguracionDto`
+   * del dueno y `forbidNonWhitelisted`, asi que una clave de mas es un 400 que rompe el guardado.
+   */
+  actualizarConfiguracion: (negocioId: string, body: Record<string, unknown>) =>
+    api.patch<unknown>(endpoints.superadmin.configuracion(negocioId), body),
+
+  /**
+   * Theme de la tarjeta del cliente.
+   *
+   * El body va DIRECTO (el objeto `TenantTheme`), no envuelto en `{ theme }`: el endpoint es
+   * `PATCH .../theme` y el backend hace MERGE superficial sobre el theme existente.
+   */
+  actualizarTheme: (negocioId: string, theme: TenantTheme) =>
+    api.patch<unknown>(endpoints.superadmin.theme(negocioId), theme),
+
+  /* --- la fabrica --------------------------------------------------------- */
+
+  /** Deja el local LISTO para la demo (config + theme + carta + empleados + cliente). Idempotente. */
+  provisionar: (
+    negocioId: string,
+    body: { plantilla: PlantillaDemo; config?: Record<string, unknown>; theme?: TenantTheme },
+  ) => api.post<unknown>(endpoints.superadmin.provisionar(negocioId), body),
+
+  /** Vuelve el local a su estado de demo sin tocar branding ni config. */
+  resetDemo: (negocioId: string) => api.post<unknown>(endpoints.superadmin.resetDemo(negocioId), {}),
+
+  /* --- carta -------------------------------------------------------------- */
+
+  /** La respuesta es `{ negocioId, total, items, categorias }`: la resuelve `itemsDeCarta`. */
+  carta: (negocioId: string) => api.get<unknown>(endpoints.superadmin.carta(negocioId)),
+
+  crearItem: (negocioId: string, body: ItemCartaBody) =>
+    api.post<ItemCartaLocal>(endpoints.superadmin.cartaItems(negocioId), body),
+
+  actualizarItem: (negocioId: string, itemId: string, body: Partial<ItemCartaBody>) =>
+    api.patch<ItemCartaLocal>(endpoints.superadmin.cartaItem(negocioId, itemId), body),
+
+  /** Baja logica: el item queda NO disponible (la carta de admin los muestra igual). */
+  eliminarItem: (negocioId: string, itemId: string) =>
+    api.delete<{ ok?: boolean }>(endpoints.superadmin.cartaItem(negocioId, itemId)),
+
+  /* --- empleados ---------------------------------------------------------- */
+
+  /** La respuesta es `{ total, data }` con `tienePin`/`tienePassword` y sin hashes. */
+  empleados: (negocioId: string) => api.get<unknown>(endpoints.superadmin.empleados(negocioId)),
+
+  crearEmpleado: (negocioId: string, body: EmpleadoBody) =>
+    api.post<EmpleadoLocal>(endpoints.superadmin.empleados(negocioId), body),
+
+  actualizarEmpleado: (negocioId: string, empleadoId: string, body: Partial<EmpleadoBody>) =>
+    api.patch<EmpleadoLocal>(endpoints.superadmin.empleado(negocioId, empleadoId), body),
+
+  eliminarEmpleado: (negocioId: string, empleadoId: string) =>
+    api.delete<{ ok?: boolean }>(endpoints.superadmin.empleado(negocioId, empleadoId)),
 };
+
+/** Re-export de los tipos de respuesta que devuelven las mutaciones (por comodidad del caller). */
+export type { ResultadoProvision, ResultadoResetDemo };

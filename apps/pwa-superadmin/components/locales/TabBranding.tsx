@@ -66,11 +66,10 @@ function FormIdentidad({
   const [guardando, setGuardando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const p = primario.trim();
-  const s = secundario.trim();
-  const pOk = p === '' || hexOk(p);
-  const sOk = s === '' || hexOk(s);
-  const valido = pOk && sOk && !guardando;
+  // Los colores del NEGOCIO son columnas NOT NULL con default (`colorPrimario`/`colorSecundario`)
+  // y el DTO exige hex: un `null` ahi NO borra, el backend responde 500. Por eso aca no se puede
+  // vaciar un color (a diferencia del WhatsApp, que si acepta `null` para borrar).
+  const valido = hexOk(primario) && hexOk(secundario) && !guardando;
 
   async function guardar(evento: React.FormEvent) {
     evento.preventDefault();
@@ -79,10 +78,8 @@ function FormIdentidad({
     setError(null);
     try {
       await superadminApi.actualizarLocal(negocioId, {
-        // Vaciar un color manda `null` EXPLICITO (el backend lo interpreta como borrar el valor;
-        // '' significaria "no tocar"). Un color con contenido va tal cual.
-        colorPrimario: p === '' ? null : p,
-        colorSecundario: s === '' ? null : s,
+        colorPrimario: primario,
+        colorSecundario: secundario,
       });
       toast.success('Identidad guardada');
       await onGuardado();
@@ -118,8 +115,8 @@ function FormIdentidad({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Para <strong>limpiar</strong> un color, borra el campo y guarda: se manda un valor nulo y el
-        backend lo borra. Al recargar, el campo queda vacio.
+        Los dos colores son obligatorios: los usa el menu del cliente y el panel del dueno, asi que
+        no se pueden dejar vacios (el backend solo acepta un hex de 6 digitos).
       </p>
 
       {error ? (

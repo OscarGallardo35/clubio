@@ -120,11 +120,13 @@ export function FormularioLocal({
     try {
       const wa = whatsapp.trim();
       const waAntes = (local.numeroAtendiente ?? '').trim();
+      const hexOk = (v: string) => /^#[0-9a-fA-F]{6}$/.test(v);
       await superadminApi.actualizarLocal(local.id, {
         nombre: nombre.trim(),
         plan,
-        colorPrimario,
-        colorSecundario,
+        // Los colores solo se mandan si son un hex valido: mandar '' (campo vaciado) da 400.
+        ...(hexOk(colorPrimario) ? { colorPrimario } : {}),
+        ...(hexOk(colorSecundario) ? { colorSecundario } : {}),
         // WhatsApp: si quedo con valor, se manda; si el operador BORRO uno que existia, se manda
         // `null` EXPLICITO para que el backend lo limpie; si ya estaba vacio y sigue vacio, no se
         // toca (un `null` a ciegas borraria el numero que cargo el dueno desde otra pantalla).

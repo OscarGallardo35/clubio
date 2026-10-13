@@ -91,6 +91,10 @@ function FormConfiguracion({
   const [error, setError] = React.useState<string | null>(null);
   const [guardado, setGuardado] = React.useState(false);
 
+  // El backend DEVUELVE el WhatsApp enmascarado (+549****6666). Si el operador no lo toca, no se
+  // manda: guardar el valor enmascarado pisaria el numero real del local.
+  const waInicial = (cfg?.numeroAtendiente ?? numeroAtendiente ?? '').trim();
+
   const sellosNum = Number(sellos.replace(',', '.'));
   const sellosValido =
     sellos.trim() !== '' && Number.isFinite(sellosNum) && sellosNum >= 1 && sellosNum <= 100;
@@ -108,9 +112,10 @@ function FormConfiguracion({
         modoFidelizacion: modo,
         sellosParaPremio: sellosNum,
         premioTexto: premio.trim(),
-        // Vaciar el WhatsApp manda `null` EXPLICITO: el backend lo BORRA. El vacio ('') seguiria
-        // significando "no tocar", que es justo lo que impedia limpiar el numero.
-        numeroAtendiente: wa === '' ? null : wa,
+        // WhatsApp: solo se manda si CAMBIO respecto de lo que vino del backend. Vaciarlo manda
+        // `null` EXPLICITO (el backend lo BORRA); un valor nuevo se manda tal cual. Si el operador
+        // no lo toco, no se manda (el backend lo devuelve enmascarado y guardarlo lo rompería).
+        ...(wa !== waInicial ? { numeroAtendiente: wa === '' ? null : wa } : {}),
       });
       toast.success('Configuracion guardada');
       setGuardado(true);

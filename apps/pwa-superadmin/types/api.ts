@@ -135,14 +135,15 @@ export interface DatosLocalBody {
   slug?: string;
   plan?: PlanLocal;
   /**
-   * Los colores y el telefono aceptan `null` EXPLICITO: el contrato nuevo del backend lo
-   * interpreta como "borra el valor" (el campo vacio significa "no tocar").
+   * Solo `numeroAtendiente` acepta `null` EXPLICITO (el backend lo interpreta como "borra el
+   * valor"; el vacio significa "no tocar"). Los colores son columnas NOT NULL con default y el
+   * DTO exige hex: no se pueden borrar.
    */
-  colorPrimario?: string | null;
-  colorSecundario?: string | null;
+  colorPrimario?: string;
+  colorSecundario?: string;
   numeroAtendiente?: string | null;
-  telefono?: string | null;
-  email?: string | null;
+  telefono?: string;
+  email?: string;
   activo?: boolean;
 }
 

@@ -1,9 +1,11 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Plan, Prisma, RecursoLimitado } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import type { FeatureCacheada } from './interfaces/feature-check.interface';
+import { CATALOGO_FEATURES, CLAVES_FEATURES, PLANES_ORDEN } from './catalogo-features';
+import type { TipoFeatureCatalogo } from './catalogo-features';
 
 export const CACHE_FEATURES = (plan: Plan) => `plan:features:${plan}`;
 export const TTL_FEATURES = 600; // 10 min
@@ -65,6 +67,48 @@ export function limiteGraciaDe(limiteBase: number, colchonConfigurado = 50): num
 /** Periodo YYYY-MM (hora local). */
 export function periodoActual(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// ============================================================================
+// TIPOS del catalogo y del plan por negocio (los consume el panel de plataforma)
+// ============================================================================
+
+/** Una entrada del catalogo: la metadata + lo que dice el motor para cada plan. */
+export interface FeatureCatalogo {
+  clave: string;
+  etiqueta: string;
+  descripcion?: string;
+  tipo: TipoFeatureCatalogo;
+  /** Planes donde la feature esta `habilitada` (se calcula contra `PlanFeature`, no se hardcodea). */
+  planesIncluidos: Plan[];
+  /** `limite` de la feature en cada plan (null = ilimitado o sin fila). */
+  limitesPorPlan: Record<Plan, number | null>;
+}
+
+/** Lo vigente de un negocio: su plan efectivo, sus features y su pay-per-use. */
+export interface EstadoPlanNegocio {
+  plan: Plan;
+  features: Record<string, { habilitada: boolean; limite: number | null }>;
+  payPerUseActivo: boolean;
+}
+
+/** Un cambio de una feature puntual (`habilitada` + `limite` opcional). */
+export interface CambioFeaturePlan {
+  habilitada: boolean;
+  limite?: number | null;
+}
+
+/** Body de `PATCH /superadmin/locales/:negocioId/plan`. */
+export interface DtoPlanNegocio {
+  plan?: Plan;
+  features?: Record<string, CambioFeaturePlan>;
+  payPerUseActivo?: boolean;
+}
+
+/** Contexto del operador que aplica el cambio (para que quede auditado como super-admin). */
+export interface CtxPlanSuperAdmin {
+  superAdminId: string;
+  ip?: string;
 }
 
 @Injectable()
@@ -256,5 +300,121 @@ export class PlanService {
     for (const p of ['FREE', 'BASIC', 'PRO'] as Plan[]) {
       await this.redis.del(CACHE_FEATURES(p)).catch(() => undefined);
     }
+  }
+
+  // =========================================================================
+  // CATALOGO + PLAN POR NEGOCIO (los cablea el panel de plataforma)
+  // =========================================================================
+
+  /**
+   * El CATALOGO de features: la metadata (clave/etiqueta/descripcion) + lo que dice el
+   * motor para cada plan. `planesIncluidos` y `limitesPorPlan` salen de `PlanFeature`
+   * (la fuente de verdad), NO de una lista hardcodeada: si el seed o la DB cambian, el
+   * catalogo lo refleja solo.
+   */
+  async catalogoFeatures(): Promise<FeatureCatalogo[]> {
+    const porPlan = await this.obtenerTodasLasFeatures();
+    return CATALOGO_FEATURES.map((def) => {
+      const limitesPorPlan = {} as Record<Plan, number | null>;
+      const planesIncluidos: Plan[] = [];
+      for (const p of PLANES_ORDEN) {
+        const f = (porPlan[p] ?? []).find((x) => x.feature === def.clave);
+        limitesPorPlan[p] = f?.limite ?? null;
+        if (f?.habilitada) planesIncluidos.push(p);
+      }
+      const item: FeatureCatalogo = {
+        clave: def.clave,
+        etiqueta: def.etiqueta,
+        tipo: def.tipo,
+        planesIncluidos,
+        limitesPorPlan,
+      };
+      if (def.descripcion) item.descripcion = def.descripcion;
+      return item;
+    });
+  }
+
+  /** Lo VIGENTE de un negocio: su plan efectivo + sus features + su pay-per-use. */
+  async estadoPlanNegocio(negocioId: string): Promise<EstadoPlanNegocio> {
+    const plan = await this.planDeNegocio(negocioId);
+    const features = await this.obtenerFeatures(plan);
+    const neg = await this.prisma.negocio.findUnique({
+      where: { id: negocioId },
+      select: { payPerUseActivo: true },
+    });
+    return {
+      plan,
+      features: Object.fromEntries(
+        features.map((f) => [f.feature, { habilitada: f.habilitada, limite: f.limite }]),
+      ),
+      payPerUseActivo: neg?.payPerUseActivo ?? false,
+    };
+  }
+
+  /**
+   * Aplica un cambio de plan/features/pay-per-use sobre un negocio ENVOLVIENDO el motor
+   * que ya existe (`actualizarFeature` y `setPayPerUse`): no reimplementa la escritura ni
+   * la auditoria. Los tres bloques se auditican como `super-admin`
+   * (`EventoAuditoriaSuperAdmin`), que es el caso real: un cambio de plan es de plataforma
+   * y no pertenece a ningun negocio.
+   *
+   * OJO: `features` setea la fila del PLAN (global), no un override por negocio. Es la
+   * semantica del motor actual (no hay tabla de features por negocio). El `PATCH` cambia
+   * el plan del local y, si se piden features, las del plan resultante.
+   */
+  async aplicarPlanNegocio(
+    negocioId: string,
+    dto: DtoPlanNegocio,
+    ctx: CtxPlanSuperAdmin,
+  ): Promise<EstadoPlanNegocio> {
+    const neg = await this.prisma.negocio.findUnique({
+      where: { id: negocioId },
+      select: { id: true },
+    });
+    if (!neg) throw new NotFoundException('Negocio no encontrado');
+
+    if (dto.features) {
+      for (const [clave, cfg] of Object.entries(dto.features)) {
+        if (!CLAVES_FEATURES.has(clave)) {
+          throw new BadRequestException(`Feature desconocida: ${clave}`);
+        }
+        if (typeof cfg?.habilitada !== 'boolean') {
+          throw new BadRequestException(`features.${clave}.habilitada debe ser boolean`);
+        }
+        const lim = cfg.limite;
+        if (lim !== undefined && lim !== null && (!Number.isInteger(lim) || lim < 0)) {
+          throw new BadRequestException(`features.${clave}.limite debe ser un entero >= 0 o null`);
+        }
+      }
+    }
+
+    if (dto.plan !== undefined) {
+      await this.prisma.negocio.update({ where: { id: negocioId }, data: { plan: dto.plan } });
+    }
+
+    // El plan EFECTIVO (una Suscripcion ACTIVA/TRIAL puede pisar `Negocio.plan`): sobre ese
+    // se setean las features, para que lo que se edita sea lo mismo que se muestra en el GET.
+    const plan = await this.planDeNegocio(negocioId);
+
+    if (dto.features) {
+      for (const [clave, cfg] of Object.entries(dto.features)) {
+        await this.actualizarFeature(
+          plan,
+          clave,
+          { habilitada: cfg.habilitada, ...(cfg.limite !== undefined ? { limite: cfg.limite } : {}) },
+          { auditarComo: 'super-admin', superAdminId: ctx.superAdminId, negocioId, ip: ctx.ip },
+        );
+      }
+    }
+
+    if (dto.payPerUseActivo !== undefined) {
+      await this.setPayPerUse(negocioId, dto.payPerUseActivo, {
+        auditarComo: 'super-admin',
+        superAdminId: ctx.superAdminId,
+        ip: ctx.ip,
+      });
+    }
+
+    return this.estadoPlanNegocio(negocioId);
   }
 }

@@ -4,6 +4,7 @@ import { ListarLocalesSuperAdminDto } from './dto/listar-locales.dto';
 import { CurrentSuperAdmin } from '../common/decorators/current-superadmin.decorator';
 import { SuperAdminGuard } from '../common/guards/superadmin.guard';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
+import { PlanService } from '../planes/plan.service';
 
 /**
  * Endpoints de PLATAFORMA.
@@ -22,6 +23,7 @@ export class SuperAdminLocalesController {
   constructor(
     private readonly superadmin: SuperAdminService,
     private readonly auditoria: AuditoriaService,
+    private readonly plan: PlanService,
   ) {}
 
   /** Lista TODOS los locales (sin filtro de tenant) + buscador por nombre/slug. */
@@ -59,5 +61,28 @@ export class SuperAdminLocalesController {
       userAgent: ua ?? null,
     });
     return resultado;
+  }
+
+  /**
+   * CATALOGO de features del motor de planes (clave + etiqueta + descripcion + planes que la
+   * incluyen + limite por plan). La METADATA sale de `planes/catalogo-features.ts` y lo que
+   * dice el motor (`planesIncluidos`, `limitesPorPlan`) sale de `PlanFeature`: es lo que ya
+   * existe, NO se inventan claves.
+   */
+  @Get('features')
+  async features(
+    @CurrentSuperAdmin() user: { id: string },
+    @Ip() ip: string,
+    @Headers('user-agent') ua: string,
+  ) {
+    const catalogo = await this.plan.catalogoFeatures();
+    await this.auditoria.registrarSuperAdmin({
+      superAdminId: user.id,
+      accion: 'superadmin.features.listado',
+      detalle: { total: catalogo.length },
+      ip: ip ?? null,
+      userAgent: ua ?? null,
+    });
+    return catalogo;
   }
 }

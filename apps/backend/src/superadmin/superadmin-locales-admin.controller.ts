@@ -3,9 +3,11 @@ import {
 } from '@nestjs/common';
 import { SuperadminLocalesService } from './superadmin-locales.service';
 import { SuperadminRecursosService } from './superadmin-recursos.service';
+import { PlanService } from '../planes/plan.service';
 import { CrearLocalSuperAdminDto } from './dto/crear-local.dto';
 import { ActualizarLocalSuperAdminDto } from './dto/actualizar-local.dto';
 import { ProvisionarLocalSuperAdminDto } from './dto/provisionar-local.dto';
+import { ActualizarPlanLocalDto } from './dto/actualizar-plan.dto';
 import { CrearItemCartaDto } from '../carta/dto/crear-item-carta.dto';
 import { ActualizarItemCartaDto } from '../carta/dto/actualizar-item-carta.dto';
 import { ActualizarConfiguracionDto } from '../configuracion/dto/actualizar-configuracion.dto';
@@ -40,6 +42,7 @@ export class SuperAdminLocalesAdminController {
     private readonly locales: SuperadminLocalesService,
     private readonly recursos: SuperadminRecursosService,
     private readonly auditoria: AuditoriaService,
+    private readonly planSvc: PlanService,
   ) {}
 
   /** Un solo lugar para la auditoria de plataforma de este controller. */
@@ -116,6 +119,53 @@ export class SuperAdminLocalesAdminController {
     const resumen = await this.locales.eliminar(negocioId);
     await this.auditar(user, 'superadmin.local.eliminado', resumen.borrados, negocioId, ip, ua);
     return resumen;
+  }
+
+  // =========================================================================
+  // PLAN Y FEATURES DEL LOCAL (motor de planes: envuelve `plan.service`)
+  // =========================================================================
+
+  /** Lo VIGENTE del negocio: plan efectivo + features (habilitada/limite) + pay-per-use. */
+  @Get('locales/:negocioId/plan')
+  async plan(
+    @Param('negocioId') negocioId: string,
+    @CurrentSuperAdmin() user: SuperAdminCtx,
+    @Ip() ip: string,
+    @Headers('user-agent') ua: string,
+  ) {
+    const estado = await this.planSvc.estadoPlanNegocio(negocioId);
+    await this.auditar(user, 'superadmin.plan.leido', { plan: estado.plan }, negocioId, ip, ua);
+    return estado;
+  }
+
+  /**
+   * Aplica un cambio de plan / features / pay-per-use. NO reimplementa el motor: delega en
+   * `PlanService.aplicarPlanNegocio`, que escribe las features y el pay-per-use y los audita
+   * como `super-admin` (`EventoAuditoriaSuperAdmin`). Devuelve lo mismo que el GET.
+   */
+  @Patch('locales/:negocioId/plan')
+  async actualizarPlan(
+    @Param('negocioId') negocioId: string,
+    @Body() dto: ActualizarPlanLocalDto,
+    @CurrentSuperAdmin() user: SuperAdminCtx,
+    @Ip() ip: string,
+    @Headers('user-agent') ua: string,
+  ) {
+    const estado = await this.planSvc.aplicarPlanNegocio(negocioId, dto, {
+      superAdminId: user.id,
+      ip,
+    });
+    await this.auditar(
+      user,
+      'superadmin.plan.actualizado',
+      {
+        plan: dto.plan ?? null,
+        features: dto.features ? Object.keys(dto.features) : [],
+        payPerUseActivo: dto.payPerUseActivo ?? null,
+      },
+      negocioId, ip, ua,
+    );
+    return estado;
   }
 
   // =========================================================================

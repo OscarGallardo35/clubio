@@ -164,7 +164,7 @@ export class SuperadminLocalesService {
       });
 
       return { ...creado, tieneTheme: creado.theme !== null, sucursalPrincipal: sucursal };
-    });
+    }, { timeout: 30_000, maxWait: 15_000 });
 
     this.logger.log(`Local creado desde plataforma: ${slug} (${negocio.id})`);
     return negocio;
@@ -273,141 +273,155 @@ export class SuperadminLocalesService {
       })),
     );
 
-    const resultado = await this.prisma.$transaction(async (tx) => {
-      // --- Sucursal principal (se reusa si ya existe; se crea si el local vino de otro lado) ---
-      let sucursal = await tx.sucursal.findFirst({
-        where: { negocioId, esPrincipal: true },
-        select: { id: true, slug: true },
-      });
-      if (!sucursal) {
-        sucursal = await tx.sucursal.upsert({
-          where: { negocioId_slug: { negocioId, slug: SLUG_SUCURSAL } },
-          update: { esPrincipal: true, activa: true },
-          create: { negocioId, nombre: 'Casa Central', slug: SLUG_SUCURSAL, esPrincipal: true, activa: true },
+    const resultado = await this.prisma.$transaction(
+      async (tx) => {
+        // --- Sucursal principal (se reusa si ya existe; se crea si el local vino de otro lado) ---
+        let sucursal = await tx.sucursal.findFirst({
+          where: { negocioId, esPrincipal: true },
           select: { id: true, slug: true },
         });
-      }
+        if (!sucursal) {
+          sucursal = await tx.sucursal.upsert({
+            where: { negocioId_slug: { negocioId, slug: SLUG_SUCURSAL } },
+            update: { esPrincipal: true, activa: true },
+            create: { negocioId, nombre: 'Casa Central', slug: SLUG_SUCURSAL, esPrincipal: true, activa: true },
+            select: { id: true, slug: true },
+          });
+        }
 
-      // --- Configuracion del club ---
-      const configData = { ...plantilla.config, ...configExtra };
-      await tx.configuracionClub.upsert({
-        where: { negocioId },
-        update: configData as Prisma.ConfiguracionClubUpdateInput,
-        create: { negocioId, ...configData } as Prisma.ConfiguracionClubUncheckedCreateInput,
-      });
+        // --- Configuracion del club ---
+        const configData = { ...plantilla.config, ...configExtra };
+        await tx.configuracionClub.upsert({
+          where: { negocioId },
+          update: configData as Prisma.ConfiguracionClubUpdateInput,
+          create: { negocioId, ...configData } as Prisma.ConfiguracionClubUncheckedCreateInput,
+        });
 
-      // --- Branding / theme ---
-      // `DbNull` y no `null`: son cosas distintas para Prisma en un campo Json? (el template
-      // `basica` limpia el theme; un `null` de JS no alcanza para eso).
-      const dataNegocio: Prisma.NegocioUpdateInput = {
-        theme: theme === null ? Prisma.DbNull : (theme as Prisma.InputJsonValue),
-      };
-      const bg = theme?.colores && typeof (theme.colores as Record<string, unknown>).bg === 'string'
-        ? ((theme.colores as Record<string, unknown>).bg as string)
-        : null;
-      // Solo se pisa el color si el local todavia tiene el default (no se pisa una marca elegida a mano).
-      if (bg && negocio.colorPrimario === '#000000') dataNegocio.colorPrimario = bg;
-      await tx.negocio.update({ where: { id: negocioId }, data: dataNegocio });
-
-      // --- Items de carta (clave natural: negocioId + nombre, igual que el seed) ---
-      let itemsCreados = 0;
-      let itemsActualizados = 0;
-      for (const it of items) {
-        const data = {
-          categoria: it.categoria,
-          nombre: it.nombre,
-          descripcion: it.descripcion ?? null,
-          precio: new Prisma.Decimal(it.precio),
-          etiquetas: it.etiquetas ?? [],
-          disponible: (it as { disponible?: boolean }).disponible ?? true,
-          orden: it.orden ?? 0,
+        // --- Branding / theme ---
+        // `DbNull` y no `null`: son cosas distintas para Prisma en un campo Json? (la plantilla
+        // `basica` limpia el theme; un `null` de JS no alcanza para eso).
+        const dataNegocio: Prisma.NegocioUpdateInput = {
+          theme: theme === null ? Prisma.DbNull : (theme as Prisma.InputJsonValue),
         };
-        const existente = await tx.itemCarta.findFirst({
-          where: { negocioId, nombre: it.nombre },
+        const bg = theme?.colores && typeof (theme.colores as Record<string, unknown>).bg === 'string'
+          ? ((theme.colores as Record<string, unknown>).bg as string)
+          : null;
+        // Solo se pisa el color si el local todavia tiene el default (no se pisa una marca elegida a mano).
+        if (bg && negocio.colorPrimario === '#000000') dataNegocio.colorPrimario = bg;
+        await tx.negocio.update({ where: { id: negocioId }, data: dataNegocio });
+
+        // --- Items de carta (clave natural: negocioId + nombre, igual que el seed) ---
+        // UN solo findMany + createMany en vez de un findOne+create por item: Neon tiene ~200ms
+        // de latencia por query y la transaccion interactiva tiene timeout (ver opciones abajo).
+        const existentesItems = await tx.itemCarta.findMany({
+          where: { negocioId, nombre: { in: items.map((i) => i.nombre) } },
+          select: { id: true, nombre: true },
+        });
+        const mapaItems = new Map(existentesItems.map((i) => [i.nombre, i.id]));
+        const itemsNuevos: Prisma.ItemCartaCreateManyInput[] = [];
+        let itemsCreados = 0;
+        let itemsActualizados = 0;
+        for (const it of items) {
+          const data = {
+            categoria: it.categoria,
+            nombre: it.nombre,
+            descripcion: it.descripcion ?? null,
+            precio: new Prisma.Decimal(it.precio),
+            etiquetas: it.etiquetas ?? [],
+            disponible: (it as { disponible?: boolean }).disponible ?? true,
+            orden: it.orden ?? 0,
+          };
+          const idExistente = mapaItems.get(it.nombre);
+          if (idExistente) {
+            await tx.itemCarta.update({ where: { id: idExistente }, data });
+            itemsActualizados++;
+          } else {
+            itemsNuevos.push({ negocioId, ...data });
+            itemsCreados++;
+          }
+        }
+        if (itemsNuevos.length > 0) await tx.itemCarta.createMany({ data: itemsNuevos });
+
+        // --- Empleados de ejemplo (clave natural: negocioId + nombre, igual que el seed) ---
+        const existentesEmpleados = await tx.empleado.findMany({
+          where: { negocioId, nombre: { in: empleadosConHash.map((e) => e.nombre) } },
+          select: { id: true, nombre: true },
+        });
+        const mapaEmpleados = new Map(existentesEmpleados.map((e) => [e.nombre, e.id]));
+        const empleadosNuevos: Prisma.EmpleadoCreateManyInput[] = [];
+        let empleadosCreados = 0;
+        let empleadosActualizados = 0;
+        for (const e of empleadosConHash) {
+          const data: Prisma.EmpleadoCreateManyInput = {
+            negocioId,
+            sucursalId: sucursal.id,
+            nombre: e.nombre,
+            rol: e.rol,
+            email: e.email,
+            activo: true,
+            eliminadoEn: null,
+            twoFactorEnabled: false,
+            ...(e.passwordHash ? { passwordHash: e.passwordHash } : {}),
+            ...(e.pinHash ? { pinHash: e.pinHash } : {}),
+          };
+          const idExistente = mapaEmpleados.get(e.nombre);
+          if (idExistente) {
+            await tx.empleado.update({ where: { id: idExistente }, data });
+            empleadosActualizados++;
+          } else {
+            empleadosNuevos.push(data);
+            empleadosCreados++;
+          }
+        }
+        if (empleadosNuevos.length > 0) await tx.empleado.createMany({ data: empleadosNuevos });
+
+        // --- Cliente demo + su tarjeta (clave natural: negocioId + telefono) ---
+        const cliente = await tx.cliente.upsert({
+          where: { negocioId_telefono: { negocioId, telefono: DEMO_TELEFONO } },
+          update: {
+            nombre: 'Cliente Demo',
+            sellosActuales: DEMO_SELLOS,
+            puntosActuales: 0,
+            totalVisitas: DEMO_SELLOS,
+            eliminadoEn: null,
+          },
+          create: {
+            negocioId,
+            nombre: 'Cliente Demo',
+            telefono: DEMO_TELEFONO,
+            aceptaNotificaciones: false,
+            tienePwaInstalada: false,
+            sellosActuales: DEMO_SELLOS,
+            puntosActuales: 0,
+            totalVisitas: DEMO_SELLOS,
+          },
           select: { id: true },
         });
-        if (existente) {
-          await tx.itemCarta.update({ where: { id: existente.id }, data });
-          itemsActualizados++;
-        } else {
-          await tx.itemCarta.create({ data: { negocioId, ...data } });
-          itemsCreados++;
-        }
-      }
+        await tx.tarjetaClienteSucursal.upsert({
+          where: { clienteId_sucursalId: { clienteId: cliente.id, sucursalId: sucursal.id } },
+          update: { sellosActuales: DEMO_SELLOS, totalVisitas: DEMO_SELLOS },
+          create: { clienteId: cliente.id, sucursalId: sucursal.id, sellosActuales: DEMO_SELLOS, totalVisitas: DEMO_SELLOS },
+        });
 
-      // --- Empleados de ejemplo (clave natural: negocioId + nombre, igual que el seed) ---
-      let empleadosCreados = 0;
-      let empleadosActualizados = 0;
-      for (const e of empleadosConHash) {
-        // `UncheckedCreateInput` (scalars `negocioId`/`sucursalId`) para poder usar EL MISMO
-        // payload en el create y en el update: las dos ramas escriben los mismos campos.
-        const data: Prisma.EmpleadoUncheckedCreateInput = {
-          negocioId,
+        return {
           sucursalId: sucursal.id,
-          nombre: e.nombre,
-          rol: e.rol,
-          email: e.email,
-          activo: true,
-          eliminadoEn: null,
-          twoFactorEnabled: false,
-          ...(e.passwordHash ? { passwordHash: e.passwordHash } : {}),
-          ...(e.pinHash ? { pinHash: e.pinHash } : {}),
+          items: { creados: itemsCreados, actualizados: itemsActualizados },
+          empleados: { creados: empleadosCreados, actualizados: empleadosActualizados },
+          clienteDemo: { id: cliente.id, telefono: DEMO_TELEFONO, sellos: DEMO_SELLOS },
         };
-        const existente = await tx.empleado.findFirst({
-          where: { negocioId, nombre: e.nombre },
-          select: { id: true },
-        });
-        if (existente) {
-          await tx.empleado.update({ where: { id: existente.id }, data });
-          empleadosActualizados++;
-        } else {
-          await tx.empleado.create({ data });
-          empleadosCreados++;
-        }
-      }
+      },
+      // El default de Prisma son 5s. Con Neon (latencia por query del orden de 200ms) el
+      // provisioning encadena decenas de queries y se pasaba del limite: la transaccion se
+      // cerraba y el ultimo upsert moria con "Transaction already closed".
+      { timeout: 30_000, maxWait: 15_000 },
+    );
 
-      // --- Cliente demo + su tarjeta (clave natural: negocioId + telefono) ---
-      const cliente = await tx.cliente.upsert({
-        where: { negocioId_telefono: { negocioId, telefono: DEMO_TELEFONO } },
-        update: {
-          nombre: 'Cliente Demo',
-          sellosActuales: DEMO_SELLOS,
-          puntosActuales: 0,
-          totalVisitas: DEMO_SELLOS,
-          eliminadoEn: null,
-        },
-        create: {
-          negocioId,
-          nombre: 'Cliente Demo',
-          telefono: DEMO_TELEFONO,
-          aceptaNotificaciones: false,
-          tienePwaInstalada: false,
-          sellosActuales: DEMO_SELLOS,
-          puntosActuales: 0,
-          totalVisitas: DEMO_SELLOS,
-        },
-        select: { id: true },
-      });
-      await tx.tarjetaClienteSucursal.upsert({
-        where: { clienteId_sucursalId: { clienteId: cliente.id, sucursalId: sucursal.id } },
-        update: { sellosActuales: DEMO_SELLOS, totalVisitas: DEMO_SELLOS },
-        create: { clienteId: cliente.id, sucursalId: sucursal.id, sellosActuales: DEMO_SELLOS, totalVisitas: DEMO_SELLOS },
-      });
-
-      const [totalItems, totalEmpleados, totalClientes] = await Promise.all([
-        tx.itemCarta.count({ where: { negocioId } }),
-        tx.empleado.count({ where: { negocioId, eliminadoEn: null } }),
-        tx.cliente.count({ where: { negocioId, eliminadoEn: null } }),
-      ]);
-
-      return {
-        sucursalId: sucursal.id,
-        items: { creados: itemsCreados, actualizados: itemsActualizados, total: totalItems },
-        empleados: { creados: empleadosCreados, actualizados: empleadosActualizados, total: totalEmpleados },
-        clienteDemo: { id: cliente.id, telefono: DEMO_TELEFONO, sellos: DEMO_SELLOS },
-        clientes: totalClientes,
-      };
-    });
+    // Contadores FUERA de la transaccion: son lecturas y no hace falta estirar (ni arriesgar) la tx.
+    const [totalItems, totalEmpleados, totalClientes] = await Promise.all([
+      this.prisma.itemCarta.count({ where: { negocioId } }),
+      this.prisma.empleado.count({ where: { negocioId, eliminadoEn: null } }),
+      this.prisma.cliente.count({ where: { negocioId, eliminadoEn: null } }),
+    ]);
 
     return {
       negocioId,
@@ -415,6 +429,9 @@ export class SuperadminLocalesService {
       plantilla: dto.plantilla,
       theme: theme === null ? null : 'aplicado',
       ...resultado,
+      items: { ...resultado.items, total: totalItems },
+      empleados: { ...resultado.empleados, total: totalEmpleados },
+      clientes: totalClientes,
     };
   }
 
@@ -470,7 +487,7 @@ export class SuperadminLocalesService {
         tarjetas: tarjetas.count,
         clientes: clientes.count,
       };
-    });
+    }, { timeout: 30_000, maxWait: 15_000 });
 
     return {
       negocioId,
@@ -512,7 +529,7 @@ export class SuperadminLocalesService {
         clientes: clientes.count,
         empleados: empleados.count,
       };
-    });
+    }, { timeout: 30_000, maxWait: 15_000 });
 
     this.logger.log(`Local borrado desde plataforma: ${negocio.slug} (${negocioId})`);
     return { negocioId, slug: negocio.slug, borrados: resumen };

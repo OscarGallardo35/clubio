@@ -350,6 +350,30 @@ export const endpoints = {
     /** Todos los locales (sin filtro de tenant) + buscador por `search`/`plan`/`activo`. */
     locales: '/api/superadmin/locales',
     resumen: '/api/superadmin/resumen',
+    /**
+     * Administracion de UN local. El `negocioId` es SIEMPRE explicito (el super-admin no tiene
+     * tenant). Los helpers devuelven la ruta; el metodo HTTP lo elige el llamador.
+     */
+    local: (negocioId: string) => `/api/superadmin/locales/${encodeURIComponent(negocioId)}`,
+    /** FABRICA DE DEMOS: deja el local listo para mostrar (config + theme + carta + empleados). */
+    provisionar: (negocioId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/provisionar`,
+    /** Vuelve el local al estado de demo (sin tocar branding/config/carta/empleados). */
+    resetDemo: (negocioId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/reset-demo`,
+    carta: (negocioId: string) => `/api/superadmin/locales/${encodeURIComponent(negocioId)}/carta`,
+    cartaItems: (negocioId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/carta/items`,
+    cartaItem: (negocioId: string, itemId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/carta/items/${encodeURIComponent(itemId)}`,
+    empleados: (negocioId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/empleados`,
+    empleado: (negocioId: string, empleadoId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/empleados/${encodeURIComponent(empleadoId)}`,
+    configuracion: (negocioId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/configuracion`,
+    theme: (negocioId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/theme`,
   },
   health: '/api/health',
 } as const

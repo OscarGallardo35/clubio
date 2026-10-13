@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { motion, useMotionValue, useSpring, type MotionValue, type Variants } from 'framer-motion'
+import { motion, type Variants } from 'framer-motion'
 import { Circle, Clock, Crown, Gift, Stamp } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -445,10 +445,8 @@ function Sello({
 function GiroTarjeta({
   theme,
   reducedMotion,
-  tiltX,
-  tiltY,
-  giro,
   volteada,
+  tiltRef,
   alMover,
   alSalir,
   brilloRef,
@@ -456,10 +454,8 @@ function GiroTarjeta({
 }: {
   theme: TemaTarjeta | null
   reducedMotion: boolean
-  tiltX: MotionValue<number>
-  tiltY: MotionValue<number>
-  giro: MotionValue<number>
   volteada: boolean
+  tiltRef: React.RefObject<HTMLDivElement>
   alMover: React.PointerEventHandler<HTMLDivElement>
   alSalir: () => void
   brilloRef: React.RefObject<HTMLDivElement>
@@ -475,20 +471,36 @@ function GiroTarjeta({
       onPointerUp={alSalir}
       onPointerCancel={alSalir}
     >
-      <motion.div
+      <div
+        ref={tiltRef}
         className="relative w-full"
-        // preserve-3d en cada nivel para que el rotateY del giro NO se aplane.
-        style={{ transformStyle: 'preserve-3d', minHeight: 'inherit', rotateX: tiltX, rotateY: tiltY }}
+        // Tilt por variables CSS (--tx/--ty): se actualiza sin re-render. La capa es
+        // LOCAL y no tiene descendientes `position: fixed`.
+        style={{
+          transformStyle: 'preserve-3d',
+          minHeight: 'inherit',
+          transform: 'rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg))',
+          transition: 'transform 140ms ease-out',
+        }}
       >
-        <motion.div
+        <div
           data-slot="tarjeta-giro"
           data-cara={volteada ? 'reverso' : 'frente'}
           className="relative grid w-full"
-          style={{ transformStyle: 'preserve-3d', minHeight: 'inherit', gridTemplateColumns: 'minmax(0, 1fr)', rotateY: giro }}
+          // preserve-3d en cada nivel para que el rotateY del giro NO se aplane.
+          style={{
+            transformStyle: 'preserve-3d',
+            minHeight: 'inherit',
+            gridTemplateColumns: 'minmax(0, 1fr)',
+            // Giro en CSS puro (transicion corta, <1.5s). Con reducedMotion NO hay giro:
+            // el cambio de cara es fade (lo manejan las caras con su opacity).
+            transform: reducedMotion ? 'none' : `rotateY(${volteada ? 180 : 0}deg)`,
+            transition: reducedMotion ? 'none' : 'transform 620ms cubic-bezier(.2,.8,.2,1)',
+          }}
         >
           {children}
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
       {/* Capa de brillo que sigue al puntero (pointer-events-none, no bloquea nada). */}
       {!reducedMotion ? (
         <div
@@ -551,24 +563,15 @@ export function TarjetaSellos({
   const giroTimers = React.useRef<ReturnType<typeof setTimeout>[]>([])
   const brilloRef = React.useRef<HTMLDivElement | null>(null)
 
-  // Tilt y giro se manejan con MOTION VALUES (van en `style`, NO en `animate`) para
-  // no cortar la propagacion de variantes con la que entran los sellos.
-  const tiltX = useMotionValue(0) // rotateX
-  const tiltY = useMotionValue(0) // rotateY
-  const tiltXSpring = useSpring(tiltX, { stiffness: 220, damping: 20, mass: 0.5 })
-  const tiltYSpring = useSpring(tiltY, { stiffness: 220, damping: 20, mass: 0.5 })
-  const giroObjetivo = useMotionValue(0)
-  const giroAngulo = useSpring(giroObjetivo, { stiffness: 200, damping: 24, mass: 0.7 })
-
-  React.useEffect(() => {
-    giroObjetivo.set(!reducedMotion && volteada ? 180 : 0)
-  }, [volteada, reducedMotion, giroObjetivo])
+  // Tilt y giro van por CSS (variables + transform sobre las PROPIAS caras), no por
+  // `animate` de framer: asi no se corta la propagacion de variantes con la que
+  // entran los sellos y no hace falta re-render en cada pointermove (clave en mobile).
+  const tiltRef = React.useRef<HTMLDivElement | null>(null)
 
   /**
    * Tilt sutil (~3deg por lado) + brillo siguiendo el puntero. NO hace pointer
    * capture ni preventDefault: por eso no pelea con el scroll ni con el gesto de
-   * atras del celular. Actualiza motion values y variables CSS directo (sin
-   * re-render: en un telefono de gama baja eso importa).
+   * atras del celular. Escribe variables CSS directo (sin re-render).
    */
   const alMoverPuntero = React.useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -577,8 +580,11 @@ export function TarjetaSellos({
       if (!r.width || !r.height) return
       const nx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
       const ny = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
-      tiltY.set((nx - 0.5) * -6)
-      tiltX.set((ny - 0.5) * 6)
+      const tilt = tiltRef.current
+      if (tilt) {
+        tilt.style.setProperty('--tx', `${((ny - 0.5) * 6).toFixed(2)}deg`)
+        tilt.style.setProperty('--ty', `${((nx - 0.5) * -6).toFixed(2)}deg`)
+      }
       const brillo = brilloRef.current
       if (brillo) {
         brillo.style.setProperty('--shine-x', `${(nx * 100).toFixed(1)}%`)
@@ -586,14 +592,17 @@ export function TarjetaSellos({
         brillo.style.opacity = '1'
       }
     },
-    [reducedMotion, themed, tiltX, tiltY],
+    [reducedMotion, themed],
   )
 
   const alSalirPuntero = React.useCallback(() => {
-    tiltX.set(0)
-    tiltY.set(0)
+    const tilt = tiltRef.current
+    if (tilt) {
+      tilt.style.setProperty('--tx', '0deg')
+      tilt.style.setProperty('--ty', '0deg')
+    }
     if (brilloRef.current) brilloRef.current.style.opacity = '0'
-  }, [tiltX, tiltY])
+  }, [])
 
   // Giro por toque: funciona SIEMPRE (es interaccion del usuario, no decoracion) y
   // no rompe el onClick existente: lo sigue llamando si el caller lo paso.
@@ -876,10 +885,8 @@ export function TarjetaSellos({
       <GiroTarjeta
         theme={theme}
         reducedMotion={reducedMotion}
-        tiltX={tiltXSpring}
-        tiltY={tiltYSpring}
-        giro={giroAngulo}
         volteada={volteada}
+        tiltRef={tiltRef}
         alMover={alMoverPuntero}
         alSalir={alSalirPuntero}
         brilloRef={brilloRef}

@@ -18,6 +18,11 @@ import type { LocalDetalle } from '@/types/api';
  *    textos, imagen, si muestra puntos) -> `PATCH /locales/:id/theme`.
  * Separarlos evita que tocar un color de marca pise la personalizacion de la tarjeta.
  *
+ * LAS DOS TARJETAS SON INDEPENDIENTES. Cada formulario tiene su estado y su boton de guardar, y
+ * NO llevan `key` en el contenedor: antes, guardar una cambiaba la `key` del wrapper y REMONTABA
+ * la hermana, perdiendo lo que el operador tenia sin guardar en la otra. Como el detalle solo se
+ * re-carga despues de guardar, el estado del formulario sembrado al montar sigue siendo valido.
+ *
  * NADA de JSON crudo: el operador arma la demo, no edita un schema. Cada campo del theme
  * tiene su control guiado, y hay una vista previa con los colores elegidos.
  */
@@ -32,12 +37,8 @@ export function TabBranding({
 }) {
   if (detalle === null) return <Skeleton className="h-72 w-full" />;
 
-  const clave = [negocioId, detalle.colorPrimario, detalle.colorSecundario, detalle.tieneTheme].join(
-    '|',
-  );
-
   return (
-    <div key={clave} className="space-y-5">
+    <div className="space-y-5">
       <FormIdentidad
         negocioId={negocioId}
         colorPrimario={detalle.colorPrimario}
@@ -65,7 +66,11 @@ function FormIdentidad({
   const [guardando, setGuardando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const valido = hexOk(primario) && hexOk(secundario) && !guardando;
+  const p = primario.trim();
+  const s = secundario.trim();
+  const pOk = p === '' || hexOk(p);
+  const sOk = s === '' || hexOk(s);
+  const valido = pOk && sOk && !guardando;
 
   async function guardar(evento: React.FormEvent) {
     evento.preventDefault();
@@ -74,8 +79,10 @@ function FormIdentidad({
     setError(null);
     try {
       await superadminApi.actualizarLocal(negocioId, {
-        colorPrimario: primario,
-        colorSecundario: secundario,
+        // Vaciar un color manda `null` EXPLICITO (el backend lo interpreta como borrar el valor;
+        // '' significaria "no tocar"). Un color con contenido va tal cual.
+        colorPrimario: p === '' ? null : p,
+        colorSecundario: s === '' ? null : s,
       });
       toast.success('Identidad guardada');
       await onGuardado();
@@ -109,6 +116,11 @@ function FormIdentidad({
           onChange={setSecundario}
         />
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Para <strong>limpiar</strong> un color, borra el campo y guarda: se manda un valor nulo y el
+        backend lo borra. Al recargar, el campo queda vacio.
+      </p>
 
       {error ? (
         <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">

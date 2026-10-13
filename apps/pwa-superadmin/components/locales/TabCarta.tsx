@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
   Input,
   Label,
+  SubirImagen,
   Switch,
   Textarea,
   toast,
@@ -127,11 +128,14 @@ export function TabCarta({ negocioId }: { negocioId: string }) {
         key: 'nombre',
         header: 'Item',
         render: (i) => (
-          <div className="min-w-0">
-            <p className="truncate font-medium">{i.nombre}</p>
-            {i.descripcion ? (
-              <p className="truncate text-xs text-muted-foreground">{i.descripcion}</p>
-            ) : null}
+          <div className="flex min-w-0 items-center gap-3">
+            <Miniatura fotoUrl={i.fotoUrl ?? null} nombre={i.nombre} />
+            <div className="min-w-0">
+              <p className="truncate font-medium">{i.nombre}</p>
+              {i.descripcion ? (
+                <p className="truncate text-xs text-muted-foreground">{i.descripcion}</p>
+              ) : null}
+            </div>
           </div>
         ),
       },
@@ -311,6 +315,32 @@ export function precioTexto(precio: string | number): string {
   return Number.isFinite(n) ? n.toFixed(2) : '—';
 }
 
+/** Miniatura de la foto del item en la lista. Sin foto: un cuadro vacio, no un hueco. */
+function Miniatura({ fotoUrl, nombre }: { fotoUrl?: string | null; nombre: string }) {
+  const url = typeof fotoUrl === 'string' && fotoUrl.trim() !== '' ? fotoUrl.trim() : null;
+  if (!url) {
+    return (
+      <span
+        aria-hidden="true"
+        className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-dashed text-[10px] text-muted-foreground"
+        data-testid="sin-foto"
+      >
+        sin foto
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={`Foto de ${nombre}`}
+      loading="lazy"
+      className="size-10 shrink-0 rounded-lg border object-cover"
+      data-testid="foto-item"
+    />
+  );
+}
+
 /** Alta y edicion comparten formulario: `item` null = alta. */
 function FormularioItem({
   negocioId,
@@ -329,9 +359,15 @@ function FormularioItem({
   const [categoria, setCategoria] = React.useState(item?.categoria ?? categorias[0] ?? '');
   const [descripcion, setDescripcion] = React.useState(item?.descripcion ?? '');
   const [precio, setPrecio] = React.useState(item ? String(item.precio) : '');
+  const [fotoUrl, setFotoUrl] = React.useState(item?.fotoUrl ?? '');
   const [disponible, setDisponible] = React.useState(item?.disponible ?? true);
   const [guardando, setGuardando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // La firma la pide ESTE panel (sesion de plataforma): el componente de subida es el mismo
+  // que usa el admin del dueno, pero cada app le inyecta su propio endpoint de firma.
+  const firmar = React.useCallback((tipo: string) => superadminApi.firmarSubida({ tipo }), []);
+  const mensajeDeError = React.useCallback((e: unknown) => normalizarError(e).mensaje, []);
 
   const precioNum = Number(precio.replace(',', '.'));
   const precioValido = precio.trim() !== '' && Number.isFinite(precioNum) && precioNum >= 0;
@@ -350,6 +386,7 @@ function FormularioItem({
         precio: precioNum,
         disponible,
         ...(descripcion.trim() !== '' ? { descripcion: descripcion.trim() } : {}),
+        ...(fotoUrl.trim() !== '' ? { fotoUrl: fotoUrl.trim() } : {}),
       };
       if (item) await superadminApi.actualizarItem(negocioId, item.id, body);
       else await superadminApi.crearItem(negocioId, body);
@@ -417,6 +454,16 @@ function FormularioItem({
           value={descripcion}
           onChange={(e) => setDescripcion(e.target.value.slice(0, 1000))}
           placeholder="Como lo ve el cliente en la carta"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <SubirImagen
+          valor={fotoUrl}
+          onCambio={setFotoUrl}
+          etiqueta="Foto (opcional)"
+          firmar={firmar}
+          mensajeDeError={mensajeDeError}
         />
       </div>
 

@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useRouter } from 'next/navigation';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +18,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  Input,
+  Label,
   toast,
 } from '@repo/ui';
 import { superadminApi } from '@/lib/api';
@@ -51,6 +54,11 @@ export function TabResumen({
   const [confirmandoReset, setConfirmandoReset] = React.useState(false);
   const [reseteando, setReseteando] = React.useState(false);
   const [cambiandoEstado, setCambiandoEstado] = React.useState(false);
+  // Zona peligrosa: el borrado del local es IRREVERSIBLE y pide tipear el slug exacto.
+  const [confirmandoEliminar, setConfirmandoEliminar] = React.useState(false);
+  const [slugTipeado, setSlugTipeado] = React.useState('');
+  const [eliminando, setEliminando] = React.useState(false);
+  const router = useRouter();
 
   // Contadores: del detalle o de las listas reales (best-effort, sin tapar la pantalla con
   // un error si esos endpoints todavia no responden).
@@ -110,6 +118,27 @@ export function TabResumen({
       setReseteando(false);
     }
   }, [negocioId, onRefrescar]);
+
+  /** Baja TOTAL del local. Solo se llega aca con el slug tipeado exacto. */
+  const eliminarLocal = React.useCallback(async () => {
+    if (slugTipeado.trim() !== detalle.slug) return;
+    setEliminando(true);
+    try {
+      const respuesta = await superadminApi.eliminarLocal(negocioId);
+      toast.success(`${detalle.nombre} se elimino`, {
+        description: resumenBorrado(respuesta?.borrados),
+      });
+      setConfirmandoEliminar(false);
+      router.push('/locales');
+      router.refresh();
+    } catch (e) {
+      toast.error(`No se pudo eliminar ${detalle.nombre}`, {
+        description: normalizarError(e).mensaje,
+      });
+    } finally {
+      setEliminando(false);
+    }
+  }, [slugTipeado, detalle.slug, detalle.nombre, negocioId, router]);
 
   return (
     <div className="space-y-5">
@@ -182,6 +211,31 @@ export function TabResumen({
       <section className="space-y-2">
         <h2 className="text-sm font-medium">Links del local</h2>
         <LinksDelLocal slug={detalle.slug} />
+      </section>
+
+      {/* ZONA PELIGROSA: lo unico de esta pantalla que no se puede deshacer. */}
+      <section
+        className="space-y-3 rounded-2xl border border-destructive/40 bg-destructive/5 p-5"
+        data-testid="zona-peligrosa"
+      >
+        <header className="space-y-1">
+          <h2 className="text-lg font-semibold text-destructive">Zona peligrosa</h2>
+          <p className="text-sm text-muted-foreground">
+            Eliminar el local borra TODO lo suyo: sucursales, empleados, carta, clientes, visitas y
+            pedidos. No se puede deshacer.
+          </p>
+        </header>
+        <Button
+          variant="outline"
+          className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => {
+            setSlugTipeado('');
+            setConfirmandoEliminar(true);
+          }}
+          data-testid="boton-eliminar-local"
+        >
+          Eliminar local
+        </Button>
       </section>
 
       <Dialog open={editando} onOpenChange={setEditando}>
@@ -265,6 +319,68 @@ export function TabResumen({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/*
+        BORRADO DEL LOCAL. Irreversible y con confirmacion FUERTE: el boton no se habilita hasta
+        que se tipea el slug EXACTO. AlertDialog (no Dialog): no se cierra con click afuera.
+      */}
+      <AlertDialog
+        open={confirmandoEliminar}
+        onOpenChange={(abierto) => {
+          if (!abierto && !eliminando) {
+            setConfirmandoEliminar(false);
+            setSlugTipeado('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar {detalle.nombre} para siempre?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se borran TODO el local y sus datos (sucursales, empleados, carta, clientes, visitas
+              y pedidos). <strong>No se puede deshacer.</strong> Para confirmar, tipeá el slug{' '}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{detalle.slug}</code>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="slug-confirmar" className="text-xs">
+              Slug del local
+            </Label>
+            <Input
+              id="slug-confirmar"
+              value={slugTipeado}
+              onChange={(e) => setSlugTipeado(e.target.value)}
+              placeholder={detalle.slug}
+              autoCapitalize="none"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono"
+              data-testid="input-slug-confirmar"
+            />
+            {slugTipeado.trim() !== '' && slugTipeado.trim() !== detalle.slug ? (
+              <p role="alert" className="text-xs text-destructive">
+                No coincide con el slug del local.
+              </p>
+            ) : null}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={eliminando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void eliminarLocal();
+              }}
+              disabled={eliminando || slugTipeado.trim() !== detalle.slug}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="confirmar-eliminar-local"
+            >
+              {eliminando ? 'Eliminando...' : 'Eliminar local'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -302,4 +418,20 @@ function fecha(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'Sin dato';
   return d.toLocaleDateString('es-AR');
+}
+
+/**
+ * El detalle REAL de lo que borro el `DELETE` del local. El backend devuelve un objeto de
+ * contadores (`{ visitas, pedidos, clientes, ... }`); se listan los numeros que vengan, sin
+ * inventar ninguno. Si no hay contadores, se dice que el backend no los informo.
+ */
+function resumenBorrado(borrados: unknown): string {
+  if (typeof borrados !== 'object' || borrados === null) {
+    return 'El backend no informo el detalle de lo borrado.';
+  }
+  const pares = Object.entries(borrados as Record<string, unknown>).filter(
+    ([, v]) => typeof v === 'number',
+  ) as [string, number][];
+  if (pares.length === 0) return 'El backend no informo el detalle de lo borrado.';
+  return `Se borraron: ${pares.map(([k, v]) => `${v} ${k}`).join(', ')}.`;
 }

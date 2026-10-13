@@ -134,10 +134,15 @@ export interface DatosLocalBody {
   nombre?: string;
   slug?: string;
   plan?: PlanLocal;
-  colorPrimario?: string;
-  colorSecundario?: string;
-  numeroAtendiente?: string;
-  telefono?: string;
+  /**
+   * Los colores y el telefono aceptan `null` EXPLICITO: el contrato nuevo del backend lo
+   * interpreta como "borra el valor" (el campo vacio significa "no tocar").
+   */
+  colorPrimario?: string | null;
+  colorSecundario?: string | null;
+  numeroAtendiente?: string | null;
+  telefono?: string | null;
+  email?: string | null;
   activo?: boolean;
 }
 
@@ -159,6 +164,11 @@ export interface ResultadoProvision {
     sucursales?: number;
     [k: string]: unknown;
   };
+  /**
+   * Items que la plantilla BORRO de la carta (solo con `reemplazarCarta: true`). El panel lo
+   * muestra tal cual: es el dato que explica que se perdio al reemplazar la carta.
+   */
+  cartaBorrados?: number;
   mensaje?: string;
   [k: string]: unknown;
 }
@@ -183,6 +193,8 @@ export interface ItemCartaLocal {
   /** Campo de agrupacion. El contrato lo llama "grupo/categoria"; el modelo, `categoria`. */
   categoria: string;
   orden?: number;
+  /** Foto del item (URL de Cloudinary). Null/vacio = sin foto. */
+  fotoUrl?: string | null;
   [k: string]: unknown;
 }
 
@@ -192,7 +204,30 @@ export interface ItemCartaBody {
   categoria: string;
   descripcion?: string;
   disponible?: boolean;
+  /** URL de Cloudinary que devolvio la subida firmada. */
+  fotoUrl?: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * Plan y features del local (pestana Plan)
+ * ------------------------------------------------------------------ */
+
+/**
+ * El contrato lo define `@repo/api-client` (lo comparte el backend) y el panel lo re-exporta:
+ * duplicar la forma aca se desincronizaria al primer campo nuevo.
+ *
+ * - `FeatureCatalogo`   -> `GET /superadmin/features` (clave/etiqueta/descripcion + `tipo` +
+ *                          `planesIncluidos` y `limitesPorPlan`, calculados contra PlanFeature).
+ * - `EstadoPlanNegocio` -> `GET/PATCH /superadmin/locales/:id/plan`.
+ * - `CambioFeaturePlan` / `ActualizarPlanNegocioBody` -> body del PATCH.
+ */
+export type {
+  FeatureCatalogo,
+  FeatureEstado,
+  EstadoPlanNegocio,
+  CambioFeaturePlan,
+  ActualizarPlanNegocioBody,
+} from '@repo/api-client';
 
 /* ------------------------------------------------------------------ *
  * Empleados

@@ -10,11 +10,13 @@ import { TabResumen } from '@/components/locales/TabResumen';
 import { TabConfiguracion } from '@/components/locales/TabConfiguracion';
 import { TabCarta } from '@/components/locales/TabCarta';
 import { TabEmpleados } from '@/components/locales/TabEmpleados';
+import { TabPlan } from '@/components/locales/TabPlan';
 import { TabBranding } from '@/components/locales/TabBranding';
 import type { LocalDetalle } from '@/types/api';
 
 const PESTANAS = [
   { id: 'resumen', etiqueta: 'Resumen' },
+  { id: 'plan', etiqueta: 'Plan' },
   { id: 'configuracion', etiqueta: 'Configuracion' },
   { id: 'carta', etiqueta: 'Carta' },
   { id: 'empleados', etiqueta: 'Empleados' },
@@ -126,6 +128,10 @@ export default function DetalleLocalPage({ params }: { params: { negocioId: stri
 
         <TabsContent value="resumen">
           <TabResumen negocioId={negocioId} detalle={detalle} onRefrescar={cargar} />
+        </TabsContent>
+
+        <TabsContent value="plan">
+          <TabPlan negocioId={negocioId} onGuardado={cargar} />
         </TabsContent>
 
         <TabsContent value="configuracion">

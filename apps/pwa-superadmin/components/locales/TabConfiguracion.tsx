@@ -103,11 +103,14 @@ function FormConfiguracion({
     setError(null);
     setGuardado(false);
     try {
+      const wa = whatsapp.trim();
       await superadminApi.actualizarConfiguracion(negocioId, {
         modoFidelizacion: modo,
         sellosParaPremio: sellosNum,
         premioTexto: premio.trim(),
-        numeroAtendiente: whatsapp.trim(),
+        // Vaciar el WhatsApp manda `null` EXPLICITO: el backend lo BORRA. El vacio ('') seguiria
+        // significando "no tocar", que es justo lo que impedia limpiar el numero.
+        numeroAtendiente: wa === '' ? null : wa,
       });
       toast.success('Configuracion guardada');
       setGuardado(true);
@@ -184,8 +187,14 @@ function FormConfiguracion({
             placeholder="+54911..."
           />
           <p className="text-xs text-muted-foreground">
-            Donde el cliente escribe para canjear el premio.
+            Donde el cliente escribe para canjear el premio. Borralo y guarda para <strong>limpiar</strong>{' '}
+            el numero.
           </p>
+          {whatsapp.trim() === '' ? (
+            <p role="status" data-testid="wa-vacio" className="text-xs text-muted-foreground">
+              Sin WhatsApp cargado.
+            </p>
+          ) : null}
         </div>
       </div>
 

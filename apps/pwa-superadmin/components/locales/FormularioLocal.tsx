@@ -118,15 +118,21 @@ export function FormularioLocal({
     setGuardando(true);
     setError(null);
     try {
+      const wa = whatsapp.trim();
+      const waAntes = (local.numeroAtendiente ?? '').trim();
       await superadminApi.actualizarLocal(local.id, {
         nombre: nombre.trim(),
         plan,
         colorPrimario,
         colorSecundario,
-        // Vacio = NO se toca: el PATCH no distingue "borrar" de "no mandar" salvo con un null
-        // explicito, y pisar el WhatsApp que cargo el dueno con un '' es peor que no poder
-        // borrarlo desde aca.
-        ...(whatsapp.trim() !== '' ? { numeroAtendiente: whatsapp.trim() } : {}),
+        // WhatsApp: si quedo con valor, se manda; si el operador BORRO uno que existia, se manda
+        // `null` EXPLICITO para que el backend lo limpie; si ya estaba vacio y sigue vacio, no se
+        // toca (un `null` a ciegas borraria el numero que cargo el dueno desde otra pantalla).
+        ...(wa !== ''
+          ? { numeroAtendiente: wa }
+          : waAntes !== ''
+            ? { numeroAtendiente: null }
+            : {}),
       });
       toast.success('Local actualizado');
       await onGuardado?.();

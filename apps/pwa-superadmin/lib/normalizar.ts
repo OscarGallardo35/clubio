@@ -191,20 +191,28 @@ export interface CreadoEnProvision {
   itemsCarta: number | null;
   empleados: number | null;
   clientes: number | null;
+  /** Items BORRADOS de la carta por `reemplazarCarta: true`. Null si el backend no lo manda. */
+  cartaBorrados: number | null;
 }
 
 /**
  * Los numeros REALES de la provision, tal como los devuelve `POST .../provisionar`:
- * `{ items: { creados, actualizados, total }, empleados: {...}, clientes, clienteDemo }`.
+ * `{ items: { creados, actualizados, total }, empleados: {...}, clientes, clienteDemo,
+ *    cartaBorrados }`.
  * Nunca se estiman: si el backend no los manda, van en `null` y la UI lo dice.
  */
 export function creadoDeProvision(raw: unknown): CreadoEnProvision {
   const o = esObjeto(raw) ? raw : {};
   const clienteDemo = esObjeto(o.clienteDemo) ? o.clienteDemo : null;
+  const creado = esObjeto(o.creado) ? o.creado : null;
   return {
-    itemsCarta: totalDe(o.items),
-    empleados: totalDe(o.empleados),
-    clientes: numero(o.clientes) ?? (clienteDemo ? 1 : null),
+    itemsCarta: totalDe(o.items) ?? (creado ? numero(creado.itemsCarta) : null),
+    empleados: totalDe(o.empleados) ?? (creado ? numero(creado.empleados) : null),
+    clientes:
+      numero(o.clientes) ??
+      (clienteDemo ? 1 : null) ??
+      (creado ? numero(creado.clientes) : null),
+    cartaBorrados: numero(o.cartaBorrados) ?? (creado ? numero(creado.cartaBorrados) : null),
   };
 }
 

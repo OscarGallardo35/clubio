@@ -1,8 +1,11 @@
 import { ApiClient, endpoints } from '@repo/api-client';
 import type {
+  ActualizarPlanNegocioBody,
   DatosLocalBody,
   EmpleadoBody,
   EmpleadoLocal,
+  EstadoPlanNegocio,
+  FeatureCatalogo,
   ItemCartaBody,
   ItemCartaLocal,
   LocalesRespuesta,
@@ -14,6 +17,7 @@ import type {
   SuperAdminSesion,
 } from '@/types/api';
 import type { TenantTheme } from '@repo/types';
+import type { FirmaSubidaMedia } from '@repo/ui';
 
 /**
  * Cliente HTTP unico del panel de plataforma.
@@ -76,10 +80,39 @@ export const superadminApi = {
     api.patch<unknown>(endpoints.superadmin.local(negocioId), body),
 
   /**
+   * Baja TOTAL del local (cascade en el backend): sucursales, empleados, carta, clientes,
+   * visitas y pedidos. Es IRREVERSIBLE; la UI lo confirma tipeando el slug.
+   */
+  eliminarLocal: (negocioId: string) =>
+    api.delete<{ ok?: boolean; borrados?: unknown; [k: string]: unknown }>(
+      endpoints.superadmin.local(negocioId),
+    ),
+
+  /* --- plan y features del local ------------------------------------------ */
+
+  /** Catalogo de features de la plataforma, con los planes que incluyen cada una. */
+  features: () => api.get<FeatureCatalogo[]>(endpoints.superadmin.features),
+
+  /** Plan + features + pay-per-use de UN local. */
+  planLocal: (negocioId: string) =>
+    api.get<EstadoPlanNegocio>(endpoints.superadmin.localPlan(negocioId)),
+
+  /** Cambia el plan y/o las features y/o el pay-per-use. Devuelve el estado real resultante. */
+  actualizarPlan: (negocioId: string, body: ActualizarPlanNegocioBody) =>
+    api.patch<EstadoPlanNegocio>(endpoints.superadmin.localPlan(negocioId), body),
+
+  /** Firma una subida directa a Cloudinary con la sesion de PLATAFORMA (nunca envia el binario). */
+  firmarSubida: (body: { tipo?: string } = {}) =>
+    api.post<FirmaSubidaMedia>(endpoints.superadmin.mediaFirmarSubida, body),
+
+  /**
    * Campos del club (modo de fidelizacion, sellos, premio, WhatsApp).
    *
    * Se mandan SOLO los campos del formulario: el backend valida con el `ActualizarConfiguracionDto`
    * del dueno y `forbidNonWhitelisted`, asi que una clave de mas es un 400 que rompe el guardado.
+   *
+   * Un campo con `null` EXPLICITO BORRA el valor guardado (ej. borrar el WhatsApp). El string
+   * vacio NO borra: el backend lo ignora (significa "no tocar").
    */
   actualizarConfiguracion: (negocioId: string, body: Record<string, unknown>) =>
     api.patch<unknown>(endpoints.superadmin.configuracion(negocioId), body),
@@ -95,10 +128,22 @@ export const superadminApi = {
 
   /* --- la fabrica --------------------------------------------------------- */
 
-  /** Deja el local LISTO para la demo (config + theme + carta + empleados + cliente). Idempotente. */
+  /**
+   * Deja el local LISTO para la demo (config + theme + carta + empleados + cliente). Idempotente.
+   *
+   * `reemplazarCarta` (default false) borra los items que NO sean de la plantilla; apagado, los
+   * items de la plantilla se SUMAN a la carta actual. `forzarTheme` (default false) pisa el theme
+   * del local; apagado, si el local ya tiene personalizacion visual, se respeta.
+   */
   provisionar: (
     negocioId: string,
-    body: { plantilla: PlantillaDemo; config?: Record<string, unknown>; theme?: TenantTheme },
+    body: {
+      plantilla: PlantillaDemo;
+      config?: Record<string, unknown>;
+      theme?: TenantTheme;
+      reemplazarCarta?: boolean;
+      forzarTheme?: boolean;
+    },
   ) => api.post<unknown>(endpoints.superadmin.provisionar(negocioId), body),
 
   /** Vuelve el local a su estado de demo sin tocar branding ni config. */

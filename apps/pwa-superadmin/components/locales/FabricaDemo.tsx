@@ -57,6 +57,10 @@ export function FabricaDemo({
   etiquetaVolver?: string | undefined;
 }) {
   const [plantilla, setPlantilla] = React.useState<PlantillaDemo>('lomiteria');
+  // Las dos opciones van APAGADAS por defecto: la fabrica SUMA, no pisa, salvo que el operador
+  // lo pida explicitamente (borrar la carta o pisar el branding del local son irreversibles).
+  const [reemplazarCarta, setReemplazarCarta] = React.useState(false);
+  const [forzarTheme, setForzarTheme] = React.useState(false);
   const [enviando, setEnviando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [resultado, setResultado] = React.useState<ReturnType<typeof creadoDeProvision> | null>(
@@ -70,9 +74,11 @@ export function FabricaDemo({
     setEnviando(true);
     setError(null);
     try {
-      const respuesta = (await superadminApi.provisionar(local.id, { plantilla })) as {
-        yaExistia?: boolean;
-      } | null;
+      const respuesta = (await superadminApi.provisionar(local.id, {
+        plantilla,
+        reemplazarCarta,
+        forzarTheme,
+      })) as { yaExistia?: boolean } | null;
       setResultado(creadoDeProvision(respuesta));
       setYaExistia(respuesta?.yaExistia === true);
       toast.success(`${local.nombre} quedo listo para la demo`);
@@ -86,7 +92,7 @@ export function FabricaDemo({
     } finally {
       setEnviando(false);
     }
-  }, [local.id, local.nombre, plantilla, onProvisionado]);
+  }, [local.id, local.nombre, plantilla, reemplazarCarta, forzarTheme, onProvisionado]);
 
   if (resultado) {
     return (
@@ -100,7 +106,7 @@ export function FabricaDemo({
           </p>
         </div>
 
-        <ResumenCreado resultado={resultado} />
+        <ResumenCreado resultado={resultado} reemplazarCarta={reemplazarCarta} />
 
         <div className="space-y-2">
           <p className="text-sm font-medium">Links listos para mostrar</p>
@@ -108,8 +114,9 @@ export function FabricaDemo({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Cada plantilla agrega SU propia carta: si probas dos plantillas seguidas, los items se
-          acumulan (los que ya existian con el mismo nombre se actualizan, no se duplican).
+          {reemplazarCarta
+            ? 'Se reemplazo la carta: quedaron solo los items de esta plantilla.'
+            : 'Cada plantilla agrega SU propia carta: si probas dos plantillas seguidas, los items se acumulan (los que ya existian con el mismo nombre se actualizan, no se duplican).'}
         </p>
 
         <DialogFooter>
@@ -189,6 +196,41 @@ export function FabricaDemo({
         </p>
       </div>
 
+      <div className="space-y-3">
+        <p className="text-sm font-medium">3. Opciones</p>
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 shrink-0 accent-primary"
+            checked={reemplazarCarta}
+            onChange={(e) => setReemplazarCarta(e.target.checked)}
+            data-testid="check-reemplazar-carta"
+          />
+          <span className="space-y-0.5">
+            <span className="block text-sm font-medium">Reemplazar la carta</span>
+            <span className="block text-xs text-muted-foreground">
+              Borra los items que no sean de esta plantilla. Si lo dejas apagado, se SUMAN a la
+              carta actual.
+            </span>
+          </span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 shrink-0 accent-primary"
+            checked={forzarTheme}
+            onChange={(e) => setForzarTheme(e.target.checked)}
+            data-testid="check-forzar-theme"
+          />
+          <span className="space-y-0.5">
+            <span className="block text-sm font-medium">Forzar el tema de la plantilla</span>
+            <span className="block text-xs text-muted-foreground">
+              Si esta apagado y el local ya tiene su propia personalizacion visual, se respeta.
+            </span>
+          </span>
+        </label>
+      </div>
+
       {error ? (
         <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
@@ -196,7 +238,7 @@ export function FabricaDemo({
       ) : null}
 
       <div className="space-y-2">
-        <p className="text-sm font-medium">3. Provisionar</p>
+        <p className="text-sm font-medium">4. Provisionar</p>
         <Button
           type="button"
           size="lg"
@@ -235,7 +277,13 @@ function FilaQue({ children }: { children: React.ReactNode }) {
 }
 
 /** Los numeros REALES de la provision. Si el backend no los manda, se dice eso, no se estima. */
-function ResumenCreado({ resultado }: { resultado: CreadoEnProvision }) {
+function ResumenCreado({
+  resultado,
+  reemplazarCarta,
+}: {
+  resultado: CreadoEnProvision;
+  reemplazarCarta: boolean;
+}) {
   const filas: { etiqueta: string; valor: number | null }[] = [
     { etiqueta: 'Items de carta', valor: resultado.itemsCarta },
     { etiqueta: 'Empleados', valor: resultado.empleados },
@@ -263,6 +311,22 @@ function ResumenCreado({ resultado }: { resultado: CreadoEnProvision }) {
           verlo en las pestanas Carta y Empleados del local.
         </p>
       )}
+
+      {resultado.cartaBorrados !== null ? (
+        <p
+          role="status"
+          data-testid="carta-borrados"
+          className="rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground"
+        >
+          {reemplazarCarta ? 'Reemplazo de carta: se borraron ' : 'Se borraron '}
+          <strong className="text-foreground tabular-nums">{resultado.cartaBorrados}</strong> items
+          que no eran de la plantilla.
+        </p>
+      ) : reemplazarCarta ? (
+        <p role="status" className="rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
+          Se pidio reemplazar la carta pero el backend no informo cuantos items borro.
+        </p>
+      ) : null}
     </div>
   );
 }

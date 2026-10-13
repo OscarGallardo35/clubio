@@ -1,0 +1,15 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/pwa-superadmin/Dockerfile"
+
+[deploy]
+startCommand = "node apps/pwa-superadmin/server.js"
+# `/login` devuelve 200 SIN cookie (el middleware no lo rebota): un 3xx dejaria el
+# healthcheck en FAILED (misma leccion que en el admin).
+healthcheckPath = "/login"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+[env]
+NODE_ENV = "production"

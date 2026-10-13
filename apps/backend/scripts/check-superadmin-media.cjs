@@ -195,11 +195,13 @@ async function sesionSuperAdmin() {
 
     const publicaRes = await fetch(`${API}/api/carta`, { headers: { 'X-Tenant-Slug': slug } });
     const publica = await publicaRes.json().catch(() => null);
-    const itemPublico = (publica?.items ?? publica?.data ?? []).find?.((i) => i.id === itemId);
+    // La carta publica viene AGRUPADA: `{ negocio, sucursal, total, categorias: [{ categoria, items }] }`.
+    const planos = (publica?.categorias ?? []).flatMap((c) => c.items ?? []);
+    const itemPublico = planos.find((i) => i.id === itemId);
     chk(
       'la carta PUBLICA (lo que ve el cliente) sirve la fotoUrl',
       Boolean(itemPublico) && itemPublico.fotoUrl === subida.datos?.secure_url,
-      `${publicaRes.status} ${itemPublico?.fotoUrl ?? '(no aparece)'}`,
+      `${publicaRes.status} total=${publica?.total ?? '?'} ${itemPublico?.fotoUrl ?? '(no aparece)'}`,
     );
     console.log(`  URL publica del cliente: ${API}/api/carta  (X-Tenant-Slug: ${slug})`);
 

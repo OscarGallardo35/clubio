@@ -1,4 +1,4 @@
-import { ValidateIf, registerDecorator } from 'class-validator';
+import { ValidateIf, isHexColor, registerDecorator } from 'class-validator';
 
 /**
  * Campos que NO admiten `null` explicito (columnas NOT NULL, o campos sin semantica de borrado).
@@ -27,6 +27,32 @@ export function OpcionalSinNulo(mensaje: string): PropertyDecorator {
       validator: {
         validate: (valor: unknown) => valor !== null,
         defaultMessage: () => mensaje,
+      },
+    });
+  };
+}
+
+/**
+ * Un hex obligatorio que NO se puede vaciar (ej. `colorPrimario`/`colorSecundario`, NOT NULL).
+ *
+ * Es un unico validador a proposito: combinar `OpcionalSinNulo` con `@IsHexColor()` daria DOS
+ * mensajes para un mismo `null` (uno de cada validador) y la UI los muestra concatenados. Aca el
+ * mensaje es UNO y depende del caso: `null` -> "no se puede vaciar"; cualquier otra cosa ->
+ * "tiene que ser un hex".
+ */
+export function HexColorObligatorio(etiqueta: string, ejemplo = '#E11D48'): PropertyDecorator {
+  return (target, propertyName) => {
+    ValidateIf((_objeto, valor) => valor !== undefined)(target, propertyName);
+    registerDecorator({
+      name: 'hexColorObligatorio',
+      target: target.constructor,
+      propertyName: String(propertyName),
+      validator: {
+        validate: (valor: unknown) => typeof valor === 'string' && isHexColor(valor),
+        defaultMessage: (args) =>
+          (args?.value ?? null) === null
+            ? `${etiqueta} no se puede vaciar: elegi otro color en hex (ej. ${ejemplo}).`
+            : `${etiqueta} tiene que ser un hex de 6 digitos (ej. ${ejemplo}).`,
       },
     });
   };

@@ -1,8 +1,8 @@
 import {
-  IsBoolean, IsEnum, IsHexColor, IsOptional, IsString, MaxLength, MinLength,
+  IsBoolean, IsEnum, IsOptional, IsString, MaxLength, MinLength,
 } from 'class-validator';
 import { ModoClientes, Plan } from '@prisma/client';
-import { OpcionalSinNulo } from '../../common/validators/opcional-sin-nulo.validator';
+import { HexColorObligatorio, OpcionalSinNulo } from '../../common/validators/opcional-sin-nulo.validator';
 
 /**
  * Edicion de los datos BASE de un local (`PATCH /superadmin/locales/:negocioId`).
@@ -26,12 +26,10 @@ export class ActualizarLocalSuperAdminDto {
   @IsEnum(Plan)
   plan?: Plan;
 
-  @OpcionalSinNulo('El color primario no se puede vaciar: elegi otro color en hex (ej. #E11D48).')
-  @IsHexColor({ message: 'El color primario tiene que ser un hex de 6 digitos (ej. #E11D48).' })
+  @HexColorObligatorio('El color primario', '#E11D48')
   colorPrimario?: string;
 
-  @OpcionalSinNulo('El color secundario no se puede vaciar: elegi otro color en hex (ej. #111827).')
-  @IsHexColor({ message: 'El color secundario tiene que ser un hex de 6 digitos (ej. #111827).' })
+  @HexColorObligatorio('El color secundario', '#111827')
   colorSecundario?: string;
 
   /** `false` desactiva el local (deja de servirse por slug). */

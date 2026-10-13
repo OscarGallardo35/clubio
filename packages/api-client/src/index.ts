@@ -182,6 +182,53 @@ export function useApiClient(config: ApiClientConfig): ApiClient {
   return new ApiClient(config)
 }
 
+/* ------------------------------------------------------------------ *
+ * Plan y features (motor de planes, panel de plataforma)
+ * ------------------------------------------------------------------ */
+
+/** Los planes de facturacion (enum `Plan` de Prisma). */
+export type PlanLocal = 'FREE' | 'BASIC' | 'PRO'
+
+/** Una entrada de `GET /api/superadmin/features` (el CATALOGO). */
+export interface FeatureCatalogo {
+  clave: string
+  etiqueta: string
+  descripcion?: string
+  /** `booleana` = on/off; `limite` = cupo numerico (`limite`, null = ilimitado). */
+  tipo: 'booleana' | 'limite'
+  /** Planes donde la feature esta incluida (derivado de `PlanFeature` en el backend). */
+  planesIncluidos: PlanLocal[]
+  /** Limite de la feature en cada plan (null = ilimitado o sin fila). */
+  limitesPorPlan: Record<PlanLocal, number | null>
+}
+
+/** Estado de una feature para un negocio. */
+export interface FeatureEstado {
+  habilitada: boolean
+  limite: number | null
+}
+
+/** Respuesta de `GET`/`PATCH /api/superadmin/locales/:negocioId/plan`. */
+export interface EstadoPlanNegocio {
+  plan: PlanLocal
+  /** `{<clave>: {habilitada, limite}}` — lo vigente del plan del negocio. */
+  features: Record<string, FeatureEstado>
+  payPerUseActivo: boolean
+}
+
+/** Un cambio de feature en el body del `PATCH .../plan`. */
+export interface CambioFeaturePlan {
+  habilitada: boolean
+  limite?: number | null
+}
+
+/** Body de `PATCH /api/superadmin/locales/:negocioId/plan`. */
+export interface ActualizarPlanNegocioBody {
+  plan?: PlanLocal
+  features?: Record<string, CambioFeaturePlan>
+  payPerUseActivo?: boolean
+}
+
 /**
  * Rutas del backend (prefijo global /api).
  * Los `:param` se interpolan con los helpers.
@@ -355,6 +402,13 @@ export const endpoints = {
      * tenant). Los helpers devuelven la ruta; el metodo HTTP lo elige el llamador.
      */
     local: (negocioId: string) => `/api/superadmin/locales/${encodeURIComponent(negocioId)}`,
+    /** Catalogo de features de la plataforma, con los planes que incluyen cada una. */
+    features: '/api/superadmin/features',
+    /** Plan + features + pay-per-use de UN local (GET y PATCH comparten ruta). */
+    localPlan: (negocioId: string) =>
+      `/api/superadmin/locales/${encodeURIComponent(negocioId)}/plan`,
+    /** Firma de subida directa a Cloudinary con la sesion de PLATAFORMA. */
+    mediaFirmarSubida: '/api/superadmin/media/firmar-subida',
     /** FABRICA DE DEMOS: deja el local listo para mostrar (config + theme + carta + empleados). */
     provisionar: (negocioId: string) =>
       `/api/superadmin/locales/${encodeURIComponent(negocioId)}/provisionar`,

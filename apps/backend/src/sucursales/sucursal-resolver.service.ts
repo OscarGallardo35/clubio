@@ -2,6 +2,7 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { MemoriaCacheService } from '../common/redis/memoria-cache.service';
 
 export interface ResolverSucursalOpts {
   /** 1) query param ?sucursalId= (debe ser del negocio y estar activa) */
@@ -40,6 +41,7 @@ export class SucursalResolverService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly memoria: MemoriaCacheService,
   ) {}
 
   private hash(opts: ResolverSucursalOpts): string {
@@ -50,10 +52,26 @@ export class SucursalResolverService {
     return createHash('sha1').update(raw).digest('hex').slice(0, 12);
   }
 
+  /**
+   * Resuelve la sucursal efectiva y la cachea EN MEMORIA (proceso) y en Redis.
+   *
+   * `sucursal:resolve:*` se lee en cada request tenant (carta, pedidos, visitas,
+   * clientes...) y el dato cambia una vez por semana: la capa en memoria evita el
+   * viaje a Redis en la enorme mayoria de las requests. TTL en memoria = TTL_RESOLVE
+   * (igual al de Redis, nunca mayor) y se invalida desde `invalidar()`.
+   */
   async resolverSucursal(negocioId: string, opts: ResolverSucursalOpts = {}) {
     const cacheKey = `sucursal:resolve:${negocioId}:${this.hash(opts)}`;
+
+    const enMemoria = this.memoria.get<Record<string, unknown>>(cacheKey);
+    if (enMemoria) return enMemoria;
+
     const cached = await this.redis.get(cacheKey).catch(() => null);
-    if (cached) return JSON.parse(cached) as Record<string, unknown>;
+    if (cached) {
+      const valor = JSON.parse(cached) as Record<string, unknown>;
+      this.memoria.set(cacheKey, valor, TTL_RESOLVE);
+      return valor;
+    }
 
     let sucursal: Record<string, unknown> | null = null;
 
@@ -107,6 +125,7 @@ export class SucursalResolverService {
     }
 
     await this.redis.set(cacheKey, JSON.stringify(sucursal), TTL_RESOLVE).catch(() => undefined);
+    this.memoria.set(cacheKey, sucursal, TTL_RESOLVE);
     return sucursal;
   }
 
@@ -182,14 +201,21 @@ export class SucursalResolverService {
 
   /** Invalida el cache al cambiar sucursales (llamado por el CRUD de sucursales). */
   /**
-   * Invalida el cache de resolucion de un negocio.
+   * Invalida el cache de resolucion de un negocio (Redis + memoria del proceso).
    *
    * OJO: antes esto era un NO-OP. Armaba `sucursal:resolve:{negocioId}:*` y despues
    * salteaba toda clave que contuviera '*', asi que el unico key que armaba nunca se
    * borraba y el resolver seguia devolviendo datos viejos hasta 5 min (nombre,
    * activa, esPrincipal tras un cambio). Ahora se borra por patron con SCAN.
+   *
+   * Tambien invalida `config:efectiva:*` EN MEMORIA: esa clave la CACHEA
+   * ConfiguracionService, pero un cambio de sucursal (nombre/activa/principal) la
+   * deja vieja y la invalidacion historica vive aca. Como el MemoriaCacheService es
+   * un singleton global, alcanza con borrar el patron aca.
    */
   async invalidar(negocioId: string, empleadoId?: string) {
+    this.memoria.delByPattern(`sucursal:resolve:${negocioId}:*`);
+    this.memoria.delByPattern(CACHE_CONFIG_EFECTIVA(negocioId, '*'));
     await this.redis.delByPattern(`sucursal:resolve:${negocioId}:*`).catch(() => 0);
     await this.redis.delByPattern(CACHE_CONFIG_EFECTIVA(negocioId, '*')).catch(() => 0);
     if (empleadoId) await this.redis.del(`sucursal:empleado:${empleadoId}`).catch(() => undefined);

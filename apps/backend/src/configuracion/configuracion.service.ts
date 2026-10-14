@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService, CACHE_CONFIG_EFECTIVA, TTL_CONFIG_EFECTIVA } from '../sucursales/sucursal-resolver.service';
 import { RedisService } from '../common/redis/redis.service';
+import { MemoriaCacheService } from '../common/redis/memoria-cache.service';
 import type { ActualizarConfiguracionDto } from './dto/actualizar-configuracion.dto';
 
 /** Campos que una sucursal puede sobreescribir (null = hereda del global). */
@@ -22,6 +23,7 @@ export class ConfiguracionService {
     private readonly auditoria: AuditoriaService,
     private readonly resolver: SucursalResolverService,
     private readonly redis: RedisService,
+    private readonly memoria: MemoriaCacheService,
   ) {}
 
   async obtener(negocioId: string) {
@@ -41,30 +43,44 @@ export class ConfiguracionService {
   }
 
   /**
-   * Igual que configEfectiva pero con cache Redis (TTL 5 min). Es la que deben
-   * usar los caminos calientes (carta, pedidos, visitas): configEfectiva pega 2
-   * queries a la BD en CADA request.
+   * Igual que configEfectiva pero con cache EN MEMORIA (proceso) delante de Redis
+   * (TTL 5 min cada una). Es la que deben usar los caminos calientes (carta,
+   * pedidos, visitas): configEfectiva pega 2 queries a la BD en CADA request, y
+   * `config:efectiva:*` cambia una vez por semana.
    *
-   * Se invalida desde invalidarConfigEfectiva() al tocar el club, el override de
-   * una sucursal, o al cambiar/eliminar una sucursal.
+   * El TTL en memoria es IGUAL al de Redis (nunca mayor). Se invalida desde
+   * invalidarConfigEfectiva() al tocar el club, el override de una sucursal, o al
+   * cambiar/eliminar una sucursal (este ultimo via SucursalResolverService.invalidar,
+   * que borra el mismo patron del MemoriaCacheService singleton).
    */
   async configEfectivaCacheada(negocioId: string, sucursalId?: string) {
     if (!sucursalId) return this.configEfectiva(negocioId);
 
     const clave = CACHE_CONFIG_EFECTIVA(negocioId, sucursalId);
+
+    const enMemoria = this.memoria.get<Awaited<ReturnType<ConfiguracionService['configEfectiva']>>>(clave);
+    if (enMemoria) return enMemoria;
+
     const cacheado = await this.redis.get(clave).catch(() => null);
     if (cacheado) {
-      try { return JSON.parse(cacheado); } catch { await this.redis.del(clave).catch(() => undefined); }
+      try {
+        const valor = JSON.parse(cacheado);
+        this.memoria.set(clave, valor, TTL_CONFIG_EFECTIVA);
+        return valor;
+      } catch { await this.redis.del(clave).catch(() => undefined); }
     }
     const efectiva = await this.configEfectiva(negocioId, sucursalId);
     await this.redis.set(clave, JSON.stringify(efectiva), TTL_CONFIG_EFECTIVA).catch(() => undefined);
+    this.memoria.set(clave, efectiva, TTL_CONFIG_EFECTIVA);
     return efectiva;
   }
 
   async invalidarConfigEfectiva(negocioId: string, sucursalId?: string) {
     if (sucursalId) {
+      this.memoria.del(CACHE_CONFIG_EFECTIVA(negocioId, sucursalId));
       await this.redis.del(CACHE_CONFIG_EFECTIVA(negocioId, sucursalId)).catch(() => undefined);
     } else {
+      this.memoria.delByPattern(CACHE_CONFIG_EFECTIVA(negocioId, '*'));
       await this.redis.delByPattern(CACHE_CONFIG_EFECTIVA(negocioId, '*')).catch(() => 0);
     }
   }

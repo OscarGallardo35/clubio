@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Plan, Prisma, RecursoLimitado } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { MemoriaCacheService } from '../common/redis/memoria-cache.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import type { FeatureCacheada } from './interfaces/feature-check.interface';
 import { CATALOGO_FEATURES, CLAVES_FEATURES, PLANES_ORDEN } from './catalogo-features';
@@ -118,16 +119,30 @@ export class PlanService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly memoria: MemoriaCacheService,
     private readonly auditoria: AuditoriaService,
   ) {}
 
-  /** Features del plan, desde Redis (TTL 10 min) o BD. */
+  /**
+   * Features del plan, desde la cache EN MEMORIA (proceso) o Redis (TTL 10 min) o BD.
+   *
+   * La memoria va DELANTE de Redis: `plan:features:*` se lee en cada request
+   * tenant y el dato cambia una vez por semana. TTL en memoria = TTL_FEATURES
+   * (igual al de Redis, nunca mayor). Se invalida en cada cambio de feature/plan
+   * (ver `invalidar` / `invalidarTodo`).
+   */
   async obtenerFeatures(plan: Plan): Promise<FeatureCacheada[]> {
     const clave = CACHE_FEATURES(plan);
+
+    const enMemoria = this.memoria.get<FeatureCacheada[]>(clave);
+    if (enMemoria) return enMemoria;
+
     const cacheado = await this.redis.get(clave).catch(() => null);
     if (cacheado) {
       try {
-        return JSON.parse(cacheado) as FeatureCacheada[];
+        const valor = JSON.parse(cacheado) as FeatureCacheada[];
+        this.memoria.set(clave, valor, TTL_FEATURES);
+        return valor;
       } catch {
         await this.redis.del(clave).catch(() => undefined);
       }
@@ -142,6 +157,7 @@ export class PlanService {
     }));
 
     await this.redis.set(clave, JSON.stringify(features), TTL_FEATURES).catch(() => undefined);
+    this.memoria.set(clave, features, TTL_FEATURES);
     return features;
   }
 
@@ -291,13 +307,15 @@ export class PlanService {
     return neg;
   }
 
-  /** Invalidacion de cache. */
+  /** Invalidacion de cache (Redis + memoria del proceso). */
   async invalidar(plan: Plan) {
+    this.memoria.del(CACHE_FEATURES(plan));
     await this.redis.del(CACHE_FEATURES(plan)).catch(() => undefined);
   }
 
   async invalidarTodo() {
     for (const p of ['FREE', 'BASIC', 'PRO'] as Plan[]) {
+      this.memoria.del(CACHE_FEATURES(p));
       await this.redis.del(CACHE_FEATURES(p)).catch(() => undefined);
     }
   }

@@ -19,6 +19,8 @@ import {
   visitaReducir,
   resumenDeAprobacion,
   eventoDeAprobacion,
+  reanudarVisitaGuardada,
+  tokenDeVisitaVivo,
 } from '../lib/visita-maquina.ts'
 import type { VisitaAprobadaPayload } from '@repo/api-client'
 import { tipoDeTarjeta, vistaDeTarjeta } from '../lib/tarjeta.ts'
@@ -311,6 +313,62 @@ igual(
 )
 const sinMeta = vistaDeTarjeta({ ...RESPUESTA, sellosParaPremio: 0 } as MiTarjetaRespuesta, 'SOLO_VISITAS')
 igual('sin meta cae a 10 (nunca divide por cero)', [sinMeta.meta, sinMeta.porcentaje], [10, 10])
+
+// --- Reanudar lo persistido SOLO si el token sigue vivo -----------------------
+// El bug de prod: al aterrizar en /club con un token de un intento anterior ya
+// vencido, hidratar() lo reanudaba como si estuviera vivo y el timer local
+// disparaba EXPIRAR ~150ms ANTES de que volviera el GET /visitas/estado/:token:
+// el cliente veia "no se sumo / la solicitud expiro" en el primer intento.
+console.log('\n== reanudar un token persistido (hidratar) ==')
+const AHORA = Date.parse('2026-10-14T12:00:00.000Z')
+const guardadoVivo = {
+  token: 'tok-vivo',
+  expiraEn: new Date(AHORA + 60_000).toISOString(),
+  sucursalId: 'suc-1',
+  mensajeWhatsApp: 'Hola, Ref: tok-vivo',
+  urlValidacion: 'http://staff/validar?ref=tok-vivo',
+}
+const guardadoVencido = {
+  token: 'tok-viejo',
+  expiraEn: new Date(AHORA - 60_000).toISOString(),
+  sucursalId: 'suc-1',
+  mensajeWhatsApp: 'Hola, Ref: tok-viejo',
+  urlValidacion: 'http://staff/validar?ref=tok-viejo',
+}
+chk('tokenDeVisitaVivo: un token del futuro vive', tokenDeVisitaVivo(guardadoVivo.expiraEn, AHORA))
+chk('tokenDeVisitaVivo: uno del pasado ya vencio', !tokenDeVisitaVivo(guardadoVencido.expiraEn, AHORA))
+chk('tokenDeVisitaVivo: sin fecha se trata como vencido', !tokenDeVisitaVivo(null, AHORA))
+chk('tokenDeVisitaVivo: fecha invalida se trata como vencida', !tokenDeVisitaVivo('no-es-una-fecha', AHORA))
+
+const hidViejo = reanudarVisitaGuardada(ESTADO_INICIAL, guardadoVencido, AHORA)
+igual('hidratar(viejo) -> inicio (NO arranca en esperando)', hidViejo.paso, 'inicio')
+igual('hidratar(viejo) no marca reanudado', hidViejo.reanudado, false)
+const reanudarDesdeOtroPaso = reanudarVisitaGuardada(en('noSumada', { motivo: 'expirada' }), guardadoVivo, AHORA)
+igual('hidratar no toca un flujo que no esta en inicio', reanudarDesdeOtroPaso.paso, 'noSumada')
+
+const hidVivo = reanudarVisitaGuardada(ESTADO_INICIAL, guardadoVivo, AHORA)
+igual('hidratar(vivo) -> esperando', hidVivo.paso, 'esperando')
+igual('hidratar(vivo) marca reanudado', [hidVivo.reanudado, hidVivo.token], [true, 'tok-vivo'])
+igual('hidratar(vivo) conserva el mensaje y el link', [hidVivo.mensajeWhatsApp, hidVivo.urlValidacion], [guardadoVivo.mensajeWhatsApp, guardadoVivo.urlValidacion])
+igual('ESTADO_RECIBIDO(APROBADA) tras el resume -> aprobada',
+  visitaReducir(hidVivo, { tipo: 'ESTADO_RECIBIDO', estado: 'APROBADA', sellosActuales: 5 }).paso, 'aprobada')
+
+// Defensa en profundidad: el timer local manda a noSumada/expirada ANTES de que
+// el backend conteste; la respuesta real del backend igual tiene que ganar.
+const expiradaLocal = visitaReducir(hidVivo, { tipo: 'EXPIRAR' })
+igual('un token reanudado que vence localmente -> noSumada/expirada',
+  [expiradaLocal.paso, expiradaLocal.motivo, expiradaLocal.reanudado], ['noSumada', 'expirada', true])
+igual('el backend le GANA al timer local (APROBADA)',
+  visitaReducir(expiradaLocal, { tipo: 'ESTADO_RECIBIDO', estado: 'APROBADA', sellosActuales: 5 }).paso, 'aprobada')
+igual('y tambien si el backend dice PENDIENTE',
+  visitaReducir(expiradaLocal, { tipo: 'ESTADO_RECIBIDO', estado: 'PENDIENTE' }).paso, 'esperando')
+// ...pero solo cuando el estado viene de REANUDAR: una expirada normal sigue cerrada.
+igual('una expirada normal (no reanudada) sigue ignorando ESTADO_RECIBIDO',
+  visitaReducir(en('noSumada', { motivo: 'expirada', reanudado: false }), { tipo: 'ESTADO_RECIBIDO', estado: 'APROBADA' }).paso, 'noSumada')
+igual('una rechazada tampoco se toca',
+  visitaReducir(en('noSumada', { motivo: 'rechazada', reanudado: true }), { tipo: 'ESTADO_RECIBIDO', estado: 'APROBADA' }).paso, 'noSumada')
+igual('un error sigue ignorando el estado',
+  visitaReducir(en('error', { mensaje: 'x', reanudado: true }), { tipo: 'ESTADO_RECIBIDO', estado: 'APROBADA' }).paso, 'error')
 
 console.log(`\n  TOTAL: ${ok} OK, ${fallas.length} FALLA`)
 if (fallas.length) {

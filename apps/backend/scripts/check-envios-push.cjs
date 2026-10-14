@@ -72,7 +72,9 @@ function parClaves() {
 }
 
 const RUN = `${Date.now().toString(36)}`;
-const tel = (sufijo) => `+5****0${RUN.slice(-5)}${sufijo}`;
+/** Telefono E.164 VALIDO y unico por corrida (el alta por API lo valida: +digitos). */
+const DIG = String(Date.now() % 1_000_000).padStart(6, '0');
+const tel = (digito) => `+54911${DIG}${digito}`;
 
 const CORTE_90 = new Date(Date.now() - 90 * 86_400_000);
 
@@ -122,17 +124,18 @@ async function main() {
 
     // 4 destinatarios suscriptos: A y D "entregan" (httpbin 200), B rechaza con 410,
     // C tiene claves invalidas (falla de cifrado -> FALLIDO sin statusCode).
+    // `NotificacionPush.endpoint` es UNIQUE global: cada uno lleva la corrida en el query.
     const defs = [
-      { clave: 'A', endpoint: 'https://httpbin.org/post', claves: parClaves() },
-      { clave: 'B', endpoint: 'https://httpbin.org/status/410', claves: parClaves() },
-      { clave: 'C', endpoint: `https://example.invalid/webpush/${RUN}`, claves: { p256dh: 'test', auth: 'test' } },
-      { clave: 'D', endpoint: 'https://httpbin.org/post', claves: parClaves(), ultimoUso: new Date(Date.now() - 100 * 86_400_000) },
+      { clave: 'A', digito: 1, endpoint: `https://httpbin.org/post?run=${RUN}A`, claves: parClaves() },
+      { clave: 'B', digito: 2, endpoint: `https://httpbin.org/status/410?run=${RUN}B`, claves: parClaves() },
+      { clave: 'C', digito: 3, endpoint: `https://example.invalid/webpush/${RUN}C`, claves: { p256dh: 'test', auth: 'test' } },
+      { clave: 'D', digito: 4, endpoint: `https://httpbin.org/post?run=${RUN}D`, claves: parClaves(), ultimoUso: new Date(Date.now() - 100 * 86_400_000) },
     ];
     const cli = {};
     const subs = {};
     for (const d of defs) {
       const c = await prisma.cliente.create({
-        data: { negocioId, nombre: `TEST ${RUN} ${d.clave}`, telefono: tel(d.clave), aceptaNotificaciones: true },
+        data: { negocioId, nombre: `TEST ${RUN} ${d.clave}`, telefono: tel(d.digito), aceptaNotificaciones: true },
       });
       clientes.push(c.id);
       const s = await prisma.notificacionPush.create({
@@ -147,7 +150,7 @@ async function main() {
     }
     // E: SIN suscripcion (para el contador del bug [d]).
     const cliE = await prisma.cliente.create({
-      data: { negocioId, nombre: `TEST ${RUN} E`, telefono: tel('E'), aceptaNotificaciones: false },
+      data: { negocioId, nombre: `TEST ${RUN} E`, telefono: tel(5), aceptaNotificaciones: false },
     });
     clientes.push(cliE.id);
     cli.E = cliE;
@@ -274,8 +277,11 @@ async function main() {
     console.log('\n[e] Inmutabilidad: el historial NO se borra con el disparo');
     const nombreDisparo = `TEST envios disparo ${RUN}`;
     const dManual = await prisma.disparoPush.create({
-      data: { negocioId, nombre: nombreDisparo, tipo: 'MANUAL', activa: true, config: {}, plantillaId: pl.id },
+      data: { negocioId, nombre: nombreDisparo, tipo: 'BIENVENIDA', activa: true, config: {}, plantillaId: pl.id },
     });
+    disparoEliminado = dManual.id;
+
+    // (1) EnvioPushLog: push a un cliente CON suscripcion (camino /probar).
     const rProbar = await req('POST', `/api/push/disparos/${dManual.id}/probar`, {
       token: staffToken, body: { clienteId: cli.A.id },
     });
@@ -291,25 +297,43 @@ async function main() {
     chk('[e] y con el snapshot del nombre del disparo',
       filasDisparo?.[0]?.disparoNombre === nombreDisparo, trunc(filasDisparo?.[0]?.disparoNombre));
 
-    const logDisparo = await prisma.disparoPushLog.findMany({ where: { disparoId: dManual.id } });
-    chk('[e] la ejecucion quedo en DisparoPushLog (1 fila ENVIADO)',
-      logDisparo.length === 1 && logDisparo[0].accion === 'ENVIADO',
-      `n=${logDisparo.length} accion=${logDisparo[0]?.accion}`);
+    // (2) DisparoPushLog: un EVENTO REAL (el alta de un cliente dispara BIENVENIDA).
+    const rBien = await req('POST', '/api/auth/cliente/registrar', {
+      body: {
+        negocioSlug: SLUG, nombre: `TEST ${RUN} F`, telefono: tel(6), aceptaNotificaciones: false,
+      },
+    });
+    chk('POST /auth/cliente/registrar responde 201', rBien.status === 201 || rBien.status === 200, `status=${rBien.status} ${trunc(rBien.data)}`);
+    const clienteFId = rBien.data?.cliente?.id;
+    if (clienteFId) clientes.push(clienteFId);
+
+    const logDisparo = clienteFId
+      ? await esperar(async () => {
+          const l = await prisma.disparoPushLog.findMany({ where: { disparoId: dManual.id, clave: `BIENVENIDA:${clienteFId}` } });
+          return l.length ? l : null;
+        }, 60_000)
+      : null;
+    chk('[e] el evento REAL dejo su fila en DisparoPushLog (clave BIENVENIDA:<cliente>)',
+      !!logDisparo?.[0] && logDisparo[0].accion === 'ENVIADO',
+      `n=${logDisparo?.length ?? 0} accion=${logDisparo?.[0]?.accion} clave=${trunc(logDisparo?.[0]?.clave)}`);
     chk('[e] el log guarda el snapshot del disparo y de la plantilla',
-      logDisparo[0]?.disparoNombre === nombreDisparo && logDisparo[0]?.plantillaNombre === pl.nombre,
-      `disparoNombre=${trunc(logDisparo[0]?.disparoNombre)} plantillaNombre=${trunc(logDisparo[0]?.plantillaNombre)}`);
+      logDisparo?.[0]?.disparoNombre === nombreDisparo && logDisparo?.[0]?.plantillaNombre === pl.nombre,
+      `disparoNombre=${trunc(logDisparo?.[0]?.disparoNombre)} plantillaNombre=${trunc(logDisparo?.[0]?.plantillaNombre)}`);
 
     // Borrado REAL por la API (camino del dueno).
     const rDel = await req('DELETE', `/api/push/disparos/${dManual.id}`, { token: staffToken });
     chk('DELETE /push/disparos/:id responde 200', rDel.status === 200, `status=${rDel.status} ${trunc(rDel.data)}`);
-    disparoEliminado = dManual.id;
 
-    const logPost = await prisma.disparoPushLog.findUnique({ where: { id: logDisparo[0].id } });
+    const logPost = logDisparo?.[0]?.id
+      ? await prisma.disparoPushLog.findUnique({ where: { id: logDisparo[0].id } })
+      : null;
     chk('[e] el log del disparo SIGUE existiendo (no hay borrado en cascada)', !!logPost);
     chk('[e] quedo con disparoId null (onDelete SetNull) y el nombre snapshoteado',
       logPost?.disparoId === null && logPost?.disparoNombre === nombreDisparo,
       `disparoId=${logPost?.disparoId} disparoNombre=${trunc(logPost?.disparoNombre)}`);
-    const envioPost = await prisma.envioPushLog.findUnique({ where: { id: filasDisparo[0].id } });
+    const envioPost = filasDisparo?.[0]?.id
+      ? await prisma.envioPushLog.findUnique({ where: { id: filasDisparo[0].id } })
+      : null;
     chk('[e] el envio del disparo SIGUE existiendo', !!envioPost);
     chk('[e] tambien con disparoId null y su snapshot',
       envioPost?.disparoId === null && envioPost?.disparoNombre === nombreDisparo,
@@ -319,7 +343,7 @@ async function main() {
     console.log('\n[f] La API del historial (lo que lee el tab Historial del admin)');
     const rLogs = await req('GET', '/api/push/disparos/logs?page=1&pageSize=20', { token: staffToken });
     chk('GET /push/disparos/logs responde 200', rLogs.status === 200, `status=${rLogs.status}`);
-    const filaApi = (rLogs.data?.data ?? []).find((f) => f.id === logDisparo[0].id);
+    const filaApi = (rLogs.data?.data ?? []).find((f) => f.id === logPost?.id);
     chk('[f] el historial de disparos devuelve la fila del disparo BORRADO con su nombre',
       filaApi?.disparoNombre === nombreDisparo && filaApi?.disparoId === null, trunc(filaApi));
 
@@ -361,6 +385,7 @@ async function main() {
     await prisma.eventoAuditoria.deleteMany({
       where: { negocioId, clienteId: { in: clientes }, accion: { startsWith: 'push.' } },
     }).catch(() => undefined);
+    await prisma.tokenValidacion.deleteMany({ where: { clienteId: { in: clientes } } }).catch(() => undefined);
     await prisma.tarjetaClienteSucursal.deleteMany({ where: { clienteId: { in: clientes } } }).catch(() => undefined);
     await prisma.cliente.deleteMany({ where: { id: { in: clientes } } }).catch(() => undefined);
     await restaurarReales();

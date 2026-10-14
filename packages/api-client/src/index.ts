@@ -376,6 +376,18 @@ export const endpoints = {
     envioLogs: '/api/push/envios/logs',
     /** Prueba UN disparo contra UN cliente (`{ clienteId }`). */
     disparoProbar: (id: string) => `/api/push/disparos/${encodeURIComponent(id)}/probar`,
+    /**
+     * CAMPAÑAS PROGRAMABLES (fecha/hora + publico con exclusiones). El alta reserva la
+     * cuota del mes; `preview` devuelve el alcance "~N de M" ANTES de confirmar.
+     */
+    campanas: '/api/push/campanas',
+    campana: (id: string) => `/api/push/campanas/${encodeURIComponent(id)}`,
+    /** Alcance estimado del publico (no crea nada). */
+    campanaPreview: '/api/push/campanas/preview',
+    /** "Probar a mi mismo": UNA notificacion al dispositivo que la pide. */
+    campanaProbar: '/api/push/campanas/probar',
+    /** Tick FORZADO del dispatcher del negocio (no espera el scheduler). */
+    campanaTick: '/api/push/campanas/tick',
   },
   clientes: {
     list: '/api/clientes',

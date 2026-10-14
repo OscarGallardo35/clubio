@@ -11,6 +11,7 @@ import { CrearDisparoDto } from './dto/crear-disparo.dto';
 import { ActualizarDisparoDto } from './dto/actualizar-disparo.dto';
 import { ProbarDisparoDto } from './dto/probar-disparo.dto';
 import { HistorialDisparosDto } from './dto/historial-disparos.dto';
+import { HistorialEnviosDto } from './dto/historial-envios.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentCliente } from '../common/decorators/current-cliente.decorator';
@@ -164,6 +165,25 @@ export class PushController {
     @Query() filtros: HistorialDisparosDto,
   ) {
     return this.disparos.historial(emp.negocioId, filtros);
+  }
+
+  /**
+   * Historial de ENVIOS de push (pestaña "Historial" del admin): una fila por
+   * (envio x destinatario x endpoint) con el estado real de entrega y el motivo del
+   * fallo, mas el resumen por campaña ("a cuantos les llego"). Paginado y con scope
+   * por negocio.
+   *
+   * Cubre los DOS origenes del historial: las campañas (segmento/todos desde el tab
+   * Plantillas) y los disparos del motor.
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @Get('envios/logs')
+  historialEnvios(
+    @CurrentEmpleado() emp: EmpleadoAuth,
+    @Query() filtros: HistorialEnviosDto,
+  ) {
+    return this.push.historialEnvios(emp.negocioId, filtros);
   }
 
   @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)

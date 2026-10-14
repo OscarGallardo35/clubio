@@ -6,13 +6,18 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { LimitesService } from '../planes/limites.service';
+import { getPagination, paginar } from '../common/utils/pagination.util';
 import type { EnviarPromocionDto } from './dto/enviar-promocion.dto';
 import type { SuscribirPushDto } from './dto/suscribir-push.dto';
 import type { CrearPlantillaDto } from './dto/crear-plantilla.dto';
 import type { ActualizarPlantillaDto } from './dto/actualizar-plantilla.dto';
 import type { EnviarPlantillaDto, SegmentoEnvio } from './dto/enviar-plantilla.dto';
+import type { HistorialEnviosDto } from './dto/historial-envios.dto';
 
 export const COLA_PUSH = 'push-send';
+
+/** Cuantas campañas devuelve el resumen del historial de envios (`GET /push/envios/logs`). */
+export const CAMPANAS_EN_RESUMEN = 20;
 
 /** Variables soportadas por las plantillas de push. */
 export const VARIABLES_PLANTILLA = [
@@ -69,7 +74,49 @@ export interface PushJob {
   titulo: string;
   cuerpo: string;
   url?: string;
+  /** Campana que origino el envio (va en el job para que el log la pueda completar). */
   campanaId?: string;
+}
+
+/** Estados de una fila de `EnvioPushLog`. */
+export type EstadoEnvioPush =
+  | 'ENCOLADO'
+  | 'ENVIADO'
+  | 'FALLIDO'
+  | 'SIN_SUSCRIPCION'
+  | 'SUPRIMIDO_EXCLUIDO';
+
+/** Resultado REAL de un endpoint, tal como lo ve el procesador (que es el unico que manda). */
+export interface ResultadoEndpoint {
+  endpointId: string;
+  endpoint: string;
+  estado: Exclude<EstadoEnvioPush, 'ENCOLADO'>;
+  statusCode?: number;
+  /** Motivo corto: '410', 'sin suscripcion', 'quota'. */
+  motivo?: string;
+  error?: string;
+}
+
+/**
+ * Deltas de los contadores de una campana. Se calculan SOLO sobre las
+ * transiciones reales de estado de cada fila (un reintento que vuelve a fallar no
+ * suma), para que `totalEnviados`/`totalFallidos` no se inflen.
+ */
+export interface DeltaCampana {
+  enviados: number;
+  fallidos: number;
+}
+
+/** Datos minimos para escribir una fila de `EnvioPushLog` en el encolado. */
+export interface EnvioEncolado {
+  campanaId?: string | null;
+  campanaTitulo?: string | null;
+  disparoId?: string | null;
+  disparoNombre?: string | null;
+  clienteId?: string | null;
+  empleadoId?: string | null;
+  segmento?: string | null;
+  jobId?: string | number | null;
 }
 
 @Injectable()
@@ -229,6 +276,9 @@ export class PushService {
   /**
    * Envia una promocion: resuelve destinatarios y ENCOLA un job por cada uno.
    * La API responde al instante; el procesador los manda en background.
+   *
+   * Deja el historial: una fila `EnvioPushLog` ENCOLADO por destinatario (el
+   * procesador la completa con el endpoint y el resultado real).
    */
   async enviarPromocion(negocioId: string, dto: EnviarPromocionDto, empleadoId?: string) {
     this.exigirVapid();
@@ -244,8 +294,18 @@ export class PushService {
         where: { negocioId, eliminadoEn: null, id: { in: dto.clienteIds } },
         select: { id: true },
       });
-      clienteIds = propios.map((c) => c.id);
-      if (!clienteIds.length) throw new NotFoundException('Ninguno de esos clientes es del negocio');
+      const idsPedidos = propios.map((c) => c.id);
+      if (!idsPedidos.length) throw new NotFoundException('Ninguno de esos clientes es del negocio');
+
+      // Con `clienteIds` explicitos hay que filtrar por SUSCRIPCION ACTIVA igual que el
+      // camino de segmentos: sin esto `destinatarios`/`totalEnviados` contaban gente que
+      // no tiene push (el contador mentia) y se creaba un job por cliente sin dispositivo.
+      const suscritos = await this.prisma.notificacionPush.findMany({
+        where: { negocioId, activa: true, clienteId: { in: idsPedidos } },
+        select: { clienteId: true },
+        distinct: ['clienteId'],
+      });
+      clienteIds = suscritos.map((s) => s.clienteId);
     } else {
       const suscripciones = await this.prisma.notificacionPush.findMany({
         where: {
@@ -260,11 +320,28 @@ export class PushService {
       clienteIds = suscripciones.map((s) => s.clienteId);
     }
 
+    // La campana se crea PRIMERO: su id viaja en cada job y en cada fila del historial.
+    // Ademas es la FUENTE DE VERDAD de CAMPANAS_PUSH_MES (la reconciliacion semanal
+    // cuenta filas de CampanaMarketing del periodo: si no se creara aca, el contador
+    // se pondria en 0 el domingo). `totalEnviados`/`totalFallidos` los completa el
+    // procesador (entregados/fallidos reales); arrancan en 0 para no contar dos veces.
+    const campana = await this.prisma.campanaMarketing.create({
+      data: {
+        negocioId, titulo: dto.titulo, mensaje: dto.cuerpo,
+        url: url ?? null, segmento: dto.segmento ?? 'TODOS',
+        canal: 'PUSH', esAutomatizacion: false,
+        enviadaEn: new Date(), totalEnviados: 0,
+      },
+    });
+
     const jobs = await Promise.all(
       clienteIds.map((id) =>
         this.cola.add(
           'enviar',
-          { negocioId, destino: 'cliente', id, titulo: dto.titulo, cuerpo: dto.cuerpo, url },
+          {
+            negocioId, destino: 'cliente', id, titulo: dto.titulo, cuerpo: dto.cuerpo, url,
+            campanaId: campana.id,
+          },
           {
             attempts: 3,
             backoff: { type: 'custom' }, // 5s, 30s, 5min (ver PushProcessor.backoffStrategy)
@@ -275,17 +352,17 @@ export class PushService {
       ),
     );
 
-    // Se registra la campana: es la FUENTE DE VERDAD de CAMPANAS_PUSH_MES
-    // (la reconciliacion semanal cuenta filas de CampanaMarketing del periodo, asi
-    // que si no se creara aca el contador se pondria en 0 el domingo).
-    await this.prisma.campanaMarketing.create({
-      data: {
-        negocioId, titulo: dto.titulo, mensaje: dto.cuerpo,
-        url: url ?? null, segmento: dto.segmento ?? 'TODOS',
-        canal: 'PUSH', esAutomatizacion: false,
-        enviadaEn: new Date(), totalEnviados: jobs.length,
-      },
-    });
+    // Historial: una fila por destinatario (el procesador la completa con el endpoint).
+    await this.registrarEnviosEncolados(
+      negocioId,
+      jobs.map((job, i) => ({
+        clienteId: clienteIds[i],
+        campanaId: campana.id,
+        campanaTitulo: dto.titulo,
+        segmento: dto.segmento ?? 'TODOS',
+        jobId: job.id,
+      })),
+    );
 
     await this.auditoria.registrar({
       negocioId, accion: 'push.promocion_encolada', empleadoId,
@@ -294,7 +371,7 @@ export class PushService {
 
     await this.limites.incrementarUso(negocioId, 'CAMPANAS_PUSH_MES');
 
-    return { encolados: jobs.length, destinatarios: clienteIds.length };
+    return { encolados: jobs.length, destinatarios: clienteIds.length, campanaId: campana.id };
   }
 
   /**
@@ -355,10 +432,17 @@ export class PushService {
     return { encolados: 1, jobId: job.id };
   }
 
-  /** Envia a un cliente concreto (novedades de su pedido). */
+  /**
+   * Envia a un cliente concreto (novedades de su pedido o un disparo).
+   *
+   * Con `origen.disparoId` el envio deja su fila en `EnvioPushLog` (cuelga del
+   * disparo); sin el, es un aviso transaccional (pedido entregado) y NO se
+   * registra en el historial de envios a proposito.
+   */
   async enviarACliente(
     clienteId: string,
     payload: { title: string; body: string; url?: string; tag?: string },
+    origen?: { disparoId?: string; disparoNombre?: string },
   ) {
     if (!this.habilitado) return { encolados: 0, motivo: 'VAPID no configurado' };
 
@@ -379,6 +463,18 @@ export class PushService {
       },
       { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
     );
+
+    if (origen?.disparoId) {
+      await this.registrarEnviosEncolados(suscripciones.negocioId, [
+        {
+          clienteId,
+          disparoId: origen.disparoId,
+          disparoNombre: origen.disparoNombre ?? null,
+          jobId: job.id,
+        },
+      ]);
+    }
+
     return { encolados: 1, jobId: job.id };
   }
 
@@ -434,6 +530,311 @@ export class PushService {
       negocioId,
       accion: ok ? 'push.enviado' : 'push.fallido',
       detalle,
+    });
+  }
+
+  // ==========================================================================
+  // HISTORIAL DE ENVIOS (EnvioPushLog)
+  // ==========================================================================
+
+  /**
+   * Escribe las filas ENCOLADO de un envio: una por DESTINATARIO. Se llama en el
+   * encolado, que todavia no conoce los endpoints (los completa el procesador).
+   * `createMany` = un solo INSERT por campana, no una escritura por destinatario.
+   */
+  private async registrarEnviosEncolados(negocioId: string, filas: EnvioEncolado[]) {
+    if (!filas.length) return 0;
+    const r = await this.prisma.envioPushLog.createMany({
+      data: filas.map((f) => ({
+        negocioId,
+        estado: 'ENCOLADO' as EstadoEnvioPush,
+        campanaId: f.campanaId ?? null,
+        campanaTitulo: f.campanaTitulo ?? null,
+        disparoId: f.disparoId ?? null,
+        disparoNombre: f.disparoNombre ?? null,
+        clienteId: f.clienteId ?? null,
+        empleadoId: f.empleadoId ?? null,
+        segmento: f.segmento ?? null,
+        jobId: f.jobId === undefined || f.jobId === null ? null : String(f.jobId),
+      })),
+    });
+    return r.count;
+  }
+
+  /**
+   * Endpoints de un job que YA recibieron el push. Un reintento de BullMQ volveria a
+   * mandarlo a todos: esto evita la notificacion duplicada (y el contador doble).
+   */
+  async endpointsYaEnviados(jobId: string): Promise<Set<string>> {
+    const filas = await this.prisma.envioPushLog.findMany({
+      where: { jobId, estado: 'ENVIADO', endpointId: { not: null } },
+      select: { endpointId: true },
+    });
+    return new Set(filas.map((f) => f.endpointId as string));
+  }
+
+  /**
+   * `ultimoUso` = ultima vez que el dispositivo RECIBIO un push. Sin esto solo se
+   * actualizaba al suscribirse y el barrido de 90 dias (`push.scheduler`) daba de
+   * baja dispositivos que reciben pushes todas las semanas.
+   *
+   * Se llama UNA vez por job con los ids que salieron bien: un `updateMany` por
+   * destinatario (no una escritura por endpoint).
+   */
+  async marcarUsoSuscripciones(destino: 'cliente' | 'empleado', ids: string[]) {
+    if (!ids.length) return 0;
+    const data = { ultimoUso: new Date() };
+    const r =
+      destino === 'cliente'
+        ? await this.prisma.notificacionPush.updateMany({ where: { id: { in: ids } }, data })
+        : await this.prisma.notificacionPushEmpleado.updateMany({ where: { id: { in: ids } }, data });
+    return r.count;
+  }
+
+  /**
+   * Completa el historial de UN envio: una fila por (envio x destinatario x endpoint).
+   *
+   * El encolado dejo UNA semilla ENCOLADO (sin endpoint). Aca, que ya se conocen los
+   * endpoints y el manejo de 404/410, la semilla se reusa para el primer endpoint y
+   * se crean filas para los demas (un cliente puede tener varios dispositivos).
+   * Idempotente ante reintentos: la fila de ese endpoint se ACTUALIZA, no se duplica.
+   *
+   * Devuelve los deltas de los contadores de la campana: solo cuentan las
+   * transiciones reales, asi un reintento no infla `totalEnviados`/`totalFallidos`.
+   */
+  async completarEnviosDelJob(opts: {
+    jobId: string;
+    intentos: number;
+    resultados: ResultadoEndpoint[];
+    /** El job termino sin ningun dispositivo suscrito: se marca SIN_SUSCRIPCION. */
+    sinDestinatarios?: boolean;
+  }): Promise<DeltaCampana> {
+    const delta: DeltaCampana = { enviados: 0, fallidos: 0 };
+    const semillas = await this.prisma.envioPushLog.findMany({
+      where: { jobId: opts.jobId },
+      orderBy: { creadoEn: 'asc' },
+    });
+    // Envio anterior a este cambio: no hay fila que completar.
+    if (!semillas.length) return delta;
+
+    if (!opts.resultados.length) {
+      await this.prisma.envioPushLog.updateMany({
+        where: { jobId: opts.jobId },
+        data: opts.sinDestinatarios
+          ? { estado: 'SIN_SUSCRIPCION', motivo: 'sin suscripcion', intentos: opts.intentos }
+          : { intentos: opts.intentos },
+      });
+      return delta;
+    }
+
+    const porEndpoint = new Map<string, (typeof semillas)[number]>();
+    const libres: (typeof semillas)[number][] = [];
+    for (const s of semillas) {
+      if (s.endpointId) porEndpoint.set(s.endpointId, s);
+      else libres.push(s);
+    }
+    const plantilla = semillas[0];
+    const nuevas: Prisma.EnvioPushLogCreateManyInput[] = [];
+
+    for (const r of opts.resultados) {
+      const existente = porEndpoint.get(r.endpointId) ?? libres.shift();
+      if (existente) {
+        await this.prisma.envioPushLog.update({
+          where: { id: existente.id },
+          data: {
+            ...this.datosDeResultado(r, opts.intentos),
+            ...(existente.endpointId ? {} : { endpointId: r.endpointId, endpoint: r.endpoint }),
+          },
+        });
+        this.sumarDelta(delta, existente.estado, r.estado);
+        continue;
+      }
+      nuevas.push({
+        negocioId: plantilla.negocioId,
+        campanaId: plantilla.campanaId,
+        campanaTitulo: plantilla.campanaTitulo,
+        disparoId: plantilla.disparoId,
+        disparoNombre: plantilla.disparoNombre,
+        clienteId: plantilla.clienteId,
+        empleadoId: plantilla.empleadoId,
+        segmento: plantilla.segmento,
+        jobId: opts.jobId,
+        endpointId: r.endpointId,
+        endpoint: r.endpoint,
+        ...this.datosDeResultado(r, opts.intentos),
+      });
+      this.sumarDelta(delta, null, r.estado);
+    }
+
+    if (nuevas.length) await this.prisma.envioPushLog.createMany({ data: nuevas });
+
+    // Defensivo: una semilla que quedo sin endpoint (no deberia pasar: el encolado
+    // escribe UNA fila por destinatario).
+    if (libres.length) {
+      await this.prisma.envioPushLog.updateMany({
+        where: { id: { in: libres.map((s) => s.id) } },
+        data: { estado: 'SIN_SUSCRIPCION', motivo: 'sin endpoint', intentos: opts.intentos },
+      });
+    }
+
+    return delta;
+  }
+
+  /** Campos de la fila que salen del resultado real del endpoint. */
+  private datosDeResultado(r: ResultadoEndpoint, intentos: number) {
+    return {
+      estado: r.estado as EstadoEnvioPush,
+      statusCode: r.statusCode ?? null,
+      motivo: r.motivo ?? null,
+      error: r.error ?? null,
+      intentos,
+      enviadoEn: r.estado === 'ENVIADO' ? new Date() : null,
+    };
+  }
+
+  /** Cuenta solo la TRANSICION real de estado (un reintento que vuelve a fallar no suma). */
+  private sumarDelta(delta: DeltaCampana, previo: string | null, nuevo: ResultadoEndpoint['estado']) {
+    if (nuevo === 'ENVIADO') {
+      if (previo !== 'ENVIADO') delta.enviados++;
+      if (previo === 'FALLIDO') delta.fallidos--;
+    } else if (nuevo === 'FALLIDO' && previo !== 'FALLIDO') {
+      delta.fallidos++;
+    }
+  }
+
+  /** Aplica los deltas a los contadores de la campana (una sola escritura por job). */
+  async aplicarDeltaCampana(campanaId: string | undefined, delta: DeltaCampana) {
+    if (!campanaId || (!delta.enviados && !delta.fallidos)) return;
+    await this.prisma.campanaMarketing
+      .update({
+        where: { id: campanaId },
+        data: {
+          ...(delta.enviados ? { totalEnviados: { increment: delta.enviados } } : {}),
+          ...(delta.fallidos ? { totalFallidos: { increment: delta.fallidos } } : {}),
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * GET /push/envios/logs -> historial de ENVIOS (pestana "Historial" del admin).
+   *
+   * Una fila por (envio x destinatario x endpoint) con el estado REAL de entrega,
+   * mas el resumen por campana ("a cuantos les llego"). El resumen se calcula
+   * SIEMPRE desde `EnvioPushLog`, no desde los contadores de la campana.
+   */
+  async historialEnvios(negocioId: string, filtros: HistorialEnviosDto) {
+    const { page, pageSize, skip, take } = getPagination(filtros);
+
+    const where: Prisma.EnvioPushLogWhereInput = { negocioId };
+    if (filtros.campanaId) where.campanaId = filtros.campanaId;
+    if (filtros.disparoId) where.disparoId = filtros.disparoId;
+    if (filtros.estado) where.estado = filtros.estado;
+    if (filtros.clienteId) where.clienteId = filtros.clienteId;
+    if (filtros.desde || filtros.hasta) {
+      where.creadoEn = {
+        ...(filtros.desde ? { gte: new Date(filtros.desde) } : {}),
+        ...(filtros.hasta ? { lte: new Date(filtros.hasta) } : {}),
+      };
+    }
+
+    const [filas, total, campanas] = await Promise.all([
+      this.prisma.envioPushLog.findMany({ where, orderBy: { creadoEn: 'desc' }, skip, take }),
+      this.prisma.envioPushLog.count({ where }),
+      this.resumenCampanas(negocioId, filtros),
+    ]);
+
+    // Los nombres se resuelven en UNA query por los ids de la pagina (sin N+1).
+    const clienteIds = [
+      ...new Set(filas.map((f) => f.clienteId).filter((id): id is string => typeof id === 'string')),
+    ];
+    const clientes = clienteIds.length
+      ? await this.prisma.cliente.findMany({
+          where: { id: { in: clienteIds }, negocioId },
+          select: { id: true, nombre: true },
+        })
+      : [];
+    const nombrePorCliente = new Map(clientes.map((c) => [c.id, c.nombre]));
+
+    return {
+      ...paginar(
+        filas.map((f) => ({
+          id: f.id,
+          estado: f.estado,
+          motivo: f.motivo,
+          statusCode: f.statusCode,
+          intentos: f.intentos,
+          creadoEn: f.creadoEn,
+          enviadoEn: f.enviadoEn,
+          campanaId: f.campanaId,
+          campanaTitulo: f.campanaTitulo,
+          disparoId: f.disparoId,
+          disparoNombre: f.disparoNombre,
+          segmento: f.segmento,
+          clienteId: f.clienteId,
+          clienteNombre: f.clienteId ? (nombrePorCliente.get(f.clienteId) ?? null) : null,
+          empleadoId: f.empleadoId,
+          // El endpoint es una URL de capacidad del dispositivo: se corta (igual que la auditoria).
+          endpoint: f.endpoint ? f.endpoint.slice(0, 60) : null,
+        })),
+        total,
+        page,
+        pageSize,
+      ),
+      campanas,
+    };
+  }
+
+  /**
+   * Resumen por campana: cuantos envios llegaron, cuantos fallaron y cuantos quedaron
+   * sin dispositivo. Cuenta SIEMPRE desde `EnvioPushLog` (fuente de verdad).
+   */
+  private async resumenCampanas(negocioId: string, filtros: HistorialEnviosDto) {
+    const seleccion = {
+      id: true, titulo: true, segmento: true, enviadaEn: true, creadaEn: true,
+    } satisfies Prisma.CampanaMarketingSelect;
+
+    const campanasBase = filtros.campanaId
+      ? await this.prisma.campanaMarketing.findMany({
+          where: { id: filtros.campanaId, negocioId },
+          select: seleccion,
+        })
+      : await this.prisma.campanaMarketing.findMany({
+          where: { negocioId, envios: { some: {} } },
+          orderBy: [{ enviadaEn: 'desc' }, { creadaEn: 'desc' }],
+          take: CAMPANAS_EN_RESUMEN,
+          select: seleccion,
+        });
+    if (!campanasBase.length) return [];
+
+    const grupos = await this.prisma.envioPushLog.groupBy({
+      by: ['campanaId', 'estado'],
+      where: { negocioId, campanaId: { in: campanasBase.map((c) => c.id) } },
+      _count: { _all: true },
+    });
+
+    const conteosPorCampana = new Map<string, Record<string, number>>();
+    for (const g of grupos) {
+      if (!g.campanaId) continue;
+      const acc = conteosPorCampana.get(g.campanaId) ?? {};
+      acc[g.estado] = g._count._all;
+      conteosPorCampana.set(g.campanaId, acc);
+    }
+
+    return campanasBase.map((c) => {
+      const conteos = conteosPorCampana.get(c.id) ?? {};
+      return {
+        campanaId: c.id,
+        titulo: c.titulo,
+        segmento: c.segmento,
+        enviadaEn: c.enviadaEn ?? c.creadaEn,
+        total: Object.values(conteos).reduce((a, b) => a + b, 0),
+        encolados: conteos.ENCOLADO ?? 0,
+        enviados: conteos.ENVIADO ?? 0,
+        fallidos: conteos.FALLIDO ?? 0,
+        sinSuscripcion: conteos.SIN_SUSCRIPCION ?? 0,
+        suprimidos: conteos.SUPRIMIDO_EXCLUIDO ?? 0,
+      };
     });
   }
 
@@ -689,6 +1090,21 @@ export class PushService {
     // Campana a clientes: el link sale absoluto y con el slug del tenant.
     const urlCampana = await this.urlDePush(negocioId, url, 'cliente');
 
+    // La campana primero: su id viaja en cada job y en cada fila del historial.
+    const campana = await this.prisma.campanaMarketing.create({
+      data: {
+        negocioId,
+        titulo,
+        mensaje: cuerpo,
+        url: urlCampana ?? null,
+        segmento: dto.segmento,
+        canal: 'PUSH',
+        esAutomatizacion: false,
+        enviadaEn: new Date(),
+        totalEnviados: 0,
+      },
+    });
+
     const jobs = await Promise.all(
       destinatarios.map((c) => {
         const vars: VariablesPlantilla = {
@@ -709,25 +1125,24 @@ export class PushService {
             titulo: this.renderizar(titulo, vars),
             cuerpo: this.renderizar(cuerpo, vars),
             ...(urlCampana ? { url: this.renderizar(urlCampana, vars) } : {}),
+            campanaId: campana.id,
           },
           { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
         );
       }),
     );
 
-    await this.prisma.campanaMarketing.create({
-      data: {
-        negocioId,
-        titulo,
-        mensaje: cuerpo,
-        url: urlCampana ?? null,
+    // Historial: una fila por destinatario (el procesador la completa con el endpoint).
+    await this.registrarEnviosEncolados(
+      negocioId,
+      jobs.map((job, i) => ({
+        clienteId: destinatarios[i].id,
+        campanaId: campana.id,
+        campanaTitulo: titulo,
         segmento: dto.segmento,
-        canal: 'PUSH',
-        esAutomatizacion: false,
-        enviadaEn: new Date(),
-        totalEnviados: jobs.length,
-      },
-    });
+        jobId: job.id,
+      })),
+    );
 
     await this.auditoria.registrar({
       negocioId,
@@ -742,6 +1157,6 @@ export class PushService {
 
     await this.limites.incrementarUso(negocioId, 'CAMPANAS_PUSH_MES');
 
-    return { encolados: jobs.length, destinatarios: destinatarios.length };
+    return { encolados: jobs.length, destinatarios: destinatarios.length, campanaId: campana.id };
   }
 }

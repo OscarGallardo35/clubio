@@ -151,6 +151,9 @@ export class DisparosService {
           sellosAcreditados: true,
           puntosAcreditados: true,
           detalle: true,
+          // Snapshots: la fila se entiende sola aunque el disparo ya no exista.
+          disparoNombre: true,
+          plantillaNombre: true,
           creadoEn: true,
           disparo: {
             select: {
@@ -192,8 +195,9 @@ export class DisparosService {
         return {
           id: f.id,
           disparoId: f.disparoId,
-          disparoNombre: f.disparo?.nombre ?? 'disparo eliminado',
-          plantillaNombre: f.disparo?.plantilla?.nombre ?? null,
+          // El snapshot manda: sobrevive al borrado del disparo (historial inmutable).
+          disparoNombre: f.disparoNombre ?? f.disparo?.nombre ?? 'disparo eliminado',
+          plantillaNombre: f.plantillaNombre ?? f.disparo?.plantilla?.nombre ?? null,
           tipo: f.tipo,
           accion: f.accion,
           clienteId: f.clienteId,
@@ -724,7 +728,7 @@ export class DisparosService {
 
   /** Crea la fila-candado. Devuelve null si la clave ya existia (P2002) = duplicado. */
   private async tomarLock(
-    d: DisparoPush,
+    d: DisparoConPlantilla,
     data: { clienteId: string; pedidoId: string | null; clave: string; sellos: number; puntos: number },
   ) {
     try {
@@ -739,6 +743,7 @@ export class DisparosService {
           accion: 'ENVIADO',
           sellosAcreditados: data.sellos,
           puntosAcreditados: data.puntos,
+          ...this.snapshot(d),
         },
       });
     } catch (e) {
@@ -748,7 +753,7 @@ export class DisparosService {
   }
 
   private async logOmitido(
-    d: DisparoPush,
+    d: DisparoConPlantilla,
     clienteId: string,
     pedidoId: string | null,
     clave: string,
@@ -766,11 +771,24 @@ export class DisparosService {
           clave,
           accion,
           detalle: detalle as Prisma.InputJsonValue,
+          ...this.snapshot(d),
         },
       });
     } catch (e) {
       if (!this.esUnique(e)) throw e;
     }
+  }
+
+  /**
+   * Nombres del disparo y de su plantilla, COPIADOS en la fila. Es lo que hace
+   * inmutable al historial: si el dueno borra el disparo (o cambia el nombre), las
+   * filas viejas siguen contando lo que decia el disparo cuando se ejecuto.
+   */
+  private snapshot(d: DisparoConPlantilla) {
+    return {
+      disparoNombre: d.nombre,
+      plantillaNombre: d.plantilla?.nombre ?? null,
+    };
   }
 
   private esUnique(e: unknown): boolean {
@@ -785,12 +803,17 @@ export class DisparosService {
   ) {
     const vars = this.varsDe(cfg, cliente, extra);
     const p = d.plantilla;
-    const res = await this.push.enviarACliente(cliente.id, {
-      title: this.push.renderizar(p.titulo, vars),
-      body: this.push.renderizar(p.cuerpo, vars),
-      ...(p.url ? { url: this.push.renderizar(p.url, vars) } : {}),
-      tag: `disparo-${d.id}`,
-    });
+    const res = await this.push.enviarACliente(
+      cliente.id,
+      {
+        title: this.push.renderizar(p.titulo, vars),
+        body: this.push.renderizar(p.cuerpo, vars),
+        ...(p.url ? { url: this.push.renderizar(p.url, vars) } : {}),
+        tag: `disparo-${d.id}`,
+      },
+      // El envio cuelga del disparo en el historial de envios (`EnvioPushLog`).
+      { disparoId: d.id, disparoNombre: d.nombre },
+    );
     return res;
   }
 

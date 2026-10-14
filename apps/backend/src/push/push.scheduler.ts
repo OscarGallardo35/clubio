@@ -25,7 +25,15 @@ export class PushScheduler {
     }
   }
 
-  /** Cada dia a las 04:00: desactiva suscripciones push sin uso por 90 dias. */
+  /**
+   * Cada dia a las 04:00: desactiva suscripciones push sin uso por 90 dias.
+   *
+   * `ultimoUso` = ultima vez que el dispositivo RECIBIO un push: lo escribe
+   * `suscribirCliente`/`suscribirEmpleado` al suscribirse y `PushProcessor` en CADA
+   * envio exitoso (`PushService.marcarUsoSuscripciones`). Si se dejara solo en la
+   * suscripcion, un cliente que recibe pushes todas las semanas igual se daria de
+   * baja a los 90 dias.
+   */
   @Cron(CronExpression.EVERY_DAY_AT_4AM, { name: 'push-inactivas' })
   async desactivarPushInactivas() {
     try {

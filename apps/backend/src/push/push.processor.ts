@@ -2,7 +2,7 @@ import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PushService, COLA_PUSH } from './push.service';
-import type { PushJob } from './push.service';
+import type { PushJob, ResultadoEndpoint } from './push.service';
 import {
   CHEQUEO_DEMORADOS_S,
   INTERVALO_STALLED_MS,
@@ -51,25 +51,49 @@ export class PushProcessor extends WorkerHost {
   }
 
   async process(job: Job<PushJob>) {
-    const { negocioId, destino, id, titulo, cuerpo, url } = job.data;
+    const { negocioId, destino, id, titulo, cuerpo, url, campanaId } = job.data;
+    const jobId = String(job.id);
+    const intentos = job.attemptsMade + 1;
 
     const suscripciones = await this.push.suscripcionesDe(destino, id);
     if (!suscripciones.length) {
+      // El historial dice POR QUE no se mando: quedo sin dispositivo.
+      await this.push.completarEnviosDelJob({
+        jobId, intentos, resultados: [], sinDestinatarios: true,
+      });
       return { enviados: 0, total: 0, motivo: 'sin suscripciones activas' };
     }
 
+    // Reintento de BullMQ: NO se vuelve a notificar a un dispositivo que ya la recibio
+    // (antes el reintento parcial mandaba la notificacion duplicada).
+    const yaEnviados = await this.push.endpointsYaEnviados(jobId);
+
     let enviados = 0;
     const errores: Array<{ id: string; status?: number; message: string }> = [];
+    const resultados: ResultadoEndpoint[] = [];
+    const idsOk: string[] = [];
 
     for (const s of suscripciones) {
+      if (yaEnviados.has(s.id)) {
+        enviados++;
+        continue;
+      }
+
       try {
-        await this.push.enviarAPayload(s, {
+        const r = await this.push.enviarAPayload(s, {
           title: titulo,
           body: cuerpo,
           url,
           timestamp: Date.now(),
         });
         enviados++;
+        idsOk.push(s.id);
+        resultados.push({
+          endpointId: s.id,
+          endpoint: s.endpoint,
+          estado: 'ENVIADO',
+          statusCode: r?.statusCode,
+        });
       } catch (e) {
         const status = (e as { statusCode?: number }).statusCode;
         const message = (e as Error).message ?? 'error desconocido';
@@ -78,11 +102,37 @@ export class PushProcessor extends WorkerHost {
           // Suscripcion revocada por el navegador: permanente, no se reintenta.
           await this.push.desactivarSuscripcion(destino as 'cliente' | 'empleado', s.id);
           this.logger.warn(`Suscripcion ${s.id} revocada (${status}); desactivada`);
+          resultados.push({
+            endpointId: s.id,
+            endpoint: s.endpoint,
+            estado: 'SIN_SUSCRIPCION',
+            statusCode: status,
+            motivo: String(status),
+            error: message,
+          });
           continue;
         }
         errores.push({ id: s.id, status, message });
+        resultados.push({
+          endpointId: s.id,
+          endpoint: s.endpoint,
+          estado: 'FALLIDO',
+          statusCode: status,
+          motivo: status ? String(status) : 'error',
+          error: message,
+        });
       }
     }
+
+    // Historial: una fila por (envio x destinatario x endpoint) con el resultado real,
+    // y los deltas de los contadores de la campana (solo transiciones reales).
+    const delta = await this.push.completarEnviosDelJob({ jobId, intentos, resultados });
+    await this.push.aplicarDeltaCampana(campanaId, delta);
+
+    // El barrido de 90 dias (`push.scheduler`) mira `ultimoUso`, que antes SOLO se
+    // actualizaba al suscribirse: un dispositivo que recibe pushes todas las semanas
+    // igual quedaba dado de baja. Aca se refresca: UNA escritura por job (no por endpoint).
+    await this.push.marcarUsoSuscripciones(destino as 'cliente' | 'empleado', idsOk);
 
     await this.push.registrarResultado(negocioId, errores.length === 0, {
       jobId: job.id,

@@ -287,7 +287,9 @@ export class DisparosService {
         config: (dto.config ?? {}) as Prisma.InputJsonValue,
         ...(dto.activa !== undefined ? { activa: dto.activa } : {}),
         ...(dto.regalo !== undefined ? { regalo: dto.regalo as Prisma.InputJsonValue } : {}),
-        ...(dto.premio !== undefined ? { premio: dto.premio as Prisma.InputJsonValue } : {}),
+        ...(dto.premio !== undefined
+          ? { premio: dto.premio === null ? Prisma.JsonNull : (dto.premio as Prisma.InputJsonValue) }
+          : {}),
         ...(dto.limitePorCliente !== undefined
           ? { limitePorCliente: dto.limitePorCliente as Prisma.InputJsonValue }
           : {}),

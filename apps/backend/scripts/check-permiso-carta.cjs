@@ -18,6 +18,9 @@
  *      poder firmar subidas (403, que es como estaba `POST /media/firmar-subida`).
  *   7. Aislamiento entre negocios: un empleado de A no puede tocar la carta de B (404) ni firmar
  *      subidas para B (la firma cuelga SIEMPRE del negocio del token).
+ *   8. Que la excepcion NO se abra en el resto del producto: con el permiso de carta prendido, los
+ *      endpoints de empleados/sucursales/configuracion siguen bloqueados (es la razon de aplicar el
+ *      decorador endpoint por endpoint y no dentro del `RolesGuard`).
  *
  * El estado vuelve EXACTAMENTE a como estaba: se borran los empleados y los items de prueba y se
  * restaura el contador de uso de `items_carta` (que `POST /carta` incrementa y que el DELETE no baja,
@@ -273,6 +276,18 @@ async function leerContadorItems(negocioId) {
     const itemsVistos = (opsSi.listar.data?.categorias ?? []).flatMap((g) => g.items).map((i) => i.id);
     chk('el listado de A no incluye NINGUN item de B', itemsVistos.every((id) => !idsB.has(id)),
       `items=${itemsVistos.length} deB=${itemsVistos.filter((id) => idsB.has(id)).length}`);
+
+    // ---------------------------------------------------------------- 9) la excepcion NO se abre en el resto
+    console.log('\n--- 9) El permiso NO abre otros endpoints del producto (la razon de no tocar RolesGuard)');
+    const otros = {
+      'GET /empleados': await req('GET', '/api/empleados', { cookie: cookieSi }),
+      [`PATCH /empleados/:id`]: await req('PATCH', `/api/empleados/${empNo.id}`, { cookie: cookieSi, body: { nombre: 'no' } }),
+      'GET /sucursales': await req('GET', '/api/sucursales', { cookie: cookieSi }),
+      'GET /configuracion': await req('GET', '/api/configuracion', { cookie: cookieSi }),
+    };
+    for (const [nombre, r] of Object.entries(otros)) {
+      chk(`con el permiso de carta, ${nombre} sigue bloqueado (no 2xx)`, !(r.status >= 200 && r.status < 300), `status=${r.status}`);
+    }
   } finally {
     // ---------------------------------------------------------------- limpieza
     console.log('\n--- Limpieza');

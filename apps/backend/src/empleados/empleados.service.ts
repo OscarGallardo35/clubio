@@ -18,7 +18,7 @@ export interface AuthCtxEmp {
 const SELECT_PUBLICO = {
   id: true, negocioId: true, sucursalId: true, nombre: true, rol: true,
   email: true, telefono: true, avatarUrl: true, twoFactorEnabled: true,
-  accesoMultiSucursal: true, activo: true, ultimoAcceso: true, creadoEn: true,
+  accesoMultiSucursal: true, puedeEditarCarta: true, activo: true, ultimoAcceso: true, creadoEn: true,
 } as const;
 
 const ROLES_PRIVILEGIADOS = ['DUENO', 'ENCARGADO'];
@@ -86,6 +86,7 @@ export class EmpleadosService {
       email: dto.email ? dto.email.toLowerCase() : null,
       telefono: dto.telefono ?? null,
       accesoMultiSucursal: dto.accesoMultiSucursal ?? false,
+      puedeEditarCarta: dto.puedeEditarCarta ?? false,
       // PIN hasheado con bcrypt (nunca en claro)
       pinHash: dto.pin ? await bcrypt.hash(dto.pin, 10) : null,
       passwordHash: dto.password ? await bcrypt.hash(dto.password, 10) : null,
@@ -112,6 +113,7 @@ export class EmpleadosService {
         ...(dto.email !== undefined ? { email: dto.email ? dto.email.toLowerCase() : null } : {}),
         ...(dto.telefono !== undefined ? { telefono: dto.telefono } : {}),
         ...(dto.accesoMultiSucursal !== undefined ? { accesoMultiSucursal: dto.accesoMultiSucursal } : {}),
+        ...(dto.puedeEditarCarta !== undefined ? { puedeEditarCarta: dto.puedeEditarCarta } : {}),
         ...(dto.activo !== undefined ? { activo: dto.activo } : {}),
       },
       select: SELECT_PUBLICO,

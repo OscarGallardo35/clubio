@@ -64,7 +64,7 @@ export class StaffGuard implements CanActivate {
           select: {
             id: true, nombre: true, rol: true, negocioId: true,
             sucursalId: true, activo: true, eliminadoEn: true,
-            accesoMultiSucursal: true,
+            accesoMultiSucursal: true, puedeEditarCarta: true,
           },
         });
         if (!emp || !emp.activo || emp.eliminadoEn) continue;
@@ -79,6 +79,10 @@ export class StaffGuard implements CanActivate {
           // Lo necesita /sucursales/mis-sucursales (#2.10): un ENCARGADO con
           // accesoMultiSucursal ve todas las sucursales, el resto solo la suya.
           accesoMultiSucursal: emp.accesoMultiSucursal,
+          // Permiso por empleado para la carta: lo evalua `PermisoGuard` (nunca RolesGuard).
+          // Se re-lee de la DB en CADA request, asi que prender/apagar el switch aplica en
+          // caliente, sin re-login.
+          puedeEditarCarta: emp.puedeEditarCarta,
           tipo: tipoEsperado,
         };
         return true;

@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
 import { RolEmpleado } from '@prisma/client';
 
 export class CrearEmpleadoDto {
@@ -27,4 +27,11 @@ export class CrearEmpleadoDto {
 
   @IsOptional()
   accesoMultiSucursal?: boolean;
+
+  /**
+   * Permiso por empleado para administrar la carta COMPLETA (precio, descripcion,
+   * disponibilidad, foto, crear, eliminar y reordenar). Arranca APAGADO.
+   */
+  @IsOptional() @IsBoolean()
+  puedeEditarCarta?: boolean;
 }

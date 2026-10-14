@@ -20,6 +20,13 @@ export class ActualizarEmpleadoDto {
   @IsOptional() @IsBoolean()
   accesoMultiSucursal?: boolean;
 
+  /**
+   * Permiso por empleado para administrar la carta COMPLETA (precio, descripcion,
+   * disponibilidad, foto, crear, eliminar y reordenar). Lo prende/apaga el dueno.
+   */
+  @IsOptional() @IsBoolean()
+  puedeEditarCarta?: boolean;
+
   @IsOptional() @IsBoolean()
   activo?: boolean;
 }

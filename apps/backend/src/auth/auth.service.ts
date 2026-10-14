@@ -528,6 +528,8 @@ export class AuthService {
     negocioSlug: string;
     sucursalId: string | null;
     accesoMultiSucursal: boolean;
+    /** Permiso por empleado para la carta completa (lo prende el dueno desde el admin). */
+    puedeEditarCarta: boolean;
     tipo: string;
   }) {
     const sucursal = user.sucursalId
@@ -544,6 +546,7 @@ export class AuthService {
         nombre: user.nombre,
         rol: user.rol,
         accesoMultiSucursal: user.accesoMultiSucursal,
+        puedeEditarCarta: user.puedeEditarCarta,
         sucursal,
       },
       sucursal,

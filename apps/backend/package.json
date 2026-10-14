@@ -30,6 +30,7 @@
     "test:campanas-push": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-campanas-push.cjs",
     "test:editar-monto": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-editar-monto.cjs",
     "test:config-admin": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-config-admin.cjs",
+    "test:horarios": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-horarios.cjs",
     "test:staff-hibrido": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-staff-hibrido.cjs",
     "test:auth-dueno": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-auth-dueno.cjs",
     "test:cloudinary": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-cloudinary.cjs",

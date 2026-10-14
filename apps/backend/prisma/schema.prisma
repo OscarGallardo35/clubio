@@ -77,6 +77,16 @@ enum CanalCampana {
   AMBOS
 }
 
+// Estado de una campana de push PROGRAMABLE (`CampanaPush`). Es el ciclo de vida
+// del despacho: PROGRAMADA -> ENVIANDO -> ENVIADA, o PROGRAMADA -> CANCELADA.
+// Reprogramar/cancelar SOLO se permite en PROGRAMADA (ENVIANDO responde 409).
+enum EstadoCampanaPush {
+  PROGRAMADA
+  ENVIANDO
+  ENVIADA
+  CANCELADA
+}
+
 // Estados de un pedido
 enum EstadoPedido {
   PENDIENTE
@@ -220,6 +230,7 @@ model Negocio {
   enviosPush            EnvioPushLog[]
   plantillasPush        PlantillaPush[]
   disparosPush          DisparoPush[]
+  campanasPush          CampanaPush[]
   tokensValidacion      TokenValidacion[]
   usoMensual            UsoMensual[]
   eventosAuditoria      EventoAuditoria[]
@@ -330,6 +341,13 @@ model ConfiguracionClub {
   pushPremioPorVencer         Boolean               @default(true)
   pushAUnoDelPremio           Boolean               @default(true)
   pushInactivos30Dias         Boolean               @default(false)
+
+  /// VENTANA HORARIA de despacho de campanas de push, en hora ARGENTINA ('HH:mm').
+  /// Con las dos vacias (default) NO hay ventana: la campana sale a su hora.
+  /// Con ambas seteadas, si el despacho cae FUERA de la ventana se DIFIERE a la
+  /// proxima apertura (nunca se descarta). Es el enganche del feature de horarios.
+  pushVentanaInicio           String?
+  pushVentanaFin              String?
 
   creadoEn                    DateTime              @default(now())
   actualizadoEn               DateTime              @updatedAt
@@ -948,6 +966,8 @@ model CampanaMarketing {
 
   negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   envios  EnvioPushLog[]
+  /// Campana PROGRAMABLE que la creo (una `CampanaPush` tiene UNA `CampanaMarketing`).
+  campanaPush CampanaPush?
 
   @@index([negocioId, enviadaEn])
   @@index([negocioId, esAutomatizacion])
@@ -970,6 +990,7 @@ model PlantillaPush {
 
   negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   disparos DisparoPush[]
+  campanas CampanaPush[]
 
   @@index([negocioId, activa])
 }
@@ -1086,6 +1107,58 @@ model EnvioPushLog {
   @@index([campanaId, estado])
   @@index([disparoId, estado])
   @@index([jobId])
+}
+
+// Campana de push PROGRAMABLE (feature de campanas programables del admin).
+//
+// El MOTOR vive en CampanasPushService (COLA_DISPAROS, job 'campanas'): re-escanea
+// `programadoPara <= now AND estado = PROGRAMADA`, reclama la fila (PROGRAMADA ->
+// ENVIANDO, atomico) y recien despues encola los jobs. Es IDEMPOTENTE: un reinicio
+// no reenvia (el estado ya no es PROGRAMADA) y el despacho reanudable salta a los
+// destinatarios que ya tienen su fila en `EnvioPushLog`.
+//
+// PUBLICO RECALCULADO AL ENVIAR (no congelado al crear): `segmento` + `exclusiones`
+// se re-resuelven contra la base al momento del despacho, pero las exclusiones se
+// respetan SIEMPRE. Por eso el "N de M" del preview es una ESTIMACION.
+//
+// CUOTA: `CAMPANAS_PUSH_MES` se RESERVA al CREAR (no al enviar), y la `campanaId`
+// (la `CampanaMarketing` asociada, creada junto con la campana) es la que cuenta la
+// reconciliacion semanal. CANCELAR una campana PROGRAMADA DEVUELVE EL CUPO (se borra
+// la `CampanaMarketing` sin envios y se decrementa el uso).
+model CampanaPush {
+  id                String            @id @default(cuid())
+  negocioId         String
+  /// Nombre interno de la campana (para el admin).
+  nombre            String
+  /// Mensaje: snapshot propio para que la campana siga viva si se borra la plantilla.
+  titulo            String
+  cuerpo            String            @db.Text
+  url               String?
+  icono             String?
+  /// Plantilla usada (opcional; se snapshotean los textos igual).
+  plantillaId       String?
+  /// Base del publico: 'TODOS' | 'PREMIO_DESBLOQUEADO' | 'INACTIVO_30'.
+  segmento          String            @default("TODOS")
+  /// Exclusiones (SOLO RECORTAN el publico): { clientes?: string[], segmentos?: string[] }.
+  exclusiones       Json?
+  /// Momento del despacho en UTC (la UI lo muestra en hora ARGENTINA).
+  programadoPara    DateTime
+  estado            EstadoCampanaPush @default(PROGRAMADA)
+  /// `CampanaMarketing` asociada: es la que cuelga de `EnvioPushLog.campanaId`.
+  campanaId         String?           @unique
+  /// Cuando se DESPACHO de verdad (no cuando se programo).
+  enviadaEn         DateTime?
+  /// Motivo de la cancelacion (si la hubo).
+  motivoCancelacion String?
+  creadoEn          DateTime          @default(now())
+  actualizadoEn     DateTime          @updatedAt
+
+  negocio   Negocio           @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  plantilla PlantillaPush?    @relation(fields: [plantillaId], references: [id], onDelete: SetNull)
+  campana   CampanaMarketing? @relation(fields: [campanaId], references: [id], onDelete: SetNull)
+
+  @@index([negocioId, estado, programadoPara])
+  @@index([estado, programadoPara])
 }
 
 // ============================================================================

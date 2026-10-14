@@ -156,7 +156,14 @@ export default function PersonalPage() {
       {
         key: 'rol',
         header: 'Rol',
-        render: (e) => <Badge variant="outline" className="whitespace-nowrap">{e.rol}</Badge>,
+        render: (e) => (
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge variant="outline" className="whitespace-nowrap">{e.rol}</Badge>
+            {e.puedeEditarCarta ? (
+              <Badge variant="secondary" className="whitespace-nowrap">Carta</Badge>
+            ) : null}
+          </div>
+        ),
       },
       {
         key: 'sucursal',
@@ -411,6 +418,7 @@ function FormularioEmpleado({
   const [email, setEmail] = React.useState(empleado?.email ?? '');
   const [telefono, setTelefono] = React.useState(empleado?.telefono ?? '');
   const [accesoMultiSucursal, setAccesoMulti] = React.useState(empleado?.accesoMultiSucursal ?? false);
+  const [puedeEditarCarta, setPuedeEditarCarta] = React.useState(empleado?.puedeEditarCarta ?? false);
   const [pin, setPin] = React.useState(() => generarPin());
   const [activo, setActivo] = React.useState(empleado?.activo ?? true);
   const [guardando, setGuardando] = React.useState(false);
@@ -439,6 +447,7 @@ function FormularioEmpleado({
           email: email.trim() === '' ? undefined : email.trim(),
           telefono: telefono.trim() === '' ? undefined : telefono.trim(),
           accesoMultiSucursal,
+          puedeEditarCarta,
           activo,
         });
         toast.success('Empleado actualizado');
@@ -452,6 +461,7 @@ function FormularioEmpleado({
           email: email.trim() === '' ? undefined : email.trim(),
           telefono: telefono.trim() === '' ? undefined : telefono.trim(),
           accesoMultiSucursal,
+          puedeEditarCarta,
         };
         await empleadosApi.crear(body);
         // No cerramos: el PIN no se puede recuperar despues (el backend guarda el hash).
@@ -589,6 +599,25 @@ function FormularioEmpleado({
       <div className="flex items-center justify-between">
         <Label htmlFor="acceso-multi">Puede ver todas las sucursales</Label>
         <Switch id="acceso-multi" checked={accesoMultiSucursal} onCheckedChange={setAccesoMulti} />
+      </div>
+
+      {/* Paquete COMPLETO de la carta. Arranca apagado: nadie gana permisos sin que el dueno lo
+          prenda. El texto dice exactamente QUE habilita, foto incluida. */}
+      <div className="space-y-2 rounded-xl border p-4">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="puede-editar-carta" className="leading-snug">
+            Puede configurar la carta completa
+          </Label>
+          <Switch
+            id="puede-editar-carta"
+            checked={puedeEditarCarta}
+            onCheckedChange={setPuedeEditarCarta}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Editar precio, descripcion y disponibilidad, <strong>subir la foto</strong>, crear items
+          nuevos, eliminarlos y reordenarlos. Es lo mismo que puede hacer el dueno sobre la carta.
+        </p>
       </div>
 
       {empleado ? (

@@ -121,6 +121,8 @@ export interface EmpleadoAdmin {
   avatarUrl: string | null
   twoFactorEnabled: boolean
   accesoMultiSucursal: boolean
+  /** Permiso para administrar la carta completa (lo prende/apaga el dueno). */
+  puedeEditarCarta: boolean
   activo: boolean
   /** ISO o null si nunca entro. */
   ultimoAcceso: string | null
@@ -144,6 +146,8 @@ export interface CrearEmpleadoBody {
   email?: string | undefined
   telefono?: string | undefined
   accesoMultiSucursal?: boolean | undefined
+  /** Permiso para administrar la carta completa. Arranca apagado. */
+  puedeEditarCarta?: boolean | undefined
 }
 
 export interface ActualizarEmpleadoBody {
@@ -153,6 +157,8 @@ export interface ActualizarEmpleadoBody {
   email?: string | undefined
   telefono?: string | undefined
   accesoMultiSucursal?: boolean | undefined
+  /** Permiso para administrar la carta completa. */
+  puedeEditarCarta?: boolean | undefined
   activo?: boolean | undefined
 }
 

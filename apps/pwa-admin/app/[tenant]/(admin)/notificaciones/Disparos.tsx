@@ -27,6 +27,8 @@ import {
 import { clientesApi, disparosApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import { renderizarPlantilla } from '@/lib/push';
+import { CamposPremio, etiquetaPremio, formAPremio, premioAForm } from './PremioField';
+import type { PremioFormValor } from './PremioField';
 import type {
   ClienteResumen,
   ConfigDisparo,
@@ -366,9 +368,13 @@ export function Disparos({
                     Regalo: {regalo}
                     {manual ? ' (no se acredita: un MANUAL no toca saldos)' : ' (acredita saldo real)'}
                   </li>
-                ) : (
-                  <li>Sin regalo</li>
-                )}
+                ) : null}
+                {etiquetaPremio(d.premio) ? (
+                  <li className="text-sky-700">
+                    {etiquetaPremio(d.premio)} (lo acepta el cliente desde la notificacion)
+                  </li>
+                ) : null}
+                {!regalo && !etiquetaPremio(d.premio) ? <li>Sin regalo ni premio</li> : null}
                 {limite ? <li>{limite}</li> : null}
               </ul>
 
@@ -523,6 +529,8 @@ function FormularioDisparo({
   const [porMes, setPorMes] = React.useState(
     disparo?.limitePorCliente?.porMes != null ? String(disparo.limitePorCliente.porMes) : '',
   );
+  // Premio que el cliente ACEPTA desde la notificacion (no se acredita solo).
+  const [premioForm, setPremioForm] = React.useState<PremioFormValor>(premioAForm(disparo?.premio));
 
   const [guardando, setGuardando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -591,6 +599,7 @@ function FormularioDisparo({
         plantillaId,
         config: construirConfig(),
         ...(regalo.sellos !== undefined || regalo.puntos !== undefined ? { regalo } : {}),
+        premio: formAPremio(premioForm) ?? null,
         ...(limite.porDia !== undefined || limite.porMes !== undefined
           ? { limitePorCliente: limite }
           : {}),
@@ -856,6 +865,17 @@ function FormularioDisparo({
           </div>
         </div>
       </div>
+
+      {/* Premio que el cliente ACEPTA desde la notificacion (no se acredita solo). */}
+      <CamposPremio
+        valor={premioForm}
+        onCambio={setPremioForm}
+        nota={
+          sellosRegalo.trim() !== '' || puntosRegalo.trim() !== ''
+            ? 'Atencion: si tambien cargas un Regalo, el disparo acredita ese saldo al dispararse. El premio, en cambio, se acepta desde la notificacion.'
+            : undefined
+        }
+      />
 
       {/* Tope por cliente. */}
       <div className="space-y-3 rounded-xl border bg-card p-4">

@@ -653,6 +653,20 @@ export interface RegaloDisparo {
   puntos?: number
 }
 
+export type TipoPremio = 'SELLOS' | 'PUNTOS' | 'LIBRE'
+
+/**
+ * PREMIO que el cliente ACEPTA desde la notificacion (no se acredita solo). El disparo/
+ * campaña deja un `PremioOtorgado` PENDIENTE y el push abre `/<slug>/premio/<token>`;
+ * la acreditacion (SELLOS/PUNTOS) ocurre cuando el cliente acepta. LIBRE no mueve saldo.
+ */
+export interface PremioDescriptor {
+  tipo: TipoPremio
+  cantidad?: number
+  texto?: string
+  expiraDias?: number
+}
+
 /** Tope por cliente para que un disparo no acredite de mas. */
 export interface LimitePorCliente {
   porDia?: number
@@ -669,6 +683,7 @@ export interface DisparoPush {
   config: ConfigDisparo
   plantillaId: string
   regalo: RegaloDisparo | null
+  premio: PremioDescriptor | null
   limitePorCliente: LimitePorCliente | null
   creadoEn: string
   actualizadoEn: string
@@ -681,6 +696,7 @@ export interface CrearDisparoBody {
   config: ConfigDisparo
   plantillaId: string
   regalo?: RegaloDisparo
+  premio?: PremioDescriptor | null
   limitePorCliente?: LimitePorCliente
 }
 
@@ -846,6 +862,8 @@ export interface CampanaPush {
   url: string | null
   icono: string | null
   plantillaId: string | null
+  /** PREMIO que cada destinatario ACEPTA desde la notificacion (null = sin premio). */
+  premio: PremioDescriptor | null
   /** Base del publico. */
   segmento: SegmentoEnvio
   exclusiones: ExclusionesCampana | null
@@ -898,6 +916,8 @@ export interface CrearCampanaBody {
   cuerpo: string
   url?: string
   icono?: string
+  /** PREMIO que cada destinatario ACEPTA desde la notificacion. */
+  premio?: PremioDescriptor | null
   segmento?: SegmentoEnvio
   /** Fecha/hora en ARGENTINA: 'YYYY-MM-DDTHH:mm'. */
   programadoPara: string

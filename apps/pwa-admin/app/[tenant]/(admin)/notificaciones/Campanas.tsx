@@ -28,6 +28,8 @@ import {
 import { campanasApi, clientesApi, enviosApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import { renderizarPlantilla } from '@/lib/push';
+import { CamposPremio, etiquetaPremio, formAPremio } from './PremioField';
+import type { PremioFormValor } from './PremioField';
 import type {
   CampanaPush,
   ClienteResumen,
@@ -284,6 +286,11 @@ export function Campanas({
               ) : (
                 <li>Sin exclusiones</li>
               )}
+              {etiquetaPremio(c.premio) ? (
+                <li className="text-sky-700">
+                  {etiquetaPremio(c.premio)} (lo acepta cada cliente desde la notificacion)
+                </li>
+              ) : null}
               {c.estado === 'ENVIADA' ? (
                 <li className="tabular-nums">
                   Enviada:{' '}
@@ -477,6 +484,13 @@ function FormularioCampana({
 
   const [guardando, setGuardando] = React.useState(false);
   const [probando, setProbando] = React.useState(false);
+  const [premioForm, setPremioForm] = React.useState<PremioFormValor>({
+    activo: false,
+    tipo: 'SELLOS',
+    cantidad: '1',
+    texto: '',
+    expiraDias: '',
+  });
   const [error, setError] = React.useState<string | null>(null);
 
   // Buscador de clientes para EXCLUIR (mismo patron que la prueba de un disparo).
@@ -600,6 +614,7 @@ function FormularioCampana({
         titulo: titulo.trim(),
         cuerpo: cuerpo.trim(),
         ...(url.trim() ? { url: url.trim() } : {}),
+        premio: formAPremio(premioForm) ?? null,
         segmento,
         programadoPara: enviarAhora ? aInputAr(new Date()) : programadoPara,
         ...(excluidos.length ? { excluirClienteIds: excluidos.map((c) => c.id) } : {}),
@@ -694,6 +709,13 @@ function FormularioCampana({
           </p>
         ) : null}
       </div>
+
+      {/* PREMIO que cada destinatario ACEPTA desde la notificacion (no se acredita solo). */}
+      <CamposPremio
+        valor={premioForm}
+        onCambio={setPremioForm}
+        nota="Cada cliente recibe un premio PENDIENTE y lo acepta desde la notificacion; ese es el link que abre el local para verificarlo y canjearlo."
+      />
 
       {/* PUBLICO */}
       <div className="space-y-3 rounded-xl border bg-card p-4">

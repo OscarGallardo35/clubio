@@ -1,16 +1,19 @@
 import { ApiClient, endpoints } from '@repo/api-client';
 import type {
   ActualizarConfiguracionBody,
+  ActualizarCampanaBody,
   ActualizarDisparoBody,
   ActualizarEmpleadoBody,
   ActualizarItemCartaBody,
   ActualizarPlantillaBody,
   ActualizarSucursalBody,
+  CampanaPush,
   CartaAdminRespuesta,
   CatalogoPlantillas,
   ClientesRespuesta,
   ConfiguracionAdmin,
   ConfiguracionSucursalBody,
+  CrearCampanaBody,
   CrearDisparoBody,
   CrearEmpleadoBody,
   CrearItemCartaBody,
@@ -30,16 +33,21 @@ import type {
   HistorialEnviosRespuesta,
   ItemCartaAdmin,
   ItemOverrideAdmin,
+  ListarCampanasRespuesta,
   LoginDuenoRespuesta,
   NegocioAdmin,
   PendientesRespuesta,
   PlantillaPush,
+  PreviewCampanaBody,
+  PreviewCampanaRespuesta,
+  ProbarCampanaBody,
   QrInfo,
   ResultadoEliminarSucursal,
   ResultadoEnvioPlantilla,
   ResultadoProbarDisparo,
   SucursalAdmin,
   SucursalesRespuesta,
+  TickCampanasRespuesta,
   UbicacionGoogle,
   UsoMensualAdmin,
 } from '@/types/api';
@@ -356,6 +364,35 @@ export const enviosApi = {
     const q = qs.toString();
     return api.get<HistorialEnviosRespuesta>(`${endpoints.push.envioLogs}${q ? `?${q}` : ''}`);
   },
+};
+
+/**
+ * Campañas de push PROGRAMABLES (`/push/campanas`): se programan a fecha/hora (hora
+ * ARGENTINA) con un publico y exclusiones. El alta RESERVA la cuota del mes; el
+ * `preview` muestra el alcance "~N de M" ANTES de confirmar.
+ *
+ * Detras de `@RequiereFeature('push')`: si el plan no la incluye, el backend responde 403.
+ */
+export const campanasApi = {
+  listar: () => api.get<ListarCampanasRespuesta>(endpoints.push.campanas),
+  obtener: (id: string) => api.get<CampanaPush>(endpoints.push.campana(id)),
+  /** Alcance ESTIMADO del publico (no crea nada). */
+  preview: (body: PreviewCampanaBody) =>
+    api.post<PreviewCampanaRespuesta>(endpoints.push.campanaPreview, body),
+  crear: (body: CrearCampanaBody) => api.post<CampanaPush>(endpoints.push.campanas, body),
+  /** Reprogramar/editar: 409 si la campaña ya salio (ENVIANDO/ENVIADA). */
+  actualizar: (id: string, body: ActualizarCampanaBody) =>
+    api.patch<CampanaPush>(endpoints.push.campana(id), body),
+  /** Cancelar: 409 si ya salio. Devuelve si se devolvio el cupo. */
+  cancelar: (id: string, motivo?: string) =>
+    api.delete<{ ok: boolean; cupoDevuelto: boolean }>(endpoints.push.campana(id), {
+      ...(motivo ? { motivo } : {}),
+    }),
+  /** "Probar a mi mismo": UNA notificacion al dispositivo que la pide. */
+  probar: (body: ProbarCampanaBody) =>
+    api.post<{ prueba: boolean; enviados: number }>(endpoints.push.campanaProbar, body),
+  /** Tick forzado del dispatcher (no espera el scheduler de 1 minuto). */
+  tick: () => api.post<TickCampanasRespuesta>(endpoints.push.campanaTick, {}),
 };
 
 /**

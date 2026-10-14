@@ -34,6 +34,7 @@ import { normalizarError } from '@/lib/errores';
 import { renderizarPlantilla as renderizar } from '@/lib/push';
 import { Disparos } from './Disparos';
 import { Historial } from './Historial';
+import { Campanas } from './Campanas';
 import type {
   CatalogoPlantillas,
   CrearPlantillaBody,
@@ -174,11 +175,21 @@ export default function NotificacionesPage() {
         <TabsList className="gap-1">
           <TabsTrigger value="plantillas">Plantillas</TabsTrigger>
           <TabsTrigger value="disparos">Disparos</TabsTrigger>
+          <TabsTrigger value="campanas">Campañas</TabsTrigger>
           <TabsTrigger value="historial">Historial</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {tab === 'disparos' ? <Disparos plantillas={plantillas} ejemplo={ejemplo} /> : null}
+
+      {tab === 'campanas' ? (
+        <Campanas
+          plantillas={plantillas}
+          ejemplo={ejemplo}
+          endpoint={push.endpoint}
+          pushActivo={push.activo}
+        />
+      ) : null}
 
       {tab === 'historial' ? <Historial /> : null}
 

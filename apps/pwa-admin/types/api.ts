@@ -767,3 +767,114 @@ export interface ClientesRespuesta {
   page?: number
   pageSize?: number
 }
+
+// ------------------------------------------------------- Push (campañas programables) --
+
+/**
+ * Estado de una campaña PROGRAMABLE (`/push/campanas`).
+ * `PROGRAMADA` -> `ENVIANDO` -> `ENVIADA`, o `PROGRAMADA` -> `CANCELADA`.
+ * Reprogramar/cancelar SOLO se permite en `PROGRAMADA` (si no, el backend responde 409).
+ */
+export type EstadoCampanaPush = 'PROGRAMADA' | 'ENVIANDO' | 'ENVIADA' | 'CANCELADA'
+
+/** "A cuantos les llego" de una campaña, calculado desde `EnvioPushLog` (fuente de verdad). */
+export interface CampanaPushStats {
+  total: number
+  encolados: number
+  enviados: number
+  fallidos: number
+  sinSuscripcion: number
+  suprimidos: number
+}
+
+/** Exclusiones: SOLO recortan el publico (por cliente y por segmento negativo). */
+export interface ExclusionesCampana {
+  clientes: string[]
+  segmentos: SegmentoEnvio[]
+}
+
+/** Campaña de push programable (`GET /push/campanas`). */
+export interface CampanaPush {
+  id: string
+  negocioId: string
+  nombre: string
+  titulo: string
+  cuerpo: string
+  url: string | null
+  icono: string | null
+  plantillaId: string | null
+  /** Base del publico. */
+  segmento: SegmentoEnvio
+  exclusiones: ExclusionesCampana | null
+  /** ISO en UTC; la UI lo muestra SIEMPRE en hora argentina. */
+  programadoPara: string
+  estado: EstadoCampanaPush
+  /** `CampanaMarketing.id` asociada (encierra el detalle por destinatario del Historial). */
+  campanaId: string | null
+  enviadaEn: string | null
+  motivoCancelacion: string | null
+  creadoEn: string
+  actualizadoEn: string
+  stats: CampanaPushStats
+}
+
+export interface ListarCampanasRespuesta {
+  data: CampanaPush[]
+  total: number
+}
+
+export interface PreviewCampanaBody {
+  segmento?: SegmentoEnvio
+  excluirClienteIds?: string[]
+  excluirSegmentos?: SegmentoEnvio[]
+}
+
+/**
+ * `POST /push/campanas/preview`: alcance "~N de M suscritos". Es una ESTIMACION:
+ * la base se re-resuelve al momento del envio.
+ */
+export interface PreviewCampanaRespuesta {
+  /** N: a quienes les va a llegar hoy. */
+  alcanzables: number
+  /** M: suscritos del segmento base (antes de exclusiones). */
+  total: number
+  desglose: {
+    suscritos: number
+    excluidos: number
+    sinSuscripcionActiva: number
+    /** K: total de clientes del negocio. */
+    clientesNegocio: number
+  }
+  estimacion: true
+}
+
+export interface CrearCampanaBody {
+  nombre: string
+  plantillaId?: string
+  titulo: string
+  cuerpo: string
+  url?: string
+  icono?: string
+  segmento?: SegmentoEnvio
+  /** Fecha/hora en ARGENTINA: 'YYYY-MM-DDTHH:mm'. */
+  programadoPara: string
+  excluirClienteIds?: string[]
+  excluirSegmentos?: SegmentoEnvio[]
+}
+
+export type ActualizarCampanaBody = Partial<CrearCampanaBody>
+
+export interface ProbarCampanaBody {
+  endpoint: string
+  titulo: string
+  cuerpo: string
+  url?: string
+  icono?: string
+}
+
+/** `POST /push/campanas/tick`: tick forzado del dispatcher del negocio. */
+export interface TickCampanasRespuesta {
+  evaluadas: number
+  enviadas: number
+  resultados: Array<{ id: string; estado: string; motivo?: string }>
+}

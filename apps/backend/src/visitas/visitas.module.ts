@@ -5,9 +5,10 @@ import { VisitasGateway } from './visitas.gateway';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 import { ClientesModule } from '../clientes/clientes.module';
 import { PushModule } from '../push/push.module';
+import { HorariosModule } from '../horarios/horarios.module';
 
 @Module({
-  imports: [ClientesModule, PushModule], // Clientes aporta SegmentosService; Push aporta DisparosService
+  imports: [ClientesModule, PushModule, HorariosModule], // Clientes aporta SegmentosService; Push aporta DisparosService
   controllers: [VisitasController],
   providers: [VisitasService, VisitasGateway, WsJwtGuard],
   exports: [VisitasService, VisitasGateway],

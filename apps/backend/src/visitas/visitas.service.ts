@@ -13,6 +13,8 @@ import { getPagination, paginar } from '../common/utils/pagination.util';
 import { VisitasGateway } from './visitas.gateway';
 import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
 import { DisparosService } from '../push/disparos.service';
+import { HorariosService } from '../horarios/horarios.service';
+import { proximaAperturaTexto } from '../horarios/helpers/horario-negocio';
 import type { SolicitarVisitaDto } from './dto/solicitar-visita.dto';
 import type { AprobarVisitaDto } from './dto/aprobar-visita.dto';
 import type { EditarMontoVisitaDto } from './dto/editar-monto-visita.dto';
@@ -66,7 +68,25 @@ export class VisitasService {
     private readonly gateway: VisitasGateway,
     private readonly fidelizacion: FidelizacionService,
     private readonly disparos: DisparosService,
+    private readonly horarios: HorariosService,
   ) {}
+
+  /**
+   * AVISO (NO bloqueo) de horario para las visitas del club. Un cliente sentado a las
+   * 23:58 no debe perder la visita: solo se informa que el local esta cerrado para que el
+   * staff lo vea. Nunca se usa para rechazar.
+   */
+  private async avisoHorario(negocioId: string, sucursalId: string | null) {
+    const estado = await this.horarios.estaAbierto({ negocioId, sucursalId, tipo: 'atencion' });
+    if (estado.abierto) return null;
+    const cuando = proximaAperturaTexto(estado.proximaApertura, new Date());
+    return {
+      cerrado: true as const,
+      motivo: estado.motivo,
+      proximaApertura: estado.proximaApertura,
+      mensaje: cuando ? `El local esta cerrado ahora. Abre ${cuando}.` : 'El local esta cerrado ahora.',
+    };
+  }
 
   /**
    * Refinamiento (Lote 4): valida que el empleado pueda operar sobre la
@@ -171,6 +191,9 @@ export class VisitasService {
       `Hola, soy ${cliente.nombre}. Quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}. ` +
       `Ref: ${token.token}. Validar aqui: ${urlValidacion}`;
 
+    // AVISO (no bloqueo): el cliente puede pedir la visita aunque el local este cerrado.
+    const avisoHorario = await this.avisoHorario(negocioId, sucursal.id as string);
+
     // WebSocket: solo a la sucursal destino + a los dueños
     this.gateway.emitirSolicitada({
       negocioId,
@@ -178,6 +201,7 @@ export class VisitasService {
       token: token.token,
       expiraEn: token.expiraEn,
       origen: dto.origen,
+      avisoHorario,
       cliente: {
         id: cliente.id, nombre: cliente.nombre,
         telefonoEnmascarado, sellosActuales: cliente.sellosActuales,
@@ -193,6 +217,7 @@ export class VisitasService {
       reutilizado: !!activo,
       // Se informa la sucursal del TOKEN almacenado (fuente de verdad).
       sucursal: { id: sucursal.id, nombre: sucursal.nombre, slug: sucursal.slug },
+      avisoHorario,
     };
   }
 
@@ -401,6 +426,8 @@ export class VisitasService {
       premioDesbloqueado: resultado.premioDesbloqueado,
       premioPuntosDesbloqueado: resultado.premioPuntosDesbloqueado,
       mostrarResena,
+      // AVISO (nunca bloqueo): aprobar una visita jamas se rechaza por horario.
+      avisoHorario: await this.avisoHorario(negocioId, sucursalId),
     };
   }
   /**

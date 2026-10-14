@@ -101,6 +101,8 @@ export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect 
     negocioId: string; sucursalId: string; token: string; expiraEn: Date;
     cliente: { id: string; nombre: string; telefonoEnmascarado: string; sellosActuales: number };
     origen?: string;
+    /** AVISO (no bloqueo) de horario: el staff lo ve aunque la visita se acepte igual. */
+    avisoHorario?: { cerrado: true; motivo: string; proximaApertura: Date | null; mensaje: string } | null;
   }) {
     const cuerpo = { ...payload, emitidoEn: new Date().toISOString() };
     // Encadenado: un dueno con accesoMultiSucursal esta en la sala de sucursal

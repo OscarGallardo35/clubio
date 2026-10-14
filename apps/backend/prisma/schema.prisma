@@ -231,6 +231,7 @@ model Negocio {
   plantillasPush        PlantillaPush[]
   disparosPush          DisparoPush[]
   campanasPush          CampanaPush[]
+  excepcionesHorario    ExcepcionHorario[]
   tokensValidacion      TokenValidacion[]
   usoMensual            UsoMensual[]
   eventosAuditoria      EventoAuditoria[]
@@ -270,6 +271,7 @@ model Sucursal {
   tokensValidacion   TokenValidacion[]
   itemsCartaOverride ItemCartaSucursal[]
   usoMensual         UsoMensual[]
+  excepcionesHorario ExcepcionHorario[]
 
   @@unique([negocioId, slug])
   @@index([negocioId, activa])
@@ -312,6 +314,20 @@ model ConfiguracionClub {
 
   tiposPedidoHabilitados      TipoPedido[]          @default([MESA])
   modosPagoHabilitados        ModoPago[]            @default([EFECTIVO])
+
+  /// GRILLA SEMANAL de atencion al cliente (JSON). `null` = SIN HORARIOS = el
+  /// local esta SIEMPRE abierto (default que no rompe a los tenants existentes).
+  /// Forma: { "lun": [{ "desde": "12:00", "hasta": "15:00" }, ...], "mar": [...] }
+  /// con dias `lun..dom`, 0..N rangos por dia (varios por dia soportados) y rangos
+  /// que cruzan medianoche (`hasta` <= `desde`, ej. 20:00-02:00). Un dia AUSENTE o
+  /// con lista vacia = CERRADO ese dia. La interpretacion vive en
+  /// `HorariosService.estaAbierto` (fuente unica de verdad).
+  horariosAtencion            Json?
+
+  /// GRILLA SEMANAL de DELIVERY (JSON, misma forma). `null` = sin override: el
+  /// delivery sigue la atencion. Solo se evalua ADEMAS de `horariosAtencion`
+  /// cuando el pedido es DELIVERY.
+  horariosDelivery            Json?
   costoEnvio                  Decimal?              @db.Decimal(10, 2)
   pedidoMinimoDelivery        Decimal?              @db.Decimal(10, 2)
   zonaEntrega                 String?               @db.Text
@@ -378,10 +394,36 @@ model ConfiguracionSucursal {
   transferenciaTitular        String?
   transferenciaBanco          String?
 
+  /// Override de la grilla de atencion (JSON). `null` (o `{}`) = hereda del club.
+  horariosAtencion            Json?
+  /// Override de la grilla de delivery (JSON). `null` (o `{}`) = hereda del club.
+  horariosDelivery            Json?
+
   creadoEn                    DateTime     @default(now())
   actualizadoEn               DateTime     @updatedAt
 
   sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+}
+
+// Excepcion al horario semanal: feriado o cierre temporal ("hoy cerrado",
+// "cerrar hasta..."). Es por FECHA (crece y se consulta por rango), por eso va en
+// su propia tabla y no en el JSON. `sucursalId` null = aplica a TODAS las
+// sucursales del negocio. Cierra el local entero (atencion Y delivery).
+model ExcepcionHorario {
+  id         String   @id @default(cuid())
+  negocioId  String
+  sucursalId String?
+  /// Primer dia cerrado (fecha local AR, guardada como @db.Date).
+  desdeFecha DateTime @db.Date
+  /// Ultimo dia cerrado, INCLUSIVE. Igual a `desdeFecha` para un cierre de un dia.
+  hastaFecha DateTime @db.Date
+  motivo     String?
+  creadoEn   DateTime @default(now())
+
+  negocio  Negocio   @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  sucursal Sucursal? @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+
+  @@index([negocioId, sucursalId, desdeFecha, hastaFecha])
 }
 
 // ============================================================================

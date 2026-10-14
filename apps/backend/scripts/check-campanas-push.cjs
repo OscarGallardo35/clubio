@@ -19,6 +19,10 @@
  *      resultado real por dispositivo.
  *  [9] Idempotencia: un 2do tick no reenvia (no duplica filas ni jobs).
  *
+ * El tick se fuerza por la API (`POST /push/campanas/tick`), NO encolando contra el
+ * Redis local: el `.env` local tiene un `REDIS_URL` viejo (el de prod ahora es propio,
+ * en red privada), asi que un `cola.add` local no lo ve el worker de prod.
+ *
  * NUNCA manda push a un cliente real: los destinatarios de prueba apuntan a
  * `httpbin.org` (o a un endpoint invalido) y las suscripciones REALES se apagan durante
  * la corrida y se restauran enseguida (y de nuevo en el `finally`). El token de staff se
@@ -200,18 +204,19 @@ async function main() {
     });
     const cantidadAntes = usoAntes?.cantidad ?? 0;
 
-    console.log('\n[1] Creo la campaña para AHORA (con D excluido)');
-    const ahora = arWall(new Date());
+    console.log('\n[3] Creo una campaña PROGRAMADA A FUTURO (con D excluido)');
+    const wallFuturo = arWall(new Date(Date.now() + 10 * 60_000));
+    const esperadoMs = arWallAUtcMs(wallFuturo);
     const rCrear = await req('POST', '/api/push/campanas', {
       token: staffToken,
       body: {
-        nombre: `TEST campanas AHORA ${RUN}`,
+        nombre: `TEST campanas PRINCIPAL ${RUN}`,
         plantillaId: pl.id,
         titulo: 'Promo {{negocio}}',
         cuerpo: 'Hola {{nombre}}',
         url: '/tarjeta',
         segmento: 'TODOS',
-        programadoPara: ahora,
+        programadoPara: wallFuturo,
         excluirClienteIds: [cli.D.id],
       },
     });
@@ -219,8 +224,13 @@ async function main() {
     const campanaAhora = rCrear.data ?? {};
     if (campanaAhora.id) campanasPushIds.push(campanaAhora.id);
     if (campanaAhora.campanaId) campanasMkIds.push(campanaAhora.campanaId);
-    chk('la campaña nace PROGRAMADA con su campanaId', campanaAhora.estado === 'PROGRAMADA' && !!campanaAhora.campanaId, `estado=${campanaAhora.estado} campanaId=${campanaAhora.campanaId}`);
-    chk('guarda las exclusiones (D)', Array.isArray(campanaAhora.exclusiones?.clientes) && campanaAhora.exclusiones.clientes.includes(cli.D.id), trunc(campanaAhora.exclusiones));
+    chk('la campaña nace PROGRAMADA con su campanaId y sin enviadaEn',
+      campanaAhora.estado === 'PROGRAMADA' && !!campanaAhora.campanaId && campanaAhora.enviadaEn === null,
+      `estado=${campanaAhora.estado} campanaId=${campanaAhora.campanaId} enviadaEn=${campanaAhora.enviadaEn}`);
+    chk('[2] guarda las exclusiones (D)', Array.isArray(campanaAhora.exclusiones?.clientes) && campanaAhora.exclusiones.clientes.includes(cli.D.id), trunc(campanaAhora.exclusiones));
+    chk('[3] la hora AR se convirtio a UTC (= AR + 3h)',
+      Date.parse(campanaAhora.programadoPara) === esperadoMs,
+      `guardado=${campanaAhora.programadoPara} esperado=${new Date(esperadoMs).toISOString()} wall=${wallFuturo}`);
 
     const usoTrasCrear = await prisma.usoMensual.findFirst({
       where: { negocioId, sucursalId: null, recurso: 'CAMPANAS_PUSH_MES', periodo },
@@ -230,14 +240,32 @@ async function main() {
       `antes=${cantidadAntes} despues=${usoTrasCrear?.cantidad}`);
 
     // ==========================================================================
-    console.log('\n[1] Tick FORZADO del dispatcher (idempotente)');
+    console.log('\n[3] A FUTURO no sale antes, ni con el tick forzado');
     const rTick = await req('POST', '/api/push/campanas/tick', { token: staffToken });
     chk('POST /push/campanas/tick responde 201/200', rTick.status === 201 || rTick.status === 200, `status=${rTick.status} ${trunc(rTick.data)}`);
-
     const campanaPost = await prisma.campanaPush.findUnique({ where: { id: campanaAhora.id } });
-    chk('[1] la campaña quedo ENVIADA con enviadaEn (la despacho el tick o el scheduler)',
-      campanaPost?.estado === 'ENVIADA' && !!campanaPost?.enviadaEn,
-      `estado=${campanaPost?.estado} enviadaEn=${campanaPost?.enviadaEn?.toISOString() ?? null} tick=${trunc(rTick.data)}`);
+    const filasFutura = await prisma.envioPushLog.count({ where: { campanaId: campanaAhora.campanaId } });
+    chk('[3] sigue PROGRAMADA tras el tick', campanaPost?.estado === 'PROGRAMADA', `estado=${campanaPost?.estado} tick=${trunc(rTick.data)}`);
+    chk('[3] NO se encolo ninguna notificacion', filasFutura === 0, `filas=${filasFutura}`);
+    chk('[3] control: si la hora AR se hubiera leido como UTC, ya habria salido',
+      esperadoMs - AR_OFFSET_MS < Date.now(),
+      `interpretacion-UTC=${new Date(esperadoMs - AR_OFFSET_MS).toISOString()} ahora=${new Date().toISOString()}`);
+
+    // ==========================================================================
+    console.log('\n[1] Llega la hora: el dispatcher la despacha (tick forzado)');
+    await prisma.campanaPush.update({
+      where: { id: campanaAhora.id },
+      data: { programadoPara: new Date(Date.now() - 60_000) },
+    });
+    const rTickVencida = await req('POST', '/api/push/campanas/tick', { token: staffToken });
+    chk('el tick de la vencida responde 201/200', rTickVencida.status === 201 || rTickVencida.status === 200, `status=${rTickVencida.status} ${trunc(rTickVencida.data)}`);
+    const terminada = await esperar(async () => {
+      const c = await prisma.campanaPush.findUnique({ where: { id: campanaAhora.id } });
+      return c?.estado === 'ENVIADA' ? c : null;
+    }, 60_000);
+    chk('[1] la campaña quedo ENVIADA con enviadaEn',
+      !!terminada?.enviadaEn,
+      `estado=${terminada?.estado} enviadaEn=${terminada?.enviadaEn?.toISOString() ?? null} tick=${trunc(rTickVencida.data)}`);
 
     const filasEncolado = await prisma.envioPushLog.findMany({ where: { campanaId: campanaAhora.campanaId } });
     const encolados = filasEncolado.filter((f) => f.estado !== 'SUPRIMIDO_EXCLUIDO' && f.clienteId);
@@ -259,7 +287,7 @@ async function main() {
     console.log('\n[8] El historial por destinatario (resultado REAL de cada dispositivo)');
     const listas = await esperar(async () => {
       const f = await prisma.envioPushLog.findMany({ where: { campanaId: campanaAhora.campanaId } });
-      return f.every((x) => x.estado !== 'ENCOLADO') ? f : null;
+      return f.length > 0 && f.every((x) => x.estado !== 'ENCOLADO') ? f : null;
     }, 150_000);
     const filas = listas ?? await prisma.envioPushLog.findMany({ where: { campanaId: campanaAhora.campanaId } });
     const porCliente = new Map(filas.map((f) => [f.clienteId, f]));
@@ -281,9 +309,9 @@ async function main() {
     const rLista = await req('GET', '/api/push/campanas', { token: staffToken });
     chk('GET /push/campanas responde 200', rLista.status === 200, `status=${rLista.status}`);
     const enLista = (rLista.data?.data ?? []).find((c) => c.id === campanaAhora.id);
-    chk('[8] la lista trae la campaña con stats (n/m)',
-      !!enLista?.stats && enLista.stats.enviados >= 1 && enLista.stats.total >= 3,
-      `stats=${trunc(enLista?.stats)}`);
+    chk('[8] la lista trae la campaña ENVIADA con stats (n/m)',
+      enLista?.estado === 'ENVIADA' && !!enLista?.stats && enLista.stats.enviados >= 1 && enLista.stats.total >= 3,
+      `estado=${enLista?.estado} stats=${trunc(enLista?.stats)}`);
 
     // ==========================================================================
     console.log('\n[9] IDEMPOTENCIA: un 2do tick no reenvia');
@@ -296,44 +324,25 @@ async function main() {
       where: { campanaId: campanaAhora.campanaId, estado: 'ENCOLADO' },
     });
     chk('[9] no quedo ningun envio NUEVO encolado', encoladosExtra === 0, `encolados=${encoladosExtra}`);
-
-    // ==========================================================================
-    console.log('\n[3] programadoPara se guarda en hora ARGENTINA (UTC = AR + 3h)');
-    const wallFuturo = arWall(new Date(Date.now() + 10 * 60_000));
-    const esperadoMs = arWallAUtcMs(wallFuturo);
-    const rFut = await req('POST', '/api/push/campanas', {
-      token: staffToken,
-      body: {
-        nombre: `TEST campanas FUTURO ${RUN}`,
-        titulo: 'Futuro',
-        cuerpo: 'No deberia salir todavia',
-        segmento: 'TODOS',
-        programadoPara: wallFuturo,
-      },
-    });
-    chk('crear la campaña futura responde 201/200', rFut.status === 201 || rFut.status === 200, `status=${rFut.status} ${trunc(rFut.data)}`);
-    const campanaFutura = rFut.data ?? {};
-    if (campanaFutura.id) campanasPushIds.push(campanaFutura.id);
-    if (campanaFutura.campanaId) campanasMkIds.push(campanaFutura.campanaId);
-    const guardadoMs = Date.parse(campanaFutura.programadoPara);
-    chk('[3] la hora AR se convirtio a UTC (= AR + 3h)',
-      guardadoMs === esperadoMs,
-      `guardado=${campanaFutura.programadoPara} esperado=${new Date(esperadoMs).toISOString()} wall=${wallFuturo}`);
-    chk('[3] la campaña futura NO esta vencida (su hora es mayor a ahora)', esperadoMs > Date.now(), `esperado=${new Date(esperadoMs).toISOString()}`);
-
-    const rTick3 = await req('POST', '/api/push/campanas/tick', { token: staffToken });
-    const futuraPost = await prisma.campanaPush.findUnique({ where: { id: campanaFutura.id } });
-    const filasFutura = await prisma.envioPushLog.count({ where: { campanaId: campanaFutura.campanaId } });
-    chk('[3] programada a futuro: sigue PROGRAMADA tras el tick', futuraPost?.estado === 'PROGRAMADA', `estado=${futuraPost?.estado} tick=${trunc(rTick3.data)}`);
-    chk('[3] programada a futuro: NO se encolo ninguna notificacion', filasFutura === 0, `filas=${filasFutura}`);
-
-    // Si el backend usara la hora AR como si fuera UTC, esta campaña ya habria salido.
-    const wallQueSiFueraUtcYaPaso = guardadoMs - AR_OFFSET_MS < Date.now();
-    chk('[3] control: si se hubiera interpretado como UTC, ya habria salido (prueba valida)',
-      wallQueSiFueraUtcYaPaso, `interpretacion-UTC=${new Date(guardadoMs - AR_OFFSET_MS).toISOString()} ahora=${new Date().toISOString()}`);
+    const sigueEnviada = await prisma.campanaPush.count({ where: { id: campanaAhora.id, estado: 'ENVIADA' } });
+    chk('[9] la campaña sigue ENVIADA (no se reproceso)', sigueEnviada === 1);
 
     // ==========================================================================
     console.log('\n[4] REPROGRAMAR (PATCH) cambia la hora');
+    const rFut = await req('POST', '/api/push/campanas', {
+      token: staffToken,
+      body: {
+        nombre: `TEST campanas REPRO ${RUN}`,
+        titulo: 'Repro',
+        cuerpo: 'Se reprograma',
+        segmento: 'TODOS',
+        programadoPara: arWall(new Date(Date.now() + 30 * 60_000)),
+      },
+    });
+    chk('crear la 2da campaña responde 201/200', rFut.status === 201 || rFut.status === 200, `status=${rFut.status} ${trunc(rFut.data)}`);
+    const campanaFutura = rFut.data ?? {};
+    if (campanaFutura.id) campanasPushIds.push(campanaFutura.id);
+    if (campanaFutura.campanaId) campanasMkIds.push(campanaFutura.campanaId);
     const wallNuevo = arWall(new Date(Date.now() + 60 * 60_000));
     const rPatch = await req('PATCH', `/api/push/campanas/${campanaFutura.id}`, {
       token: staffToken, body: { programadoPara: wallNuevo },
@@ -341,7 +350,12 @@ async function main() {
     chk('PATCH /push/campanas/:id responde 200', rPatch.status === 200, `status=${rPatch.status} ${trunc(rPatch.data)}`);
     chk('[4] la nueva hora quedo guardada en UTC (AR + 3h)',
       Date.parse(rPatch.data?.programadoPara) === arWallAUtcMs(wallNuevo),
-      `guardado=${rPatch.data?.programadoPara}`);
+      `guardado=${rPatch.data?.programadoPara} esperado=${new Date(arWallAUtcMs(wallNuevo)).toISOString()}`);
+
+    const rGet = await req('GET', `/api/push/campanas/${campanaFutura.id}`, { token: staffToken });
+    chk('GET /push/campanas/:id devuelve la hora reprogramada',
+      rGet.status === 200 && Date.parse(rGet.data?.programadoPara) === arWallAUtcMs(wallNuevo),
+      `status=${rGet.status} hora=${rGet.data?.programadoPara}`);
 
     // ==========================================================================
     console.log('\n[6] El 409: no se puede cancelar/reprogramar algo que ya salio');
@@ -377,6 +391,8 @@ async function main() {
       (cupoDespues?.cantidad ?? -1) === cupoAntes - 1,
       `antes=${cupoAntes} despues=${cupoDespues?.cantidad}`);
     campanasMkIds.splice(campanasMkIds.indexOf(campanaFutura.campanaId), 1);
+    const rDel2 = await req('DELETE', `/api/push/campanas/${campanaFutura.id}`, { token: staffToken });
+    chk('[6] volver a cancelar una CANCELADA tambien responde 409', rDel2.status === 409, `status=${rDel2.status}`);
 
     // ==========================================================================
     console.log('\n[+] "Probar a mi mismo" a un dispositivo de prueba');

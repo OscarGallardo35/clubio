@@ -19,6 +19,8 @@ import { Button, buttonVariants, toast } from '@repo/ui'
 import { formatearPrecio } from '@repo/utils'
 import { seleccionarTotal, useCarritoStore } from '@/stores/carritoStore'
 import { useBranding } from '@/hooks/useBranding'
+import { useEstaAbierto } from '@/hooks/useEstaAbierto'
+import { AvisoCerrado } from '@/components/carta/AvisoCerrado'
 import { armarBody, normalizarError, textoEntregado } from '@/lib/checkout-maquina'
 import { pedidosApi } from '@/lib/api'
 import { precioUnitario, validarCheckout } from '@/lib/carrito-maquina'
@@ -68,6 +70,8 @@ type Fallas = ReturnType<typeof validarCheckout>
 export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRecargarCarta, sucursalId, carritoListo = false }: PantallaCheckoutProps) {
   const router = useRouter()
   const { negocio } = useBranding()
+  // Horario del local AHORA (calculado en el navegador): aviso previo + submit deshabilitado.
+  const { abierto, proximaTexto } = useEstaAbierto()
   const carrito = useCarritoStore()
   const total = useCarritoStore(seleccionarTotal)
   const despachar = carrito.despachar
@@ -393,10 +397,13 @@ export function PantallaCheckout({ onEnviar, slugNegocio, enviando = false, onRe
       ) : null}
 
       <div className="flex flex-col gap-2">
+        {/* Aviso previo del horario: el backend igual responde 400 si el local esta cerrado. */}
+        {!abierto ? <AvisoCerrado proximaTexto={proximaTexto} /> : null}
         {/* Habilitado a proposito: si estuviera disabled hasta validar, el primer toque nunca
-            ocurriria y el usuario no veria NUNCA los errores (refinamiento 1). */}
-        <Button type="button" onClick={enviar} disabled={enviando} className="min-h-12 w-full">
-          {enviando ? 'Enviando...' : `Enviar pedido (${formatearPrecio(total)})`}
+            ocurriria y el usuario no veria NUNCA los errores (refinamiento 1). Con el local
+            cerrado SI se desactiva: no tiene sentido dejar disparar un pedido que va a fallar. */}
+        <Button type="button" onClick={enviar} disabled={enviando || !abierto} className="min-h-12 w-full">
+          {enviando ? 'Enviando...' : !abierto ? 'El local esta cerrado' : `Enviar pedido (${formatearPrecio(total)})`}
         </Button>
         <Button
           type="button"

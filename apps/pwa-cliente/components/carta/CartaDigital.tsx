@@ -28,7 +28,9 @@ import { ordenarCategorias } from '@/lib/ordenar-categorias'
 import { ModalModificadores } from './ModalModificadores'
 import { CarritoSheet } from './CarritoSheet'
 import { GatingBanner } from './GatingBanner'
+import { AvisoCerrado } from './AvisoCerrado'
 import { useBranding } from '@/hooks/useBranding'
+import { useEstaAbierto } from '@/hooks/useEstaAbierto'
 import { BadgeCarrito } from './BadgeCarrito'
 import type { ItemParaModal } from './ModalModificadores'
 import type { GrupoModificadorPublico } from '@/lib/modificadores-cache'
@@ -51,6 +53,8 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
   // `menuDisponible` ya combina la feature del plan con el switch del negocio (useBranding):
   // no se re-deriva aca.
   const { menuDisponible, negocio } = useBranding()
+  // Estado del local AHORA (lo calcula el navegador; el backend es el gate del POST).
+  const { abierto, proximaTexto } = useEstaAbierto()
   const despachar = useCarritoStore((s) => s.despachar)
   const activarCarrito = useCarritoStore((s) => s.activar)
   const [categoria, setCategoria] = React.useState<string | null>(null)
@@ -126,6 +130,12 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
 
   const elegir = React.useCallback(
     async (item: ItemDeCarta) => {
+      // CTA "Pedir" deshabilitado cuando el local esta cerrado: la carta queda visible, pero no
+      // se puede armar el pedido (el backend igual devuelve 400 si se cuela).
+      if (!abierto) {
+        toast.error(`El local esta cerrado ahora${proximaTexto ? `. Abre ${proximaTexto}.` : '.'}`)
+        return
+      }
       const store = useModificadoresStore.getState()
       const clave = claveDeModificadores(item.id)
       const cacheado = store.porClave[clave]
@@ -144,7 +154,7 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
         agregarDirecto(item)
       }
     },
-    [agregarDirecto, abrirModal],
+    [agregarDirecto, abrirModal, abierto, proximaTexto],
   )
 
   if (!menuDisponible) {
@@ -174,6 +184,9 @@ export function CartaDigital({ negocioSlug, sucursalSlug, sucursalId, colorMarca
       ) : null}
 
       {actualizando ? <p className="text-xs text-muted-foreground">Actualizando la carta...</p> : null}
+
+      {/* El local puede estar cerrado: la carta sigue visible, se avisa y se frena el CTA "Pedir". */}
+      {!abierto ? <AvisoCerrado proximaTexto={proximaTexto} /> : null}
 
       <CategoriaTabs categorias={categorias.map((c) => ({ nombre: c.categoria, cantidad: c.items.length }))} activa={categoria} onCambiar={setCategoria} />
 

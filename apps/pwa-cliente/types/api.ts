@@ -55,6 +55,26 @@ export interface ConfiguracionPublica {
   transferenciaAlias?: string | null
   transferenciaCbu?: string | null
   transferenciaTitular?: string | null
+  /** Grillas semanales de horarios: { lun: [{desde,hasta}], ... }. Faltante/null = sin horarios. */
+  horariosAtencion?: HorarioSemana | null
+  horariosDelivery?: HorarioSemana | null
+}
+
+/** Dias en el orden del editor (lunes primero). Claves del JSON de la grilla. */
+export type DiaSemana = 'lun' | 'mar' | 'mie' | 'jue' | 'vie' | 'sab' | 'dom'
+
+export interface RangoHorario {
+  desde: string
+  hasta: string
+}
+
+export type HorarioSemana = Partial<Record<DiaSemana, RangoHorario[]>>
+
+/** Feriado / cierre temporal. Fechas YYYY-MM-DD en hora ARGENTINA. */
+export interface ExcepcionHorario {
+  desdeFecha: string
+  hastaFecha: string
+  motivo?: string | null
 }
 
 /** GET /api/negocios/publico/:slug */
@@ -82,6 +102,8 @@ export interface NegocioPublico {
   sucursales: SucursalPublica[]
   /** Features del plan ya filtradas a las habilitadas (gating visual). */
   features: string[]
+  /** Cierres/feriados del local (ventana corta): el navegador calcula "abierto" con esto. */
+  excepciones?: ExcepcionHorario[]
 }
 
 // --- cliente ---

@@ -59,6 +59,14 @@ export function useBrandingCtx(): BrandingCtx {
   return ctx
 }
 
+/**
+ * Igual que `useBrandingCtx` pero SIN tirar: devuelve `null` fuera del provider. Para hooks que
+ * tambien corren en pantallas de /dev (sin BrandingProvider) y no deben romperse.
+ */
+export function useBrandingCtxOpcional(): BrandingCtx | null {
+  return React.useContext(Ctx)
+}
+
 /** El modo lo decide la ruta; el prop lo puede forzar. */
 export function modoDeRuta(pathname: string | null): ModoBranding {
   if (!pathname) return 'funcional'

@@ -238,6 +238,9 @@ export interface ConfiguracionSucursalBody {
   transferenciaCbu?: string | null
   transferenciaTitular?: string | null
   transferenciaBanco?: string | null
+  /** `null`/`{}` = volver a heredar el horario del club. */
+  horariosAtencion?: HorarioSemana | null
+  horariosDelivery?: HorarioSemana | null
 }
 
 /** Override de precio/disponibilidad de un item en una sucursal (precios ya como number). */
@@ -269,6 +272,40 @@ export type ModoAsignacionPedidos = 'BROADCAST' | 'POR_ROL' | 'SOLO_ENCARGADO'
  * Los `Decimal` de Prisma llegan como **STRING** al JSON (`puntosPorPeso`, `costoEnvio`,
  * `pedidoMinimoDelivery`): esas cuentas no se hacen en el front sin convertir.
  */
+// ---------------------------------------------------------- Horarios del local --
+
+/** Dias en el orden del editor (lunes primero). Claves del JSON de la grilla. */
+export type DiaSemana = 'lun' | 'mar' | 'mie' | 'jue' | 'vie' | 'sab' | 'dom'
+
+export interface RangoHorario {
+  /** 'HH:mm' */
+  desde: string
+  /** 'HH:mm'. `hasta` <= `desde` = cruza medianoche (pertenece al dia anterior). */
+  hasta: string
+}
+
+/** Grilla semanal: 0..N rangos por dia. Un dia ausente o con lista vacia = cerrado. */
+export type HorarioSemana = Partial<Record<DiaSemana, RangoHorario[]>>
+
+/** Estado del local AHORA (lo devuelve GET /horarios/estado). */
+export interface EstadoHorario {
+  abierto: boolean
+  proximaApertura: string | null
+  cierraEnMin: number | null
+  motivo: string
+}
+
+/** Feriado / cierre temporal. Fechas YYYY-MM-DD en hora ARGENTINA. */
+export interface ExcepcionHorario {
+  id: string
+  negocioId: string
+  sucursalId: string | null
+  desdeFecha: string
+  hastaFecha: string
+  motivo: string | null
+  creadoEn: string
+}
+
 export interface ConfiguracionAdmin {
   id: string
   negocioId: string
@@ -319,6 +356,9 @@ export interface ConfiguracionAdmin {
   pushPremioPorVencer: boolean
   pushAUnoDelPremio: boolean
   pushInactivos30Dias: boolean
+  /** Grillas semanales de horarios (null = sin horarios = siempre abierto). */
+  horariosAtencion: HorarioSemana | null
+  horariosDelivery: HorarioSemana | null
 }
 
 /** Campos que acepta `PATCH /configuracion` (subconjunto del DTO; los Decimal van como number). */
@@ -351,6 +391,9 @@ export interface ActualizarConfiguracionBody {
   transferenciaTitular?: string | undefined
   transferenciaBanco?: string | undefined
   linkMercadoPago?: string | undefined
+  /** `null` = borrar los horarios (volver a "siempre abierto"). */
+  horariosAtencion?: HorarioSemana | null | undefined
+  horariosDelivery?: HorarioSemana | null | undefined
 }
 
 /** `GET /negocios/qr-info`: los 2 QRs fijos del negocio (menu y club). */

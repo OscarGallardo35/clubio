@@ -26,6 +26,8 @@ import type {
   EmpleadoAdmin,
   EmpleadosRespuesta,
   EnviarPlantillaBody,
+  EstadoHorario,
+  ExcepcionHorario,
   FeaturePlan,
   FirmaSubida,
   GoogleEstado,
@@ -229,6 +231,23 @@ export const configuracionApi = {
   efectiva: () => api.get<ConfiguracionAdmin>(endpoints.configuracion.efectiva),
   actualizar: (body: ActualizarConfiguracionBody) =>
     api.patch<ConfiguracionAdmin>(endpoints.configuracion.update, body),
+};
+
+/**
+ * Horarios del local: estado AHORA (para el aviso "cerrado") + feriados / cierre temporal
+ * (ExcepcionHorario). La grilla semanal se guarda por `configuracionApi` (club) o
+ * `sucursalConfigApi` (sucursal).
+ */
+export const horariosApi = {
+  estado: (sucursalId?: string) =>
+    api.get<{ atencion: EstadoHorario; delivery: EstadoHorario }>(
+      `${endpoints.horarios.estado}${sucursalId ? `?sucursalId=${encodeURIComponent(sucursalId)}` : ''}`,
+    ),
+  excepciones: () => api.get<ExcepcionHorario[]>(endpoints.horarios.excepciones),
+  crearExcepcion: (body: { desdeFecha: string; hastaFecha?: string; motivo?: string; sucursalId?: string }) =>
+    api.post<ExcepcionHorario>(endpoints.horarios.excepciones, body),
+  eliminarExcepcion: (id: string) =>
+    api.delete<{ ok: boolean }>(endpoints.horarios.excepcion(id)),
 };
 
 /**

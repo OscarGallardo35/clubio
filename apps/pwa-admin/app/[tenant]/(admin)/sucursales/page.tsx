@@ -38,8 +38,11 @@ import {
 import type { DataTableColumn } from '@repo/ui';
 import { cartaApi, configuracionApi, itemsOverrideApi, sucursalConfigApi, sucursalesApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
+import { EditorHorariosSemana } from '@/components/horarios/EditorHorarios';
+import { ExcepcionesHorarios } from '@/components/horarios/ExcepcionesHorarios';
 import type {
   CartaAdminRespuesta,
+  HorarioSemana,
   ItemOverrideAdmin,
   SucursalAdmin,
 } from '@/types/api';
@@ -683,6 +686,9 @@ function FormularioConfigSucursal({
   onGuardado: () => void | Promise<void>;
 }) {
   const [valores, setValores] = React.useState<Record<string, string> | null>(null);
+  const [horariosAtencion, setHorariosAtencion] = React.useState<HorarioSemana | null>(null);
+  const [horariosDelivery, setHorariosDelivery] = React.useState<HorarioSemana | null>(null);
+  const [deliveryHabilitado, setDeliveryHabilitado] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [guardando, setGuardando] = React.useState(false);
 
@@ -698,6 +704,15 @@ function FormularioConfigSucursal({
           inicial[c.clave] = v === null || v === undefined ? '' : String(v);
         }
         setValores(inicial);
+        // Override CRUDO: null = hereda el horario del club (por eso arranca apagado).
+        const ovRec = ov as Record<string, unknown>;
+        setHorariosAtencion((ovRec.horariosAtencion as HorarioSemana | null) ?? null);
+        setHorariosDelivery((ovRec.horariosDelivery as HorarioSemana | null) ?? null);
+        // El editor de delivery solo se muestra si DELIVERY esta habilitado (efectivo).
+        const efectiva = (await sucursalConfigApi.efectiva(sucursal.id)) as {
+          configuracion?: { tiposPedidoHabilitados?: string[] };
+        };
+        if (vivo) setDeliveryHabilitado(efectiva?.configuracion?.tiposPedidoHabilitados?.includes('DELIVERY') ?? false);
       } catch (e) {
         const { mensaje } = normalizarError(e);
         if (vivo) setError(mensaje);
@@ -715,7 +730,7 @@ function FormularioConfigSucursal({
     setError(null);
     try {
       // Vacio = null = borra el override (hereda del club). Es lo que dice el texto del dialogo.
-      const body: Record<string, string | number | null> = {};
+      const body: Record<string, string | number | null | HorarioSemana> = {};
       for (const c of CAMPOS_CONFIG) {
         const bruto = valores[c.clave]?.trim() ?? '';
         if (bruto === '') body[c.clave] = null;
@@ -725,6 +740,9 @@ function FormularioConfigSucursal({
           body[c.clave] = Number.isFinite(n) ? n : null;
         }
       }
+      // null = hereda el horario del club (el backend lo trata como "sin override", igual que {}).
+      body.horariosAtencion = horariosAtencion;
+      body.horariosDelivery = horariosDelivery;
       await sucursalConfigApi.guardar(sucursal.id, body as never);
       toast.success(`Config de ${sucursal.nombre} guardada`);
       await onGuardado();
@@ -781,6 +799,29 @@ function FormularioConfigSucursal({
             )}
           </div>
         ))}
+      </div>
+
+      {/* Horarios de ESTA sucursal: apagado = hereda el horario del club. */}
+      <div className="space-y-5 rounded-xl border p-4">
+        <EditorHorariosSemana
+          etiqueta="Horarios de atencion"
+          ayuda="Propios de esta sucursal."
+          valor={horariosAtencion}
+          onChange={setHorariosAtencion}
+          onHeredar={() => setHorariosAtencion(null)}
+          etiquetaHeredar="Heredar el horario del club"
+        />
+        {deliveryHabilitado ? (
+          <EditorHorariosSemana
+            etiqueta="Horarios de delivery"
+            ayuda="Propios de esta sucursal."
+            valor={horariosDelivery}
+            onChange={setHorariosDelivery}
+            onHeredar={() => setHorariosDelivery(null)}
+            etiquetaHeredar="Heredar el horario del club"
+          />
+        ) : null}
+        <ExcepcionesHorarios sucursalId={sucursal.id} />
       </div>
 
       {error ? (

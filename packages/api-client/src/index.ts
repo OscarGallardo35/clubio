@@ -286,6 +286,12 @@ export const endpoints = {
     efectiva: '/api/configuracion/efectiva',
     update: '/api/configuracion',
   },
+  /** Horarios del local: estado AHORA + excepciones (feriados / cierre temporal). */
+  horarios: {
+    estado: '/api/horarios/estado',
+    excepciones: '/api/horarios/excepciones',
+    excepcion: (id: string) => `/api/horarios/excepciones/${encodeURIComponent(id)}`,
+  },
   google: {
     /** Estado de la integracion (sin tokens). */
     estado: '/api/google/estado',

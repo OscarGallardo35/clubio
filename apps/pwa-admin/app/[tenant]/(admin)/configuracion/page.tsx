@@ -23,8 +23,11 @@ import { configuracionApi } from '@/lib/api';
 import { useTenant } from '@/hooks/useTenant';
 import { rutaDe } from '@/lib/tenant';
 import { normalizarError } from '@/lib/errores';
+import { EditorHorariosSemana } from '@/components/horarios/EditorHorarios';
+import { ExcepcionesHorarios } from '@/components/horarios/ExcepcionesHorarios';
 import type {
   ConfiguracionAdmin,
+  HorarioSemana,
   ModoAsignacionPedidos,
   ModoFidelizacion,
   ModoPago,
@@ -401,6 +404,8 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
   const [menuActivo, setMenuActivo] = React.useState(cfg.menuActivo);
   const [tipos, setTipos] = React.useState<TipoPedido[]>(cfg.tiposPedidoHabilitados);
   const [asignacion, setAsignacion] = React.useState<ModoAsignacionPedidos>(cfg.modoAsignacionPedidos);
+  const [horariosAtencion, setHorariosAtencion] = React.useState<HorarioSemana | null>(cfg.horariosAtencion ?? null);
+  const [horariosDelivery, setHorariosDelivery] = React.useState<HorarioSemana | null>(cfg.horariosDelivery ?? null);
   const [guardando, setGuardando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -419,6 +424,8 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
         menuActivo,
         tiposPedidoHabilitados: tipos,
         modoAsignacionPedidos: asignacion,
+        horariosAtencion,
+        horariosDelivery,
       });
       toast.success('Local guardado');
       await onGuardado();
@@ -497,6 +504,26 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
             Tiene que quedar al menos una forma de pedido.
           </p>
         ) : null}
+      </div>
+
+      {/* Horarios: editor semanal (mobile-first) + cierres por fecha. Van al lado de las formas
+          de pedido: son el "CUANDO" de lo que se habilita arriba. */}
+      <div className="space-y-5 rounded-xl border p-4">
+        <EditorHorariosSemana
+          etiqueta="Horarios de atencion"
+          ayuda="Cuando el local atiende a los clientes. Sin horarios, siempre abierto."
+          valor={horariosAtencion}
+          onChange={setHorariosAtencion}
+        />
+        {tipos.includes('DELIVERY') ? (
+          <EditorHorariosSemana
+            etiqueta="Horarios de delivery"
+            ayuda="Franjas propias del delivery. Sin horarios, sigue el horario de atencion."
+            valor={horariosDelivery}
+            onChange={setHorariosDelivery}
+          />
+        ) : null}
+        <ExcepcionesHorarios />
       </div>
 
       <div className="space-y-2">

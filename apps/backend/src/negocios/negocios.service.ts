@@ -4,6 +4,7 @@ import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { PlanService } from '../planes/plan.service';
+import { HorariosService } from '../horarios/horarios.service';
 import type { ActualizarNegocioDto } from './dto/actualizar-negocio.dto';
 
 /** Campos seguros para exponer publicamente (PWA Cliente). */
@@ -23,6 +24,7 @@ export class NegociosService {
     private readonly resolver: SucursalResolverService,
     private readonly auditoria: AuditoriaService,
     private readonly plan: PlanService,
+    private readonly horarios: HorariosService,
   ) {}
 
   /** Refinamiento 6: incluye plan, modoClientes, features y sucursales activas. */
@@ -79,6 +81,8 @@ export class NegociosService {
           modoFidelizacion: true, sellosParaPremio: true, premioTexto: true, menuActivo: true,
           tiposPedidoHabilitados: true, modosPagoHabilitados: true, mostrarResenaPostVisita: true,
           numeroAtendiente: true, usarNumeroAtendienteDistinto: true,
+          // Grillas de horarios (JSON): el cliente las usa para calcular "abierto" con Intl.
+          horariosAtencion: true, horariosDelivery: true,
         },
       }),
       this.prisma.sucursal.findMany({
@@ -97,6 +101,10 @@ export class NegociosService {
       negocio.id, sucursal?.id ?? null,
     );
 
+    // Excepciones (feriados/cierres) de la ventana corta: viajan al navegador para que
+    // calcule "abierto" con Intl, sin polling. El backend sigue siendo el gate del POST.
+    const excepciones = await this.horarios.proximasExcepciones(negocio.id, sucursal?.id ?? null);
+
     // F (#3.0): la PWA Cliente hace gating VISUAL con esto (tab Carta, resenas).
     // Se cachea en Redis desde PlanService (TTL 10 min) y el fallback es
     // restrictivo: una feature desconocida no se habilita.
@@ -110,6 +118,7 @@ export class NegociosService {
       sucursalActiva: sucursal,
       sucursales,
       features,
+      excepciones,
     };
   }
 

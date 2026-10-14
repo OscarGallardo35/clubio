@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { ConfiguracionService, CAMPOS_OVERRIDE } from '../configuracion/configuracion.service';
+import { validarGrilla, grillaAValorPrisma } from '../horarios/helpers/horario-negocio';
 import type { ActualizarConfiguracionSucursalDto } from './dto/actualizar-configuracion-sucursal.dto';
 
 export interface CtxConfigSucursal { empleadoId: string; ip?: string }
@@ -94,6 +95,8 @@ export class ConfiguracionSucursalService {
       ...(dto.transferenciaCbu !== undefined ? { transferenciaCbu: dto.transferenciaCbu } : {}),
       ...(dto.transferenciaTitular !== undefined ? { transferenciaTitular: dto.transferenciaTitular } : {}),
       ...(dto.transferenciaBanco !== undefined ? { transferenciaBanco: dto.transferenciaBanco } : {}),
+      ...(dto.horariosAtencion !== undefined ? { horariosAtencion: grillaAValorPrisma(validarGrilla(dto.horariosAtencion, 'horariosAtencion')) } : {}),
+      ...(dto.horariosDelivery !== undefined ? { horariosDelivery: grillaAValorPrisma(validarGrilla(dto.horariosDelivery, 'horariosDelivery')) } : {}),
     };
     const { sucursalId: _s, ...update } = data;
 

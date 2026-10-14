@@ -29,6 +29,7 @@ import { TurnosModule } from './turnos/turnos.module';
 import { PlanesModule } from './planes/planes.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { PushModule } from './push/push.module';
+import { HorariosModule } from './horarios/horarios.module';
 import { GoogleModule } from './google/google.module';
 import { ResenasModule } from './resenas/resenas.module';
 import { EstadisticasModule } from './estadisticas/estadisticas.module';
@@ -73,6 +74,7 @@ import { SuperadminModule } from './superadmin/superadmin.module';
     // --- Lote 5: soporte ---
     WebhooksModule,
     PushModule,
+    HorariosModule,
     GoogleModule,
     ResenasModule,
     EstadisticasModule,

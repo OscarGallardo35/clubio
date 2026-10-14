@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer';
 import {
-  IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min,
+  IsArray, IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Max, MaxLength, Min,
 } from 'class-validator';
 import { ModoAsignacionPedidos, ModoFidelizacion, ModoPago, TipoPedido } from '@prisma/client';
 
@@ -35,6 +35,13 @@ export class ActualizarConfiguracionDto {
 
   @IsOptional() @IsArray() tiposPedidoHabilitados?: TipoPedido[];
   @IsOptional() @IsArray() modosPagoHabilitados?: ModoPago[];
+  /**
+   * Grillas semanales de horarios (JSON). Solo se valida que sean objeto: la forma fina
+   * (dias `lun..dom`, rangos `{desde,hasta}` en HH:mm) la valida `validarGrilla` en el
+   * servicio, que ademas traduce `null`/`{}` a "sin horarios" (= siempre abierto).
+   */
+  @IsOptional() @IsObject() horariosAtencion?: Record<string, unknown> | null;
+  @IsOptional() @IsObject() horariosDelivery?: Record<string, unknown> | null;
   @IsOptional() @IsEnum(ModoPago) modoPagoPorDefecto?: ModoPago;
   @IsOptional() @IsEnum(TipoPedido) tipoPedidoPorDefecto?: TipoPedido;
   @IsOptional() @IsEnum(ModoAsignacionPedidos) modoAsignacionPedidos?: ModoAsignacionPedidos;

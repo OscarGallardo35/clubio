@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min,
+  IsArray, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, Min,
 } from 'class-validator';
 import { ModoPago, TipoPedido } from '@prisma/client';
 
@@ -51,4 +51,11 @@ export class ActualizarConfiguracionSucursalDto {
 
   @IsOptional() @IsString()
   transferenciaBanco?: string | null;
+
+  /** Grilla semanal del local (JSON). `null`/`{}` = hereda el horario del club. */
+  @IsOptional() @IsObject()
+  horariosAtencion?: Record<string, unknown> | null;
+
+  @IsOptional() @IsObject()
+  horariosDelivery?: Record<string, unknown> | null;
 }

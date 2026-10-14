@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService, CACHE_CONFIG_EFECTIVA, TTL_CONFIG_EFECTIVA } from '../sucursales/sucursal-resolver.service';
 import { RedisService } from '../common/redis/redis.service';
 import { MemoriaCacheService } from '../common/redis/memoria-cache.service';
+import { validarGrilla, grillaAValorPrisma } from '../horarios/helpers/horario-negocio';
 import type { ActualizarConfiguracionDto } from './dto/actualizar-configuracion.dto';
 
 /** Campos que una sucursal puede sobreescribir (null = hereda del global). */
@@ -14,6 +16,7 @@ export const CAMPOS_OVERRIDE = [
   'tiposPedidoHabilitados', 'modosPagoHabilitados', 'costoEnvio',
   'pedidoMinimoDelivery', 'zonaEntrega',
   'transferenciaAlias', 'transferenciaCbu', 'transferenciaTitular', 'transferenciaBanco',
+  'horariosAtencion', 'horariosDelivery',
 ] as const;
 
 @Injectable()
@@ -100,7 +103,12 @@ export class ConfiguracionService {
     const merged: Record<string, unknown> = { ...club };
     for (const campo of CAMPOS_OVERRIDE) {
       const valor = (ov as Record<string, unknown>)[campo];
-      const esVacio = valor === null || valor === undefined || (Array.isArray(valor) && valor.length === 0);
+      const esVacio = valor === null || valor === undefined
+        || (Array.isArray(valor) && valor.length === 0)
+        // Un objeto JSON VACIO (`{}`) tambien es "sin override": sin esto, la sucursal
+        // que guardo `{}` en horarios quedaria con "todos los dias cerrados" en vez de
+        // heredar el horario del club.
+        || (typeof valor === 'object' && !Array.isArray(valor) && Object.keys(valor as object).length === 0);
       if (!esVacio) merged[campo] = valor;
     }
     return { ...merged, overrideAplicado: true, sucursalId };
@@ -120,9 +128,10 @@ export class ConfiguracionService {
     dto: ActualizarConfiguracionDto,
     ctx: { empleadoId?: string; ip?: string },
   ) {
+    const data = this.dataConHorarios(dto);
     const config = await this.prisma.configuracionClub.update({
       where: { negocioId },
-      data: { ...dto },
+      data,
     });
     await this.invalidarConfigEfectiva(negocioId);
     await this.auditoria.registrar({
@@ -130,5 +139,21 @@ export class ConfiguracionService {
       detalle: { campos: Object.keys(dto) }, ip: ctx.ip,
     });
     return config;
+  }
+
+  /**
+   * Convierte `horariosAtencion`/`horariosDelivery` del DTO a un valor de Prisma:
+   * valida la forma (400 si es invalida) y guarda `Prisma.DbNull` cuando queda vacio (o
+   * sea, "sin horarios" = siempre abierto). Sin esto, el spread mandaria `null` crudo,
+   * que Prisma rechaza para una columna Json.
+   */
+  private dataConHorarios(dto: ActualizarConfiguracionDto): Prisma.ConfiguracionClubUpdateInput {
+    const data: Record<string, unknown> = { ...dto };
+    for (const campo of ['horariosAtencion', 'horariosDelivery'] as const) {
+      if (!(campo in dto)) continue;
+      const grid = validarGrilla((dto as Record<string, unknown>)[campo], campo);
+      data[campo] = grillaAValorPrisma(grid);
+    }
+    return data as Prisma.ConfiguracionClubUpdateInput;
   }
 }

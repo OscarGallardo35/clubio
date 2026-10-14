@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Badge, Button, Skeleton, Tabs, TabsList, TabsTrigger, toast } from '@repo/ui';
 import { TarjetaPedido } from '@/components/TarjetaPedido';
 import { useEmpleado } from '@/hooks/useEmpleado';
+import { useEstadoLocal } from '@/hooks/useEstadoLocal';
 import { usePedidosSocket } from '@/hooks/usePedidosSocket';
 import { pedidosApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
@@ -32,6 +33,9 @@ const SONDEO_MS = 30_000;
  */
 export default function PedidosPage() {
   const { empleado, negocio } = useEmpleado();
+  // Badge "Cerrado": el local puede estar fuera de horario; los pedidos activos NO se ocultan.
+  const estadoLocal = useEstadoLocal();
+  const cerrado = estadoLocal ? !estadoLocal.abierto : false;
   const { enVivo, cambios, conexiones } = usePedidosSocket();
   const [filtro, setFiltro] = React.useState<'' | EstadoPedido>('');
   const [lista, setLista] = React.useState<PedidoStaff[] | null>(null);
@@ -89,9 +93,16 @@ export default function PedidosPage() {
     <main className="space-y-3 p-4">
       <header className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Pedidos</h1>
-        <Badge variant={enVivo ? 'secondary' : 'outline'} className="text-[11px]">
-          {enVivo ? 'En vivo' : 'Reconectando'}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {cerrado ? (
+            <Badge variant="destructive" className="text-[11px]">
+              Cerrado
+            </Badge>
+          ) : null}
+          <Badge variant={enVivo ? 'secondary' : 'outline'} className="text-[11px]">
+            {enVivo ? 'En vivo' : 'Reconectando'}
+          </Badge>
+        </div>
       </header>
 
       <Tabs value={filtro} onValueChange={(v) => setFiltro(v as '' | EstadoPedido)}>

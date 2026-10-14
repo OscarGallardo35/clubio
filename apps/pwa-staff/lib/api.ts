@@ -4,6 +4,7 @@ import type {
   ActualizarItemCartaBody,
   CartaAdminRespuesta,
   ConfiguracionEfectivaStaff,
+  EstadoHorario,
   CrearItemCartaBody,
   EmpleadoMe,
   ItemCarta,
@@ -134,6 +135,14 @@ export const pedidosApi = {
   },
 
   estadisticas: () => api.get<Record<string, unknown>>(endpoints.pedidos.estadisticas),
+};
+
+/**
+ * Horarios del local (badge "Cerrado" del staff). `atencion` es el que importa para el local;
+ * `delivery` solo cambia si DELIVERY esta habilitado. Lo resuelve el backend (incluye feriados).
+ */
+export const horariosApi = {
+  estado: () => api.get<{ atencion: EstadoHorario; delivery: EstadoHorario }>(endpoints.horarios.estado),
 };
 
 /**

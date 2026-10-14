@@ -144,6 +144,14 @@ export interface RespuestaCanje {
 
 export type TipoCanje = 'SELLOS' | 'PUNTOS'
 
+/** `GET /horarios/estado`: si el local esta abierto AHORA (resuelto por el backend). */
+export interface EstadoHorario {
+  abierto: boolean
+  proximaApertura: string | null
+  cierraEnMin: number | null
+  motivo: string
+}
+
 /**
  * `GET /configuracion/efectiva` (JwtEmpleadoGuard): la config del club ya resuelta para la sucursal
  * del empleado. Es lo que necesita el staff para saber si el club da puntos y cuanto vale cada uno.

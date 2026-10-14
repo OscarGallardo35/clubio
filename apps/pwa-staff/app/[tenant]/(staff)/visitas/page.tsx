@@ -5,6 +5,7 @@ import { Badge, Card, CardContent, Skeleton, Button, toast } from '@repo/ui';
 import { AccionesVisita } from '@/components/AccionesVisita';
 import { CorregirMontoDialog } from '@/components/CorregirMontoDialog';
 import { useVisitasSocket } from '@/hooks/useVisitasSocket';
+import { useEstadoLocal } from '@/hooks/useEstadoLocal';
 import { configuracionApi, visitasApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import { formatearRestante, mergearPendiente, sinVencidos } from '@/lib/pendientes';
@@ -27,6 +28,8 @@ const SONDEO_MS = 30_000;
 
 export default function VisitasPage() {
   const { enVivo, ultimaSolicitada, conexiones } = useVisitasSocket();
+  // Badge "Cerrado": avisa sin bloquear (aprobar visita nunca se rechaza por horario).
+  const estadoLocal = useEstadoLocal();
   const [lista, setLista] = React.useState<VisitaPendiente[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [cargadoEn, setCargadoEn] = React.useState(() => Date.now());
@@ -177,9 +180,17 @@ export default function VisitasPage() {
     <main className="space-y-3 p-4">
       <header className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Visitas pendientes</h1>
-        <Badge variant={enVivo ? 'secondary' : 'outline'} className="text-[11px]">
-          {enVivo ? 'En vivo' : 'Reconectando'}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {/* El local puede estar cerrado: se avisa pero las visitas se siguen aprobando igual. */}
+          {estadoLocal && !estadoLocal.abierto ? (
+            <Badge variant="destructive" className="text-[11px]">
+              Cerrado
+            </Badge>
+          ) : null}
+          <Badge variant={enVivo ? 'secondary' : 'outline'} className="text-[11px]">
+            {enVivo ? 'En vivo' : 'Reconectando'}
+          </Badge>
+        </div>
       </header>
 
       {visibles.length === 0 ? (

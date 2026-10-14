@@ -87,6 +87,25 @@ enum EstadoCampanaPush {
   CANCELADA
 }
 
+// Tipo de premio que se otorga y el cliente ACEPTA desde la notificacion.
+// LIBRE = no mueve saldo (ej. "postre gratis"): se cierra al CANJEARLO.
+enum TipoPremio {
+  SELLOS
+  PUNTOS
+  LIBRE
+}
+
+// Ciclo de vida de un `PremioOtorgado`:
+// PENDIENTE -> ACEPTADO -> CANJEADO, o PENDIENTE -> VENCIDO.
+// ACEPTAR es un claim atomico (PENDIENTE -> ACEPTADO) que acredita el saldo UNA vez;
+// CANJEAR lo hace el staff desde la verificacion publica/staff.
+enum EstadoPremio {
+  PENDIENTE
+  ACEPTADO
+  CANJEADO
+  VENCIDO
+}
+
 // Estados de un pedido
 enum EstadoPedido {
   PENDIENTE
@@ -185,30 +204,30 @@ enum EstadoLead {
 
 // Tenant principal del SaaS (un negocio gastronómico)
 model Negocio {
-  id                 String       @id @default(cuid())
-  nombre             String
-  slug               String       @unique
-  cuit               String?
-  telefono           String?
-  direccion          String?
-  email              String?
-  logoUrl            String?
-  colorPrimario      String       @default("#000000")
-  colorSecundario    String       @default("#FFFFFF")
+  id              String       @id @default(cuid())
+  nombre          String
+  slug            String       @unique
+  cuit            String?
+  telefono        String?
+  direccion       String?
+  email           String?
+  logoUrl         String?
+  colorPrimario   String       @default("#000000")
+  colorSecundario String       @default("#FFFFFF")
   /// Personalizacion visual de la tarjeta del cliente (JSON libre por tenant).
   /// Nullable a proposito: un negocio SIN theme conserva el diseno por defecto
   /// de la PWA Cliente (regresion de /bar-la-esquina/tarjeta intacta).
-  theme              Json?
-  placeId            String?
-  urlMenu            String?
-  urlClub            String?
-  plan               Plan         @default(FREE)
-  modoClientes       ModoClientes @default(GLOBAL)
-  payPerUseActivo    Boolean      @default(false)
-  activo             Boolean      @default(true)
-  creadoEn           DateTime     @default(now())
-  actualizadoEn      DateTime     @updatedAt
-  eliminadoEn        DateTime?
+  theme           Json?
+  placeId         String?
+  urlMenu         String?
+  urlClub         String?
+  plan            Plan         @default(FREE)
+  modoClientes    ModoClientes @default(GLOBAL)
+  payPerUseActivo Boolean      @default(false)
+  activo          Boolean      @default(true)
+  creadoEn        DateTime     @default(now())
+  actualizadoEn   DateTime     @updatedAt
+  eliminadoEn     DateTime?
 
   configuracion         ConfiguracionClub?
   sucursales            Sucursal[]
@@ -231,6 +250,7 @@ model Negocio {
   plantillasPush        PlantillaPush[]
   disparosPush          DisparoPush[]
   campanasPush          CampanaPush[]
+  premiosOtorgados      PremioOtorgado[]
   excepcionesHorario    ExcepcionHorario[]
   tokensValidacion      TokenValidacion[]
   usoMensual            UsoMensual[]
@@ -245,21 +265,21 @@ model Negocio {
 
 // Sucursal física de un negocio (multi-sucursal)
 model Sucursal {
-  id                 String   @id @default(cuid())
-  negocioId          String
-  nombre             String
-  slug               String
-  direccion          String?
-  telefono           String?
-  numeroAtendiente   String?
-  colorPrimario      String?
-  colorSecundario    String?
-  activa             Boolean  @default(true)
-  esPrincipal        Boolean  @default(false)
-  creadoEn           DateTime @default(now())
-  actualizadoEn      DateTime @updatedAt
+  id               String   @id @default(cuid())
+  negocioId        String
+  nombre           String
+  slug             String
+  direccion        String?
+  telefono         String?
+  numeroAtendiente String?
+  colorPrimario    String?
+  colorSecundario  String?
+  activa           Boolean  @default(true)
+  esPrincipal      Boolean  @default(false)
+  creadoEn         DateTime @default(now())
+  actualizadoEn    DateTime @updatedAt
 
-  negocio            Negocio                @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  negocio            Negocio                  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   configuracion      ConfiguracionSucursal?
   empleados          Empleado[]
   pedidos            Pedido[]
@@ -284,36 +304,36 @@ model Sucursal {
 
 // Configuración global del club (una por negocio)
 model ConfiguracionClub {
-  beneficioCumpleanosActivo      Boolean               @default(true)
-  descripcionBeneficioCumpleanos String?               @default("Premio especial en tu cumpleaños")
-  diasValidezCumpleanos          Int                   @default(7)
-  id                             String                @id @default(cuid())
-  negocioId                      String                @unique
+  beneficioCumpleanosActivo      Boolean @default(true)
+  descripcionBeneficioCumpleanos String? @default("Premio especial en tu cumpleaños")
+  diasValidezCumpleanos          Int     @default(7)
+  id                             String  @id @default(cuid())
+  negocioId                      String  @unique
 
-  modoFidelizacion            ModoFidelizacion      @default(SOLO_VISITAS)
-  sellosParaPremio            Int                   @default(10)
-  premioTexto                 String
-  sellosBienvenida            Int                   @default(1)
-  limiteVisitasPorDia         Int                   @default(1)
-  horasMinimasEntreVisitas    Int                   @default(4)
-  puntosPorPeso               Decimal?              @db.Decimal(10, 2)
-  premioPorPuntos             Int?
+  modoFidelizacion           ModoFidelizacion @default(SOLO_VISITAS)
+  sellosParaPremio           Int              @default(10)
+  premioTexto                String
+  sellosBienvenida           Int              @default(1)
+  limiteVisitasPorDia        Int              @default(1)
+  horasMinimasEntreVisitas   Int              @default(4)
+  puntosPorPeso              Decimal?         @db.Decimal(10, 2)
+  premioPorPuntos            Int?
   /// Tasa del programa por PUNTOS, en "puntos por cada $1000". Es la que se usa.
   /// (`puntosPorPeso` quedo sin uso: deuda post-MVP, no borrar sin migracion.)
-  puntosPorMil                Int?                  @default(5)
+  puntosPorMil               Int?             @default(5)
   /// Texto del premio de PUNTOS (el de sellos es `premioTexto`).
-  premioTextoPuntos           String?               @default("Postre gratis")
-  requiereValidacionEmpleado  Boolean               @default(true)
-  permiteRegaloManual         Boolean               @default(true)
-  mensajeBienvenida           String?               @db.Text
-  mostrarResenaPostVisita     Boolean               @default(true)
-  permitirOverrideSucursal    Boolean               @default(true)
-  colchonGraciaDefault        Int                   @default(50)
+  premioTextoPuntos          String?          @default("Postre gratis")
+  requiereValidacionEmpleado Boolean          @default(true)
+  permiteRegaloManual        Boolean          @default(true)
+  mensajeBienvenida          String?          @db.Text
+  mostrarResenaPostVisita    Boolean          @default(true)
+  permitirOverrideSucursal   Boolean          @default(true)
+  colchonGraciaDefault       Int              @default(50)
 
-  menuActivo                  Boolean               @default(false)
+  menuActivo Boolean @default(false)
 
-  tiposPedidoHabilitados      TipoPedido[]          @default([MESA])
-  modosPagoHabilitados        ModoPago[]            @default([EFECTIVO])
+  tiposPedidoHabilitados TipoPedido[] @default([MESA])
+  modosPagoHabilitados   ModoPago[]   @default([EFECTIVO])
 
   /// GRILLA SEMANAL de atencion al cliente (JSON). `null` = SIN HORARIOS = el
   /// local esta SIEMPRE abierto (default que no rompe a los tenants existentes).
@@ -322,85 +342,85 @@ model ConfiguracionClub {
   /// que cruzan medianoche (`hasta` <= `desde`, ej. 20:00-02:00). Un dia AUSENTE o
   /// con lista vacia = CERRADO ese dia. La interpretacion vive en
   /// `HorariosService.estaAbierto` (fuente unica de verdad).
-  horariosAtencion            Json?
+  horariosAtencion Json?
 
   /// GRILLA SEMANAL de DELIVERY (JSON, misma forma). `null` = sin override: el
   /// delivery sigue la atencion. Solo se evalua ADEMAS de `horariosAtencion`
   /// cuando el pedido es DELIVERY.
-  horariosDelivery            Json?
-  costoEnvio                  Decimal?              @db.Decimal(10, 2)
-  pedidoMinimoDelivery        Decimal?              @db.Decimal(10, 2)
-  zonaEntrega                 String?               @db.Text
-  modoPagoPorDefecto          ModoPago              @default(EFECTIVO)
-  tipoPedidoPorDefecto        TipoPedido            @default(MESA)
-  forzarTakeawaySiNoHayMesas  Boolean               @default(true)
-  numeroAtendiente            String?
-  usarNumeroAtendienteDistinto Boolean              @default(false)
-  modoAsignacionPedidos       ModoAsignacionPedidos @default(BROADCAST)
+  horariosDelivery             Json?
+  costoEnvio                   Decimal?              @db.Decimal(10, 2)
+  pedidoMinimoDelivery         Decimal?              @db.Decimal(10, 2)
+  zonaEntrega                  String?               @db.Text
+  modoPagoPorDefecto           ModoPago              @default(EFECTIVO)
+  tipoPedidoPorDefecto         TipoPedido            @default(MESA)
+  forzarTakeawaySiNoHayMesas   Boolean               @default(true)
+  numeroAtendiente             String?
+  usarNumeroAtendienteDistinto Boolean               @default(false)
+  modoAsignacionPedidos        ModoAsignacionPedidos @default(BROADCAST)
 
-  transferenciaAlias          String?
-  transferenciaCbu            String?
-  transferenciaTitular        String?
-  transferenciaBanco          String?
-  transferenciaNotas          String?               @db.Text
-  linkMercadoPago             String?
+  transferenciaAlias   String?
+  transferenciaCbu     String?
+  transferenciaTitular String?
+  transferenciaBanco   String?
+  transferenciaNotas   String? @db.Text
+  linkMercadoPago      String?
 
-  upsellActivo                Boolean               @default(true)
-  upsellMaxSugerencias        Int                   @default(3)
+  upsellActivo         Boolean @default(true)
+  upsellMaxSugerencias Int     @default(3)
 
-  turnosActivos               Boolean               @default(false)
-  checkinObligatorio          Boolean               @default(false)
-  duplicarSemanaAuto          Boolean               @default(false)
+  turnosActivos      Boolean @default(false)
+  checkinObligatorio Boolean @default(false)
+  duplicarSemanaAuto Boolean @default(false)
 
-  pushInactividad3Dias        Boolean               @default(true)
-  pushCumpleanos              Boolean               @default(false)
-  pushPremioPorVencer         Boolean               @default(true)
-  pushAUnoDelPremio           Boolean               @default(true)
-  pushInactivos30Dias         Boolean               @default(false)
+  pushInactividad3Dias Boolean @default(true)
+  pushCumpleanos       Boolean @default(false)
+  pushPremioPorVencer  Boolean @default(true)
+  pushAUnoDelPremio    Boolean @default(true)
+  pushInactivos30Dias  Boolean @default(false)
 
   /// VENTANA HORARIA de despacho de campanas de push, en hora ARGENTINA ('HH:mm').
   /// Con las dos vacias (default) NO hay ventana: la campana sale a su hora.
   /// Con ambas seteadas, si el despacho cae FUERA de la ventana se DIFIERE a la
   /// proxima apertura (nunca se descarta). Es el enganche del feature de horarios.
-  pushVentanaInicio           String?
-  pushVentanaFin              String?
+  pushVentanaInicio String?
+  pushVentanaFin    String?
 
-  creadoEn                    DateTime              @default(now())
-  actualizadoEn               DateTime              @updatedAt
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
 
   negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
 }
 
 // Override opcional de la config del club por sucursal
 model ConfiguracionSucursal {
-  id                          String       @id @default(cuid())
-  sucursalId                  String       @unique
+  id         String @id @default(cuid())
+  sucursalId String @unique
 
-  premioTexto                 String?
-  sellosParaPremio            Int?
-  sellosBienvenida            Int?
+  premioTexto      String?
+  sellosParaPremio Int?
+  sellosBienvenida Int?
 
-  limiteVisitasPorDia         Int?
-  horasMinimasEntreVisitas    Int?
+  limiteVisitasPorDia      Int?
+  horasMinimasEntreVisitas Int?
 
-  tiposPedidoHabilitados      TipoPedido[]
-  modosPagoHabilitados        ModoPago[]
-  costoEnvio                  Decimal?     @db.Decimal(10, 2)
-  pedidoMinimoDelivery        Decimal?     @db.Decimal(10, 2)
-  zonaEntrega                 String?      @db.Text
+  tiposPedidoHabilitados TipoPedido[]
+  modosPagoHabilitados   ModoPago[]
+  costoEnvio             Decimal?     @db.Decimal(10, 2)
+  pedidoMinimoDelivery   Decimal?     @db.Decimal(10, 2)
+  zonaEntrega            String?      @db.Text
 
-  transferenciaAlias          String?
-  transferenciaCbu            String?
-  transferenciaTitular        String?
-  transferenciaBanco          String?
+  transferenciaAlias   String?
+  transferenciaCbu     String?
+  transferenciaTitular String?
+  transferenciaBanco   String?
 
   /// Override de la grilla de atencion (JSON). `null` (o `{}`) = hereda del club.
-  horariosAtencion            Json?
+  horariosAtencion Json?
   /// Override de la grilla de delivery (JSON). `null` (o `{}`) = hereda del club.
-  horariosDelivery            Json?
+  horariosDelivery Json?
 
-  creadoEn                    DateTime     @default(now())
-  actualizadoEn               DateTime     @updatedAt
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
 
   sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
 }
@@ -432,36 +452,36 @@ model ExcepcionHorario {
 
 // Empleado del negocio (staff, encargado o dueño)
 model Empleado {
-  id                    String      @id @default(cuid())
-  negocioId             String
-  sucursalId            String
-  nombre                String
-  rol                   RolEmpleado @default(EMPLEADO)
+  id         String      @id @default(cuid())
+  negocioId  String
+  sucursalId String
+  nombre     String
+  rol        RolEmpleado @default(EMPLEADO)
 
-  pinHash               String?
+  pinHash String?
 
-  email                 String?
-  passwordHash          String?
-  twoFactorSecret       String?
-  twoFactorEnabled      Boolean     @default(false)
-  emailVerificado       Boolean     @default(false)
+  email            String?
+  passwordHash     String?
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean @default(false)
+  emailVerificado  Boolean @default(false)
 
-  telefono              String?
-  avatarUrl             String?
+  telefono  String?
+  avatarUrl String?
 
-  accesoMultiSucursal   Boolean     @default(false)
+  accesoMultiSucursal Boolean @default(false)
 
   /// Permiso por empleado: si esta prendido, el empleado puede administrar la carta
   /// completa (precio, descripcion, disponibilidad, foto, crear, eliminar y reordenar),
   /// aunque su rol no sea de editor. Arranca APAGADO para todos. Se evalua por CLAVE en
   /// `common/guards/permiso.guard.ts` (nunca dentro del RolesGuard generico: esa excepcion
   /// valdria para TODOS los endpoints del producto).
-  puedeEditarCarta      Boolean     @default(false)
+  puedeEditarCarta Boolean @default(false)
 
-  activo                Boolean     @default(true)
-  ultimoAcceso          DateTime?
-  creadoEn              DateTime    @default(now())
-  eliminadoEn           DateTime?
+  activo       Boolean   @default(true)
+  ultimoAcceso DateTime?
+  creadoEn     DateTime  @default(now())
+  eliminadoEn  DateTime?
 
   negocio            Negocio                    @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   sucursal           Sucursal                   @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
@@ -484,13 +504,13 @@ model Empleado {
 
 // Sesión activa de un empleado (staff)
 model SesionEmpleado {
-  id          String   @id @default(cuid())
-  empleadoId  String
-  token       String   @unique
-  expiraEn    DateTime
-  ip          String?
-  userAgent   String?
-  creadoEn    DateTime @default(now())
+  id         String   @id @default(cuid())
+  empleadoId String
+  token      String   @unique
+  expiraEn   DateTime
+  ip         String?
+  userAgent  String?
+  creadoEn   DateTime @default(now())
 
   empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
 
@@ -518,12 +538,12 @@ model SesionDueno {
 
 // Registro de intentos de login (auditoría de acceso)
 model RegistroAcceso {
-  id          String   @id @default(cuid())
-  empleadoId  String
-  ip          String
-  userAgent   String
-  exitoso     Boolean
-  creadoEn    DateTime @default(now())
+  id         String   @id @default(cuid())
+  empleadoId String
+  ip         String
+  userAgent  String
+  exitoso    Boolean
+  creadoEn   DateTime @default(now())
 
   empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
 
@@ -536,39 +556,40 @@ model RegistroAcceso {
 
 // Cliente miembro del club (único por negocio)
 model Cliente {
-  id                    String          @id @default(cuid())
-  negocioId             String
-  nombre                String
-  telefono              String
-  email                 String?
-  fechaNacimiento       DateTime?
-  aceptaNotificaciones  Boolean         @default(false)
-  tienePwaInstalada     Boolean         @default(false)
-  sellosActuales        Int             @default(0)
-  puntosActuales        Int             @default(0)
-  totalVisitas          Int             @default(0)
-  premiosCanjeados      Int             @default(0)
+  id                   String          @id @default(cuid())
+  negocioId            String
+  nombre               String
+  telefono             String
+  email                String?
+  fechaNacimiento      DateTime?
+  aceptaNotificaciones Boolean         @default(false)
+  tienePwaInstalada    Boolean         @default(false)
+  sellosActuales       Int             @default(0)
+  puntosActuales       Int             @default(0)
+  totalVisitas         Int             @default(0)
+  premiosCanjeados     Int             @default(0)
   /// Ultimo canje de premio (sellos o puntos). Null = nunca canjeo.
-  ultimoCanjeEn         DateTime?
-  etiqueta              EtiquetaCliente @default(NUEVO)
-  notasInternas         String?         @db.Text
-  creadoEn              DateTime        @default(now())
-  ultimaVisita          DateTime?
-  eliminadoEn           DateTime? // Soft delete (Lote 3): los listados filtran eliminadoEn: null
+  ultimoCanjeEn        DateTime?
+  etiqueta             EtiquetaCliente @default(NUEVO)
+  notasInternas        String?         @db.Text
+  creadoEn             DateTime        @default(now())
+  ultimaVisita         DateTime?
+  eliminadoEn          DateTime? // Soft delete (Lote 3): los listados filtran eliminadoEn: null
 
   /// Token OPACO para la pagina PUBLICA de verificacion de sellos/premio
   /// (`/<slug>/verificar/<token>`). Unico y no adivinable: 32 bytes random.
   /// Nullable a proposito: se genera LAZY la primera vez que se pide la tarjeta
   /// (ver VisitasService) y se persiste; sin backfill en la migracion.
-  tokenVerificacion     String?         @unique
+  tokenVerificacion String? @unique
 
-  negocio          Negocio                @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  negocio          Negocio                  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   dispositivos     DispositivoCliente[]
   visitas          Visita[]
   tokensValidacion TokenValidacion[]
   pedidos          Pedido[]
   notificaciones   NotificacionPush[]
   tarjetas         TarjetaClienteSucursal[]
+  premios          PremioOtorgado[]
 
   @@unique([negocioId, telefono])
   @@index([negocioId, ultimaVisita])
@@ -578,15 +599,15 @@ model Cliente {
 
 // Dispositivo asociado a un cliente (identidad multi-capa)
 model DispositivoCliente {
-  id            String   @id @default(cuid())
-  clienteId     String
-  deviceId      String
-  fingerprint   String?
-  cookieToken   String?
-  userAgent     String
-  ipRegistro    String?
-  ultimoUso     DateTime @default(now())
-  creadoEn      DateTime @default(now())
+  id          String   @id @default(cuid())
+  clienteId   String
+  deviceId    String
+  fingerprint String?
+  cookieToken String?
+  userAgent   String
+  ipRegistro  String?
+  ultimoUso   DateTime @default(now())
+  creadoEn    DateTime @default(now())
 
   cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 
@@ -598,16 +619,16 @@ model DispositivoCliente {
 
 // Tarjeta del cliente por sucursal (para modoClientes = POR_SUCURSAL)
 model TarjetaClienteSucursal {
-  id                String    @id @default(cuid())
-  clienteId         String
-  sucursalId        String
-  sellosActuales    Int       @default(0)
-  puntosActuales    Int       @default(0)
-  totalVisitas      Int       @default(0)
-  premiosCanjeados  Int       @default(0)
-  ultimaVisita      DateTime?
-  creadoEn          DateTime  @default(now())
-  actualizadoEn     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  clienteId        String
+  sucursalId       String
+  sellosActuales   Int       @default(0)
+  puntosActuales   Int       @default(0)
+  totalVisitas     Int       @default(0)
+  premiosCanjeados Int       @default(0)
+  ultimaVisita     DateTime?
+  creadoEn         DateTime  @default(now())
+  actualizadoEn    DateTime  @updatedAt
 
   cliente  Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
@@ -622,22 +643,22 @@ model TarjetaClienteSucursal {
 
 // Visita registrada (sello o puntos otorgados)
 model Visita {
-  id                String        @id @default(cuid())
-  negocioId         String
-  sucursalId        String
-  clienteId         String
-  empleadoId        String
-  tipo              TipoVisita
-  sellosOtorgados   Int           @default(1)
-  puntosOtorgados   Int           @default(0)
-  montoConsumido    Decimal?      @db.Decimal(10, 2)
+  id              String       @id @default(cuid())
+  negocioId       String
+  sucursalId      String
+  clienteId       String
+  empleadoId      String
+  tipo            TipoVisita
+  sellosOtorgados Int          @default(1)
+  puntosOtorgados Int          @default(0)
+  montoConsumido  Decimal?     @db.Decimal(10, 2)
   /// Pedido del menu (QR #1) del que sale el monto de esta visita, cuando el staff lo eligio.
   /// El FK es 1-1: un pedido solo puede pagar UNA visita (si no, se acredita dos veces).
-  pedidoId          String?       @unique
-  aprobadoEn        DateTime      @default(now())
-  metodo            MetodoVisita
-  origen            String?
-  notas             String?       @db.Text
+  pedidoId        String?      @unique
+  aprobadoEn      DateTime     @default(now())
+  metodo          MetodoVisita
+  origen          String?
+  notas           String?      @db.Text
 
   negocio  Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
@@ -654,17 +675,17 @@ model Visita {
 
 // Token de validación del QR #2 (un solo uso, expira en 5 min)
 model TokenValidacion {
-  id          String    @id @default(cuid())
-  negocioId   String
-  clienteId   String
+  id         String   @id @default(cuid())
+  negocioId  String
+  clienteId  String
   // Sucursal donde se pidio la visita (Lote 4). Nullable a proposito:
   // los tokens creados antes de esta migracion no la tienen; un backfill
   // les asigna la sucursal principal. Pasa a NOT NULL en la Fase 2.
-  sucursalId  String?
-  token       String    @unique
-  usado       Boolean   @default(false)
-  expiraEn    DateTime
-  creadoEn    DateTime  @default(now())
+  sucursalId String?
+  token      String   @unique
+  usado      Boolean  @default(false)
+  expiraEn   DateTime
+  creadoEn   DateTime @default(now())
 
   negocio  Negocio   @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   cliente  Cliente   @relation(fields: [clienteId], references: [id], onDelete: Cascade)
@@ -694,10 +715,10 @@ model ItemCarta {
   orden       Int      @default(0)
   creadoEn    DateTime @default(now())
 
-  negocio             Negocio              @relation(fields: [negocioId], references: [id], onDelete: Cascade)
-  gruposModificadores GrupoModificador[]   @relation("ItemCartaGrupoModificador")
-  reglasUpsellOrigen  ReglaUpsell[]        @relation("ReglaUpsellOrigen")
-  reglasUpsellDestino ReglaUpsell[]        @relation("ReglaUpsellDestino")
+  negocio             Negocio             @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  gruposModificadores GrupoModificador[]  @relation("ItemCartaGrupoModificador")
+  reglasUpsellOrigen  ReglaUpsell[]       @relation("ReglaUpsellOrigen")
+  reglasUpsellDestino ReglaUpsell[]       @relation("ReglaUpsellDestino")
   overridesSucursal   ItemCartaSucursal[]
 
   @@index([negocioId, categoria, orden])
@@ -789,37 +810,37 @@ model ReglaUpsell {
 
 // Pedido de un cliente (mesa, takeaway o delivery)
 model Pedido {
-  id                   String       @id @default(cuid())
-  negocioId            String
-  sucursalId           String
-  clienteId            String?
-  nombreCliente        String
-  telefono             String
-  direccion            String?
-  origen               String?
-  mesa                 String?
-  tipo                 TipoPedido
-  modoPago             ModoPago
-  items                Json
-  subtotal             Decimal      @db.Decimal(10, 2)
-  costoEnvio           Decimal?     @db.Decimal(10, 2)
-  total                Decimal      @db.Decimal(10, 2)
-  notas                String?      @db.Text
-  estado               EstadoPedido @default(PENDIENTE)
-  motivoRechazo        String?      @db.Text
+  id            String       @id @default(cuid())
+  negocioId     String
+  sucursalId    String
+  clienteId     String?
+  nombreCliente String
+  telefono      String
+  direccion     String?
+  origen        String?
+  mesa          String?
+  tipo          TipoPedido
+  modoPago      ModoPago
+  items         Json
+  subtotal      Decimal      @db.Decimal(10, 2)
+  costoEnvio    Decimal?     @db.Decimal(10, 2)
+  total         Decimal      @db.Decimal(10, 2)
+  notas         String?      @db.Text
+  estado        EstadoPedido @default(PENDIENTE)
+  motivoRechazo String?      @db.Text
 
-  empleadoAsignadoId   String?
-  encargadoId          String?
-  numeroAtendiente     String?
+  empleadoAsignadoId String?
+  encargadoId        String?
+  numeroAtendiente   String?
 
-  linkToken            String?      @unique
-  linkExpiraEn         DateTime?
+  linkToken    String?   @unique
+  linkExpiraEn DateTime?
 
-  creadoEn             DateTime     @default(now())
-  actualizadoEn        DateTime     @updatedAt
-  confirmadoEn         DateTime?
-  enviadoEn            DateTime?
-  entregadoEn          DateTime?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+  confirmadoEn  DateTime?
+  enviadoEn     DateTime?
+  entregadoEn   DateTime?
 
   negocio          Negocio   @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   sucursal         Sucursal  @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
@@ -953,15 +974,15 @@ model IntegracionGoogle {
 
 // Suscripción push de un cliente
 model NotificacionPush {
-  id          String   @id @default(cuid())
-  negocioId   String
-  clienteId   String
-  endpoint    String   @unique
-  auth        String
-  p256dh      String
-  activa      Boolean  @default(true)
-  ultimoUso   DateTime @default(now())
-  creadoEn    DateTime @default(now())
+  id        String   @id @default(cuid())
+  negocioId String
+  clienteId String
+  endpoint  String   @unique
+  auth      String
+  p256dh    String
+  activa    Boolean  @default(true)
+  ultimoUso DateTime @default(now())
+  creadoEn  DateTime @default(now())
 
   negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
@@ -972,15 +993,15 @@ model NotificacionPush {
 
 // Suscripción push de un empleado/dueño
 model NotificacionPushEmpleado {
-  id          String   @id @default(cuid())
-  negocioId   String
-  empleadoId  String
-  endpoint    String   @unique
-  auth        String
-  p256dh      String
-  activa      Boolean  @default(true)
-  ultimoUso   DateTime @default(now())
-  creadoEn    DateTime @default(now())
+  id         String   @id @default(cuid())
+  negocioId  String
+  empleadoId String
+  endpoint   String   @unique
+  auth       String
+  p256dh     String
+  activa     Boolean  @default(true)
+  ultimoUso  DateTime @default(now())
+  creadoEn   DateTime @default(now())
 
   negocio  Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
@@ -991,23 +1012,23 @@ model NotificacionPushEmpleado {
 
 // Campaña de marketing (push o WhatsApp)
 model CampanaMarketing {
-  id                String       @id @default(cuid())
-  negocioId         String
-  titulo            String
-  mensaje           String       @db.Text
-  url               String?
-  icono             String?
-  segmento          String
-  canal             CanalCampana @default(PUSH)
-  esAutomatizacion  Boolean      @default(false)
-  enviadaEn         DateTime?
-  totalEnviados     Int          @default(0)
-  totalFallidos     Int          @default(0)
-  totalAbiertos     Int          @default(0)
-  creadaEn          DateTime     @default(now())
+  id               String       @id @default(cuid())
+  negocioId        String
+  titulo           String
+  mensaje          String       @db.Text
+  url              String?
+  icono            String?
+  segmento         String
+  canal            CanalCampana @default(PUSH)
+  esAutomatizacion Boolean      @default(false)
+  enviadaEn        DateTime?
+  totalEnviados    Int          @default(0)
+  totalFallidos    Int          @default(0)
+  totalAbiertos    Int          @default(0)
+  creadaEn         DateTime     @default(now())
 
-  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
-  envios  EnvioPushLog[]
+  negocio     Negocio        @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  envios      EnvioPushLog[]
   /// Campana PROGRAMABLE que la creo (una `CampanaPush` tiene UNA `CampanaMarketing`).
   campanaPush CampanaPush?
 
@@ -1030,7 +1051,7 @@ model PlantillaPush {
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
-  negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  negocio  Negocio       @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   disparos DisparoPush[]
   campanas CampanaPush[]
 
@@ -1056,15 +1077,21 @@ model DisparoPush {
   plantillaId      String
   /// Regalo OPCIONAL ademas del push: { sellos?:number, puntos?:number }.
   regalo           Json?
+  /// PREMIO OPCIONAL que el cliente ACEPTA desde la notificacion (no se acredita solo):
+  /// { tipo:'SELLOS'|'PUNTOS'|'LIBRE', cantidad?:number, texto?:string, expiraDias?:number }.
+  /// Cuando esta presente, el disparo deja un `PremioOtorgado` PENDIENTE y el push abre
+  /// `/<slug>/premio/<token>`; la acreditacion ocurre al aceptar. No se combina con `regalo`.
+  premio           Json?
   /// Topes por cliente: { porDia?:number, porMes?:number }.
   limitePorCliente Json?
   creadoEn         DateTime    @default(now())
   actualizadoEn    DateTime    @updatedAt
 
-  negocio   Negocio         @relation(fields: [negocioId], references: [id], onDelete: Cascade)
-  plantilla PlantillaPush   @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  negocio   Negocio          @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  plantilla PlantillaPush    @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
   logs      DisparoPushLog[]
   envios    EnvioPushLog[]
+  premios   PremioOtorgado[]
 
   @@index([negocioId, tipo, activa])
 }
@@ -1179,6 +1206,11 @@ model CampanaPush {
   icono             String?
   /// Plantilla usada (opcional; se snapshotean los textos igual).
   plantillaId       String?
+  /// PREMIO OPCIONAL que cada destinatario ACEPTA desde la notificacion (no se
+  /// acredita solo): { tipo:'SELLOS'|'PUNTOS'|'LIBRE', cantidad?:number, texto?:string, expiraDias?:number }.
+  /// Al despachar, se crea un `PremioOtorgado` PENDIENTE por destinatario y el push
+  /// abre `/<slug>/premio/<token>`.
+  premio            Json?
   /// Base del publico: 'TODOS' | 'PREMIO_DESBLOQUEADO' | 'INACTIVO_30'.
   segmento          String            @default("TODOS")
   /// Exclusiones (SOLO RECORTAN el publico): { clientes?: string[], segmentos?: string[] }.
@@ -1198,9 +1230,63 @@ model CampanaPush {
   negocio   Negocio           @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   plantilla PlantillaPush?    @relation(fields: [plantillaId], references: [id], onDelete: SetNull)
   campana   CampanaMarketing? @relation(fields: [campanaId], references: [id], onDelete: SetNull)
+  premios   PremioOtorgado[]
 
   @@index([negocioId, estado, programadoPara])
   @@index([estado, programadoPara])
+}
+
+// ============================================================================
+// PREMIO OTORGADO (premios que el cliente ACEPTA desde la notificacion)
+// ============================================================================
+
+// Premio dejado por un disparo/campaña de push. NO se acredita al otorgar: queda
+// PENDIENTE (y el push avisa); la acreditacion/saldo ocurre cuando el CLIENTE
+// ACEPTA desde `/<slug>/premio/<token>`.
+//
+//  - `token @unique`: es la unica llave de la pagina publica de aceptar y del
+//    link de verificacion del staff. No adivinable (24 bytes random).
+//  - Claim ATOMICO por estado: aceptar es `updateMany({token, estado:PENDIENTE}
+//    -> ACEPTADO)` exigiendo `count===1`, asi un doble tap no acredita dos veces.
+//  - `tipo`: SELLOS/PUNTOS mueven saldo al aceptar; LIBRE NO mueve saldo (ej.
+//    "postre gratis") y se cierra al CANJEARLO.
+//  - HISTORIAL INMUTABLE: `disparoId`/`campanaId` son `onDelete: SetNull` + se
+//    snapshotean los nombres (`disparoNombre`/`campanaNombre`) y el texto.
+model PremioOtorgado {
+  id            String       @id @default(cuid())
+  negocioId     String
+  clienteId     String
+  tipo          TipoPremio
+  /// Cuanto acredita al aceptar (SELLOS/PUNTOS). 0 en LIBRE.
+  cantidad      Int          @default(0)
+  /// Texto del premio que ve el cliente y el staff (ej. "un postre gratis").
+  texto         String
+  /// Cantidad + nombre, para secuencias de mas de uno: usado en la UI.
+  campanaNombre String?
+  disparoNombre String?
+  /// Token unico: llave de la pagina publica de aceptar y del link de verificacion.
+  token         String       @unique
+  estado        EstadoPremio @default(PENDIENTE)
+  /// Vencimiento OPCIONAL (ISO). Pasado el momento no se puede aceptar.
+  expiraEn      DateTime?
+  aceptadoEn    DateTime?
+  canjeadoEn    DateTime?
+  /// Origen del premio (SetNull: el premio sobrevive al borrado del disparo/campaña).
+  disparoId     String?
+  campanaId     String?
+  /// Sucursal del canje (la que resuelve el club / la del evento).
+  sucursalId    String?
+  creadoEn      DateTime     @default(now())
+  actualizadoEn DateTime     @updatedAt
+
+  negocio Negocio      @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  cliente Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  disparo DisparoPush? @relation(fields: [disparoId], references: [id], onDelete: SetNull)
+  campana CampanaPush? @relation(fields: [campanaId], references: [id], onDelete: SetNull)
+
+  @@index([negocioId, estado])
+  @@index([negocioId, clienteId, estado])
+  @@index([token])
 }
 
 // ============================================================================
@@ -1291,14 +1377,14 @@ model Lead {
 
 // Super-administrador del SaaS
 model SuperAdmin {
-  id               String   @id @default(cuid())
-  email            String   @unique
+  id               String    @id @default(cuid())
+  email            String    @unique
   passwordHash     String
   nombre           String
   twoFactorSecret  String?
-  twoFactorEnabled Boolean  @default(true)
-  activo           Boolean  @default(true)
-  creadoEn         DateTime @default(now())
+  twoFactorEnabled Boolean   @default(true)
+  activo           Boolean   @default(true)
+  creadoEn         DateTime  @default(now())
   ultimoAcceso     DateTime?
 
   sesiones        SesionSuperAdmin[]

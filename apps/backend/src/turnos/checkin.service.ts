@@ -2,7 +2,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
-import { enTurnoAhora, fechaSoloDia, hoy } from './helpers/horarios';
+import { enTurnoAhora, fechaSoloDia, horaActual, hoy } from './helpers/horarios';
 import type { CheckinDto } from './dto/checkin.dto';
 
 export interface CtxCheckin {
@@ -22,10 +22,10 @@ export class CheckinService {
 
   /** Turno del empleado que cubre AHORA (soporta franjas que cruzan medianoche). */
   async turnoActual(negocioId: string, empleadoId: string, ahora = new Date()) {
-    const fechaHoy = fechaSoloDia(hoy());
+    const fechaHoy = fechaSoloDia(hoy(ahora));
     const ayer = new Date(fechaHoy);
     ayer.setUTCDate(ayer.getUTCDate() - 1);
-    const hora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+    const hora = horaActual(ahora);
 
     // Se miran tambien los turnos de AYER: uno que cruza medianoche (22:00-02:00)
     // sigue vigente a las 01:00 del dia siguiente.

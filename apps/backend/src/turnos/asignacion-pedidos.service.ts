@@ -4,7 +4,7 @@ import { TipoTurno } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { CheckinService } from './checkin.service';
-import { enTurnoAhora, fechaSoloDia, hoy } from './helpers/horarios';
+import { enTurnoAhora, fechaSoloDia, horaActual, hoy } from './helpers/horarios';
 import type { Destinatarios, EmpleadoEnTurno } from './interfaces/empleado-en-turno.interface';
 
 /** tipoTurno que puede atender cada tipo de pedido. */
@@ -41,10 +41,12 @@ export class AsignacionPedidosService {
 
   /** Empleados con turno vigente AHORA en una sucursal (incluye los de ayer por medianoche). */
   async obtenerEmpleadosEnTurno(negocioId: string, sucursalId: string, ahora = new Date()): Promise<EmpleadoEnTurno[]> {
-    const hoyFecha = fechaSoloDia(hoy());
+    // `hoy()`/`horaActual()` son HORA ARGENTINA: antes se usaba la hora LOCAL del proceso
+    // (UTC en Railway) y el turno se calculaba con 3 horas de desfase.
+    const hoyFecha = fechaSoloDia(hoy(ahora));
     const ayer = new Date(hoyFecha);
     ayer.setUTCDate(ayer.getUTCDate() - 1);
-    const hora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+    const hora = horaActual(ahora);
 
     const turnos = await this.prisma.turno.findMany({
       where: { negocioId, sucursalId, fecha: { in: [hoyFecha, ayer] } },

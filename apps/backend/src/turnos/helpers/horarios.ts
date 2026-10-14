@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { AR_OFFSET_MS } from '../../push/disparos.service';
 
 /** "HH:mm" de 00:00 a 23:59 (con cero a la izquierda). */
 export const REGEX_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -10,9 +11,17 @@ export function aMinutos(hhmm: string): number {
   return h * 60 + m;
 }
 
-/** "HH:mm" de una fecha (hora local del server). */
+/**
+ * "HH:mm" de una fecha en HORA ARGENTINA.
+ *
+ * Antes usaba `d.getHours()`/`getMinutes()` (hora LOCAL DEL PROCESO): en Railway el
+ * proceso corre en UTC, asi que devolvia 3 horas MENOS que la hora del local y la
+ * asignacion de pedidos calculaba el turno con 3 horas de desfase. `AR_OFFSET_MS` es
+ * fijo (Argentina no tiene horario de verano desde 2009).
+ */
 export function horaActual(d: Date = new Date()): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const ar = new Date(d.getTime() - AR_OFFSET_MS);
+  return `${String(ar.getUTCHours()).padStart(2, '0')}:${String(ar.getUTCMinutes()).padStart(2, '0')}`;
 }
 
 export function validarRangoHoras(horaInicio: string, horaFin: string) {
@@ -99,8 +108,13 @@ export function lunesDe(fecha: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Hoy (YYYY-MM-DD) en hora local. */
-export function hoy(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/**
+ * Hoy (YYYY-MM-DD) en HORA ARGENTINA.
+ *
+ * Antes usaba los getters LOCALES del proceso (UTC en Railway): pasadas las 21:00 AR
+ * "hoy" ya era manana. Se calcula con el offset fijo de Argentina.
+ */
+export function hoy(d: Date = new Date()): string {
+  const ar = new Date(d.getTime() - AR_OFFSET_MS);
+  return `${ar.getUTCFullYear()}-${String(ar.getUTCMonth() + 1).padStart(2, '0')}-${String(ar.getUTCDate()).padStart(2, '0')}`;
 }

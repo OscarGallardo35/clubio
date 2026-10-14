@@ -5,6 +5,7 @@ import { CampanaPush, EstadoCampanaPush, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { LimitesService } from '../planes/limites.service';
+import { HorariosService } from '../horarios/horarios.service';
 import { PushService, COLA_PUSH } from './push.service';
 import {
   AR_OFFSET_MS,
@@ -108,6 +109,7 @@ export class CampanasPushService {
     private readonly push: PushService,
     private readonly limites: LimitesService,
     private readonly auditoria: AuditoriaService,
+    private readonly horarios: HorariosService,
     @InjectQueue(COLA_PUSH) private readonly colaPush: Queue<PushJob>,
     @InjectQueue(COLA_DISPAROS) private readonly colaDisparos: Queue,
   ) {}
@@ -605,7 +607,11 @@ export class CampanasPushService {
    * La VENTANA HORARIA del negocio (hora ARGENTINA). `null` si la campaña puede
    * salir AHORA; si no, la fecha UTC de la proxima apertura (nunca se descarta).
    *
-   * Sin ventana configurada (default: los dos campos vacios) NO cambia nada.
+   * DOS fuentes, en este orden:
+   *  1. `pushVentanaInicio/Fin` (ventana explicita): comportamiento PREVIO, no cambia.
+   *  2. Si no hay ventana explicita, la campaña HEREDA del HORARIO DE ATENCION del local:
+   *     con el local cerrado se difiere a `proximaApertura`. Sin horarios configurados
+   *     (`SIN_HORARIOS`) no cambia nada (sigue saliendo a su hora).
    */
   private async proximaApertura(ahora: Date, negocioId: string): Promise<Date | null> {
     const cfg = await this.prisma.configuracionClub.findUnique({
@@ -614,20 +620,24 @@ export class CampanasPushService {
     });
     const ini = horaAMinutos(cfg?.pushVentanaInicio ?? '');
     const fin = horaAMinutos(cfg?.pushVentanaFin ?? '');
-    if (ini === null || fin === null) return null; // sin ventana: comportamiento actual
+    if (ini !== null && fin !== null) {
+      const ar = ahoraArgentina(ahora);
+      const m = ar.minutos;
+      // Ventana normal (ini <= fin) o que cruza medianoche (20:00 - 02:00).
+      const dentro = ini <= fin ? m >= ini && m < fin : m >= ini || m < fin;
+      if (dentro) return null;
 
-    const ar = ahoraArgentina(ahora);
-    const m = ar.minutos;
-    // Ventana normal (ini <= fin) o que cruza medianoche (20:00 - 02:00).
-    const dentro = ini <= fin ? m >= ini && m < fin : m >= ini || m < fin;
-    if (dentro) return null;
+      const [y, mo, d] = ar.fecha.split('-').map(Number);
+      const inicioHoyUtc = new Date(Date.UTC(y, mo - 1, d, Math.floor(ini / 60), ini % 60) + AR_OFFSET_MS);
+      // Todavia no abrio hoy -> hoy; ya cerro -> manana (la ventana de un dia termina
+      // antes de su proximo inicio, tambien en el caso que cruza medianoche).
+      if (m < ini) return inicioHoyUtc;
+      return new Date(inicioHoyUtc.getTime() + 86_400_000);
+    }
 
-    const [y, mo, d] = ar.fecha.split('-').map(Number);
-    const inicioHoyUtc = new Date(Date.UTC(y, mo - 1, d, Math.floor(ini / 60), ini % 60) + AR_OFFSET_MS);
-    // Todavia no abrio hoy -> hoy; ya cerro -> manana (la ventana de un dia termina
-    // antes de su proximo inicio, tambien en el caso que cruza medianoche).
-    if (m < ini) return inicioHoyUtc;
-    return new Date(inicioHoyUtc.getTime() + 86_400_000);
+    // Sin ventana explicita: heredar el horario de atencion (el local cerrado difiere el envio).
+    const estado = await this.horarios.estaAbierto({ negocioId, tipo: 'atencion', ahora });
+    return estado.abierto ? null : estado.proximaApertura;
   }
 
   // ==========================================================================

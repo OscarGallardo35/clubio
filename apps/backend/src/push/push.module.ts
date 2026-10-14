@@ -7,10 +7,12 @@ import { PushProcessor } from './push.processor';
 import { DisparosProcessor } from './disparos.processor';
 import { PushScheduler } from './push.scheduler';
 import { PushController } from './push.controller';
+import { HorariosModule } from '../horarios/horarios.module';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: COLA_PUSH }, { name: COLA_DISPAROS }),
+    HorariosModule,
   ],
   controllers: [PushController],
   providers: [

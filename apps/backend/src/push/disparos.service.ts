@@ -16,7 +16,7 @@ export const COLA_DISPAROS = 'push-disparos';
 export const DIA_TICK_MIN = 15;
 
 /** Argentina es UTC-3 TODO el año (no hay horario de verano). */
-const AR_OFFSET_MS = 3 * 60 * 60 * 1000;
+export const AR_OFFSET_MS = 3 * 60 * 60 * 1000;
 const DIAS_SEMANA = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] as const;
 
 export interface AhoraArgentina {
@@ -60,6 +60,39 @@ export function horaAMinutos(hora: string): number | null {
   const min = Number(m[2]);
   if (h < 0 || h > 23 || min < 0 || min > 59) return null;
   return h * 60 + min;
+}
+
+/**
+ * Convierte una hora ARGENTINA de pared a `Date` UTC.
+ *
+ * Acepta 'YYYY-MM-DD', 'YYYY-MM-DDTHH:mm[:ss]' (con o sin espacio) y un ISO con
+ * zona ('...Z' o '...+03:00'), que se respeta tal cual. Es la conversion que usan
+ * las campañas programables: el proceso corre en UTC (Railway), asi que NUNCA se
+ * puede usar `new Date(texto)` con una hora local de pared (la interpretaria en la
+ * TZ del proceso). Reusa `AR_OFFSET_MS`.
+ */
+export function fechaArgentinaAUtc(texto: string): Date | null {
+  const t = String(texto ?? '').trim();
+  if (!t) return null;
+  // ISO con zona explicita: se respeta (no hace falta interpretarlo).
+  if (/([zZ]|[+-]\d{2}:?\d{2})$/.test(t)) {
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(t);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s] = m;
+  return new Date(
+    Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h ?? 0), Number(mi ?? 0), Number(s ?? 0)) +
+      AR_OFFSET_MS,
+  );
+}
+
+/** `Date` UTC -> 'YYYY-MM-DDTHH:mm' en hora ARGENTINA (para mostrar en la UI). */
+export function aHoraArgentina(base: Date): string {
+  const ar = new Date(base.getTime() - AR_OFFSET_MS);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${ar.getUTCFullYear()}-${p(ar.getUTCMonth() + 1)}-${p(ar.getUTCDate())}T${p(ar.getUTCHours())}:${p(ar.getUTCMinutes())}`;
 }
 
 type DisparoConPlantilla = DisparoPush & { plantilla: PlantillaPush };

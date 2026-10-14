@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } f
 import { RolEmpleado } from '@prisma/client';
 import { PushService } from './push.service';
 import { DisparosService } from './disparos.service';
+import { CampanasPushService } from './campanas.service';
 import { SuscribirPushDto } from './dto/suscribir-push.dto';
 import { EnviarPromocionDto } from './dto/enviar-promocion.dto';
 import { CrearPlantillaDto } from './dto/crear-plantilla.dto';
@@ -12,6 +13,10 @@ import { ActualizarDisparoDto } from './dto/actualizar-disparo.dto';
 import { ProbarDisparoDto } from './dto/probar-disparo.dto';
 import { HistorialDisparosDto } from './dto/historial-disparos.dto';
 import { HistorialEnviosDto } from './dto/historial-envios.dto';
+import { CrearCampanaDto } from './dto/crear-campana.dto';
+import { ActualizarCampanaDto } from './dto/actualizar-campana.dto';
+import { PreviewCampanaDto } from './dto/preview-campana.dto';
+import { ProbarCampanaDto } from './dto/probar-campana.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentCliente } from '../common/decorators/current-cliente.decorator';
@@ -31,6 +36,7 @@ export class PushController {
   constructor(
     private readonly push: PushService,
     private readonly disparos: DisparosService,
+    private readonly campanas: CampanasPushService,
   ) {}
 
   /** La PWA necesita esta clave para llamar a pushManager.subscribe(). */
@@ -225,5 +231,92 @@ export class PushController {
     @Body() dto: ProbarDisparoDto,
   ) {
     return this.disparos.probar(emp.negocioId, id, dto.clienteId, emp.id);
+  }
+
+  // ---- campañas programables (fecha/hora + publico con exclusiones) ----
+
+  /**
+   * ALCANCE antes de confirmar ("~N de M suscritos"). Es una ESTIMACION: la base se
+   * re-resuelve al momento del envio, asi que el numero puede variar.
+   *
+   * Va ANTES que `campanas/:id` (por claridad de rutas).
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Post('campanas/preview')
+  previewCampana(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: PreviewCampanaDto) {
+    return this.campanas.preview(emp.negocioId, dto);
+  }
+
+  /** "Probar a mi mismo": manda UNA notificacion al dispositivo que la pide. */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Post('campanas/probar')
+  probarCampana(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: ProbarCampanaDto) {
+    return this.campanas.probar(emp.negocioId, dto, emp.id);
+  }
+
+  /**
+   * Tick FORZADO del dispatcher del negocio (no espera el scheduler de 1 minuto).
+   * Es el mismo camino idempotente que corre el job: reclamar antes de encolar.
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Post('campanas/tick')
+  tickCampanas(@CurrentEmpleado() emp: EmpleadoAuth) {
+    return this.campanas.evaluarProgramadas(emp.negocioId);
+  }
+
+  /** Campañas programables del negocio, con su estado y "a cuantos les llego" (n/m). */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @Get('campanas')
+  listarCampanas(@CurrentEmpleado() emp: EmpleadoAuth) {
+    return this.campanas.listar(emp.negocioId);
+  }
+
+  /** Programa una campaña (reserva la cuota del mes al CREAR). */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Post('campanas')
+  crearCampana(@CurrentEmpleado() emp: EmpleadoAuth, @Body() dto: CrearCampanaDto) {
+    return this.campanas.crear(emp.negocioId, dto, emp.id);
+  }
+
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @Get('campanas/:id')
+  obtenerCampana(@CurrentEmpleado() emp: EmpleadoAuth, @Param('id') id: string) {
+    return this.campanas.obtener(emp.negocioId, id);
+  }
+
+  /** Reprogramar/editar el mensaje: SOLO si sigue PROGRAMADA (si no, 409). */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Patch('campanas/:id')
+  actualizarCampana(
+    @CurrentEmpleado() emp: EmpleadoAuth,
+    @Param('id') id: string,
+    @Body() dto: ActualizarCampanaDto,
+  ) {
+    return this.campanas.actualizar(emp.negocioId, id, dto, emp.id);
+  }
+
+  /** Cancela una campaña PROGRAMADA (devuelve el cupo). Si ya salio: 409. */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Delete('campanas/:id')
+  cancelarCampana(
+    @CurrentEmpleado() emp: EmpleadoAuth,
+    @Param('id') id: string,
+    @Body() dto: { motivo?: string },
+  ) {
+    return this.campanas.cancelar(emp.negocioId, id, dto?.motivo, emp.id);
   }
 }

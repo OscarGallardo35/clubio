@@ -119,6 +119,48 @@ export interface EnvioEncolado {
   jobId?: string | number | null;
 }
 
+/** Un destinatario posible: cliente con suscripcion push activa. */
+export interface ClientePublico {
+  id: string;
+  nombre: string;
+  sellosActuales: number;
+}
+
+/** Un cliente que la base del segmento incluia pero una exclusion recorto. */
+export interface ExcluidoPublico {
+  id: string;
+  nombre: string;
+  /** Motivo legible (va al historial: explica POR QUE alguien no recibio). */
+  motivo: string;
+}
+
+/** Desglose del alcance de un publico (lo que muestra el preview antes de confirmar). */
+export interface DesglosePublico {
+  /** M: clientes con suscripcion ACTIVA que caen en el segmento base. */
+  suscritos: number;
+  /** Cuantos de esos suscritos recorta una exclusion. */
+  excluidos: number;
+  /** Clientes del negocio (no dados de baja) SIN suscripcion push activa. */
+  sinSuscripcionActiva: number;
+  /** K: total de clientes del negocio (no dados de baja). */
+  clientesNegocio: number;
+}
+
+/**
+ * Publico RESUELTO de una campana. `alcanzables` es N y `total` es M ("N de M
+ * suscritos"): el numero del preview es una ESTIMACION porque la base se
+ * re-resuelve al enviar.
+ */
+export interface PublicoResuelto {
+  /** N: a quienes les va a llegar (suscritos del segmento menos exclusiones). */
+  alcanzables: ClientePublico[];
+  /** M: suscritos del segmento base (antes de exclusiones). */
+  total: number;
+  desglose: DesglosePublico;
+  /** Detalle de las exclusiones aplicadas (motivo incluido). */
+  excluidosDetalle: ExcluidoPublico[];
+}
+
 @Injectable()
 export class PushService {
   private readonly logger = new Logger('Push');
@@ -162,6 +204,15 @@ export class PushService {
         'Web Push no configurado: faltan VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY',
       );
     }
+  }
+
+  /**
+   * Version publica de `exigirVapid` para las campañas programables: crear una
+   * campaña falla temprano si el push no esta configurado (mejor que descubrirlo el
+   * dia del despacho).
+   */
+  exigirPushConfigurado() {
+    this.exigirVapid();
   }
 
   // ==========================================================================
@@ -932,7 +983,7 @@ export class PushService {
   }
 
   /** Configuracion resuelta para armar las variables de una campana. */
-  private async contextoPlantilla(negocioId: string) {
+  async contextoPlantilla(negocioId: string) {
     const [negocio, cfg] = await Promise.all([
       this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { nombre: true } }),
       this.prisma.configuracionClub.findUnique({
@@ -971,19 +1022,91 @@ export class PushService {
   }
 
   /**
-   * Destinatarios de un segmento: solo clientes con una suscripcion push activa.
-   * - TODOS: todos los suscritos.
-   * - PREMIO_DESBLOQUEADO: sellosActuales >= meta.
-   * - INACTIVO_30: sin visita hace mas de 30 dias (incluye a los que nunca vinieron).
+   * "PROBAR A MI MISMO": manda UNA notificacion al dispositivo de quien la pide
+   * (por su `endpoint`), con los textos en edicion y las variables reemplazadas por
+   * datos de un cliente real. No requiere que la campaña este guardada y NO toca
+   * saldos (mismo espiritu que la prueba de un disparo).
    */
-  private async destinatariosDeSegmento(negocioId: string, segmento: SegmentoEnvio, meta: number) {
+  async probarEnDispositivo(
+    negocioId: string,
+    payload: { endpoint: string; titulo: string; cuerpo: string; url?: string; icono?: string },
+  ) {
+    this.exigirVapid();
+    const vars = await this.datosEjemplo(negocioId);
+
+    const [cliente, empleado] = await Promise.all([
+      this.prisma.notificacionPush.findFirst({
+        where: { endpoint: payload.endpoint, activa: true },
+        select: { id: true, endpoint: true, auth: true, p256dh: true },
+      }),
+      this.prisma.notificacionPushEmpleado.findFirst({
+        where: { endpoint: payload.endpoint, activa: true },
+        select: { id: true, endpoint: true, auth: true, p256dh: true },
+      }),
+    ]);
+    const sub = cliente ?? empleado;
+    if (!sub) throw new NotFoundException('Ese dispositivo no tiene una suscripcion activa');
+
+    const urlDestino = await this.urlDePush(
+      negocioId,
+      payload.url ? this.renderizar(payload.url, vars) : undefined,
+      cliente ? 'cliente' : 'staff',
+    );
+
+    try {
+      await this.enviarAPayload(sub, {
+        title: this.renderizar(payload.titulo, vars),
+        body: this.renderizar(payload.cuerpo, vars),
+        url: urlDestino,
+        icon: payload.icono ?? undefined,
+        timestamp: Date.now(),
+      });
+    } catch (e) {
+      const status = (e as { statusCode?: number }).statusCode;
+      if (status === 404 || status === 410) {
+        await this.desuscribir(sub.endpoint);
+        throw new BadRequestException('La suscripcion de ese dispositivo ya no es valida');
+      }
+      throw e;
+    }
+    return { prueba: true, enviados: 1 };
+  }
+
+  /**
+   * RESOLUCION DE DESTINATARIOS: fuente UNICA de verdad.
+   *
+   * La consumen el PREVIEW de una campana (`/push/campanas/preview`) y el ENVIO
+   * (`enviarConPlantilla` y el despacho de campanas programables): si divergieran,
+   * el numero que ve el dueno no seria el que se manda.
+   *
+   * La BASE es SIEMPRE `notificacionPush.activa = true` + `cliente.eliminadoEn =
+   * null` (+ el filtro del segmento elegido). Las EXCLUSIONES SOLO RECORTAN: una
+   * exclusion jamas puede ampliar el publico.
+   *
+   * Por diseno el numero que devuelve es una ESTIMACION: la base se re-resuelve al
+   * momento del envio (puede cambiar entre programar y despachar).
+   */
+  async resolverPublico(
+    negocioId: string,
+    filtros: {
+      /** Base del publico: 'TODOS' | 'PREMIO_DESBLOQUEADO' | 'INACTIVO_30'. */
+      segmento?: string | null;
+      /** Clientes excluidos a mano (siempre se respetan). */
+      excluirClienteIds?: string[] | null;
+      /** Segmentos NEGATIVOS: se recortan de la base. */
+      excluirSegmentos?: string[] | null;
+    } = {},
+  ): Promise<PublicoResuelto> {
+    const ctx = await this.contextoPlantilla(negocioId);
+    const segmento = (filtros.segmento ?? 'TODOS') as SegmentoEnvio;
+
     const base: Prisma.NotificacionPushWhereInput = {
       negocioId,
       activa: true,
       cliente: { eliminadoEn: null },
     };
     if (segmento === 'PREMIO_DESBLOQUEADO') {
-      base.cliente = { eliminadoEn: null, sellosActuales: { gte: meta } };
+      base.cliente = { eliminadoEn: null, sellosActuales: { gte: ctx.meta } };
     } else if (segmento === 'INACTIVO_30') {
       const corte = new Date(Date.now() - 30 * 86_400_000);
       base.cliente = {
@@ -996,22 +1119,60 @@ export class PushService {
       where: base,
       select: {
         clienteId: true,
-        cliente: { select: { nombre: true, sellosActuales: true } },
+        cliente: { select: { nombre: true, sellosActuales: true, ultimaVisita: true } },
       },
     });
 
-    // Dedupe por cliente (un cliente puede tener varios dispositivos suscritos).
-    const porCliente = new Map<string, { id: string; nombre: string; sellosActuales: number }>();
+    // Dedupe por cliente: un cliente puede tener varios dispositivos suscritos.
+    const porCliente = new Map<
+      string,
+      { id: string; nombre: string; sellosActuales: number; ultimaVisita: Date | null }
+    >();
     for (const s of subs) {
-      if (!porCliente.has(s.clienteId)) {
-        porCliente.set(s.clienteId, {
-          id: s.clienteId,
-          nombre: s.cliente.nombre,
-          sellosActuales: s.cliente.sellosActuales,
-        });
-      }
+      if (porCliente.has(s.clienteId)) continue;
+      porCliente.set(s.clienteId, {
+        id: s.clienteId,
+        nombre: s.cliente.nombre,
+        sellosActuales: s.cliente.sellosActuales,
+        ultimaVisita: s.cliente.ultimaVisita,
+      });
     }
-    return [...porCliente.values()];
+
+    const excluirIds = new Set((filtros.excluirClienteIds ?? []).filter(Boolean));
+    const excluirSeg = new Set(filtros.excluirSegmentos ?? []);
+    const corte30 = Date.now() - 30 * 86_400_000;
+
+    const alcanzables: ClientePublico[] = [];
+    const excluidosDetalle: ExcluidoPublico[] = [];
+    for (const c of porCliente.values()) {
+      let motivo: string | null = null;
+      if (excluirIds.has(c.id)) {
+        motivo = 'excluido (elegido a mano)';
+      } else if (excluirSeg.has('PREMIO_DESBLOQUEADO') && c.sellosActuales >= ctx.meta) {
+        motivo = 'excluido (ya tiene el premio)';
+      } else if (excluirSeg.has('INACTIVO_30') && (!c.ultimaVisita || c.ultimaVisita.getTime() < corte30)) {
+        motivo = 'excluido (inactivo +30 dias)';
+      }
+      if (motivo) excluidosDetalle.push({ id: c.id, nombre: c.nombre, motivo });
+      else alcanzables.push({ id: c.id, nombre: c.nombre, sellosActuales: c.sellosActuales });
+    }
+
+    const clientesNegocio = await this.prisma.cliente.count({
+      where: { negocioId, eliminadoEn: null },
+    });
+    const suscritos = porCliente.size;
+
+    return {
+      alcanzables,
+      total: suscritos,
+      desglose: {
+        suscritos,
+        excluidos: excluidosDetalle.length,
+        sinSuscripcionActiva: Math.max(0, clientesNegocio - suscritos),
+        clientesNegocio,
+      },
+      excluidosDetalle,
+    };
   }
 
   /**
@@ -1086,7 +1247,9 @@ export class PushService {
     }
     await this.limites.exigirLimite(negocioId, 'CAMPANAS_PUSH_MES');
 
-    const destinatarios = await this.destinatariosDeSegmento(negocioId, dto.segmento, ctx.meta);
+    const destinatarios = (
+      await this.resolverPublico(negocioId, { segmento: dto.segmento })
+    ).alcanzables;
     // Campana a clientes: el link sale absoluto y con el slug del tenant.
     const urlCampana = await this.urlDePush(negocioId, url, 'cliente');
 

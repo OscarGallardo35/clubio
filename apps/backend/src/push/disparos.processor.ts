@@ -2,6 +2,7 @@ import { InjectQueue, OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullm
 import { Logger } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { COLA_DISPAROS, DIA_TICK_MIN, DisparosService } from './disparos.service';
+import { CampanasPushService, JOB_CAMPANAS } from './campanas.service';
 import {
   CHEQUEO_DEMORADOS_S,
   INTERVALO_STALLED_MS,
@@ -37,6 +38,7 @@ export class DisparosProcessor extends WorkerHost {
 
   constructor(
     private readonly disparos: DisparosService,
+    private readonly campanas: CampanasPushService,
     @InjectQueue(COLA_DISPAROS) private readonly cola: Queue,
   ) {
     super();
@@ -55,8 +57,16 @@ export class DisparosProcessor extends WorkerHost {
         { pattern: '0 10 * * *', tz: TZ_AR },
         { name: 'inactividad', opts: { removeOnComplete: 50, removeOnFail: 100 } },
       );
+      // CAMPAÑAS PROGRAMABLES: cada minuto se re-escanea `programadoPara <= now AND
+      // estado = PROGRAMADA`. El dispatch es idempotente (reclama la fila antes de
+      // encolar), asi que repetir el tick no reenvia nada.
+      await this.cola.upsertJobScheduler(
+        'campanas-push',
+        { pattern: '* * * * *', tz: TZ_AR },
+        { name: JOB_CAMPANAS, opts: { removeOnComplete: 50, removeOnFail: 100 } },
+      );
       this.logger.log(
-        `Schedulers de disparos registrados: dia cada ${DIA_TICK_MIN} min, inactividad diaria 10:00 AR`,
+        `Schedulers de disparos registrados: dia cada ${DIA_TICK_MIN} min, inactividad diaria 10:00 AR, campañas cada 1 min`,
       );
     } catch (e) {
       this.logger.error(`No se pudieron registrar los schedulers de disparos: ${(e as Error).message}`);
@@ -76,6 +86,7 @@ export class DisparosProcessor extends WorkerHost {
   async process(job: Job) {
     if (job.name === 'dia') return this.disparos.evaluarDia();
     if (job.name === 'inactividad') return this.disparos.evaluarInactividad();
+    if (job.name === JOB_CAMPANAS) return this.campanas.evaluarProgramadas();
     return { ignorado: job.name };
   }
 }

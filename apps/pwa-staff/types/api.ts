@@ -19,6 +19,12 @@ export interface EmpleadoStaff {
   nombre: string;
   rol: string;
   accesoMultiSucursal: boolean;
+  /**
+   * Permiso por empleado para administrar la carta COMPLETA (precio, descripcion, disponibilidad,
+   * foto, crear, eliminar y reordenar). Lo prende el dueno desde el admin y `StaffGuard` lo
+   * re-valida en cada request, asi que un cambio aplica sin re-login.
+   */
+  puedeEditarCarta: boolean;
   sucursal: SucursalStaff | null;
 }
 
@@ -322,7 +328,22 @@ export interface ActualizarItemCartaBody {
   orden?: number
 }
 
-/** Envelope REAL de GET /carta/admin: agrupado por categoria (no es {data,...}). */
+/**
+ * Body de POST /carta (crear item). Los opcionales van `?: T | undefined` porque el tsconfig del
+ * repo usa `exactOptionalPropertyTypes` (declarar `?: T` no acepta pasarle `undefined` explicito).
+ */
+export interface CrearItemCartaBody {
+  categoria: string
+  nombre: string
+  precio: number
+  descripcion?: string | undefined
+  /** OJO: el backend lo llama `fotoUrl`. */
+  fotoUrl?: string | undefined
+  etiquetas?: string[] | undefined
+  disponible?: boolean | undefined
+  orden?: number | undefined
+}
+
 export interface GrupoCarta {
   categoria: string
   items: ItemCarta[]

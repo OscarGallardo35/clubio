@@ -15,6 +15,17 @@ export default function PerfilPage() {
 
   const features = Object.entries(negocio?.features ?? {}).filter(([, v]) => v?.habilitada);
 
+  /**
+   * Quien administra la carta: el baseline (DUENO/ENCARGADO) o el empleado al que el dueno le
+   * prendio "Puede configurar la carta completa". La tarjeta se oculta a los demas, pero eso es
+   * comodidad: el backend responde 403 igual (el guard es la verdad).
+   */
+  const ROLES_EDITORES = ['DUENO', 'ENCARGADO'];
+  const esEditor =
+    empleado != null && (ROLES_EDITORES.includes(empleado.rol) || empleado.puedeEditarCarta === true);
+  const paqueteCompleto =
+    empleado != null && (empleado.rol === 'DUENO' || empleado.puedeEditarCarta === true);
+
   return (
     <main className="space-y-4 p-4">
       <h1 className="text-xl font-semibold">Mi perfil</h1>
@@ -66,17 +77,23 @@ export default function PerfilPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Carta</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm text-muted-foreground">
-          <p>Prender/apagar items y cambiar precios. Vive aca y no es una tab.</p>
-          <Link href={rutaDe(tenant, '/carta')} className={buttonVariants({ variant: 'outline', className: 'min-h-12 w-full' })}>
-            Abrir la carta
-          </Link>
-        </CardContent>
-      </Card>
+      {esEditor ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Carta</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              {paqueteCompleto
+                ? 'Precio, descripcion, disponibilidad, foto, y crear/eliminar/reordenar items. Vive aca y no es una tab.'
+                : 'Prender/apagar items y cambiar precios. Vive aca y no es una tab.'}
+            </p>
+            <Link href={rutaDe(tenant, '/carta')} className={buttonVariants({ variant: 'outline', className: 'min-h-12 w-full' })}>
+              Abrir la carta
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Solo si el plan del local incluye push (si no, el backend responde 403 al suscribir). */}
       {negocio?.features?.['push']?.habilitada ? <CardNotificaciones /> : null}

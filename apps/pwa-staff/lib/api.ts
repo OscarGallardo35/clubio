@@ -1,8 +1,10 @@
 import { ApiClient, endpoints } from '@repo/api-client';
+import type { FirmaSubidaMedia } from '@repo/ui';
 import type {
   ActualizarItemCartaBody,
   CartaAdminRespuesta,
   ConfiguracionEfectivaStaff,
+  CrearItemCartaBody,
   EmpleadoMe,
   ItemCarta,
   EstadoPedido,
@@ -162,4 +164,26 @@ export const cartaApi = {
 
   actualizar: (id: string, body: ActualizarItemCartaBody) =>
     api.patch<ItemCarta>(endpoints.carta.update(id), body),
+
+  /** Crea un item. El backend lo agrega al final de su categoria (`orden` default 0). */
+  crear: (body: CrearItemCartaBody) => api.post<ItemCarta>(endpoints.carta.create, body),
+
+  /** Baja logica: el item queda no disponible (los pedidos historicos lo referencian). */
+  eliminar: (id: string) => api.delete<{ id: string; nombre: string; disponible: boolean }>(endpoints.carta.delete(id)),
+
+  /** Batch: renumera el orden de un grupo entero en una sola transaccion del backend. */
+  reordenar: (items: { id: string; orden: number }[]) =>
+    api.post<{ ok: boolean; actualizados: number }>(endpoints.carta.reordenar, { items }),
+};
+
+/**
+ * Firma de subidas a Cloudinary.
+ *
+ * El endpoint tiene el permiso `subir_carta`: lo pasan el DUENO y el empleado con
+ * `puedeEditarCarta`; un ENCARGADO sin el permiso recibe 403 (la pantalla no le muestra el
+ * control y el backend es la verdad).
+ */
+export const mediaApi = {
+  firmarSubida: (body: { tipo?: 'carta' } = {}) =>
+    api.post<FirmaSubidaMedia>(endpoints.media.firmarSubida, body),
 };

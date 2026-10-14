@@ -5,26 +5,42 @@ import { useTenant } from '@/hooks/useTenant';
 import { rutaDe } from '@/lib/tenant';
 import Link from 'next/link';
 import {
-  Badge, BottomSheet, Button, Input, Label, Skeleton, Switch, Tabs, TabsList, TabsTrigger,
-  Textarea, buttonVariants, toast,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Badge, BottomSheet, Button, Input, Label,
+  Skeleton, Switch, Tabs, TabsList, TabsTrigger, Textarea, buttonVariants, toast,
 } from '@repo/ui';
 import { useEmpleado } from '@/hooks/useEmpleado';
 import { cartaApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
+import { SubirImagen } from '@/components/media/SubirImagen';
 import type { GrupoCarta, ItemCarta } from '@/types/api';
 
-/** Solo estos roles pueden tocar la carta (el backend usa RolesGuard). */
+/** Roles que ya administraban la carta (el baseline del backend: DUENO + ENCARGADO). */
 const ROLES_EDITORES = ['DUENO', 'ENCARGADO'];
 
 /**
- * Carta del staff: lista + disponibilidad + edicion de precio/descripcion.
+ * Carta del staff: lista + disponibilidad + edicion, y el PAQUETE COMPLETO para quien lo tenga.
  *
- * Tres cosas que la pantalla NO puede asumir y por eso chequea antes de dibujar:
- * 1. Los endpoints son de rol DUENO/ENCARGADO: un MESERO recibe 403.
- * 2. La feature que los habilita se llama **'menu'** (no 'carta'), y ademas el
- *    negocio tiene el flag `configuracion.menuActivo`.
- * 3. `PATCH /:id/disponibilidad` toca el item del NEGOCIO: apagarlo lo saca de
- *    TODAS las sucursales, no solo de la activa. La pantalla lo dice.
+ * Dos niveles, y el backend es la verdad de los dos:
+ *
+ * 1. **DUENO/ENCARGADO** (`ROLES_EDITORES`): precio, descripcion y disponibilidad. Es lo que hacia
+ *    esta pantalla y el backend lo mantiene igual (`@PermiteSi('editar_carta')` con baseline
+ *    DUENO+ENCARGADO). No ve foto, alta, baja ni reordenar: `POST /media/firmar-subida` le
+ *    responderia 403.
+ * 2. **Paquete completo** (`puedeEditarCarta`, lo prende el dueno en Personal): exactamente lo que
+ *    hace el dueno sobre la carta -> precio, descripcion, disponibilidad, **foto**, **crear**,
+ *    **eliminar** y **reordenar**.
+ *
+ * Ojo con el responsive: los formularios largos van en `BottomSheet` (no `Dialog`) y NO se le
+ * agrega `w-max` a los `TabsList` (desborda el documento a 375px).
+ *
+ * Dos cosas mas que la pantalla NO puede asumir: la feature que habilita la carta se llama
+ * **'menu'** (no 'carta') y ademas el negocio tiene el flag `configuracion.menuActivo`; y
+ * `PATCH /:id/disponibilidad` toca el item del NEGOCIO, asi que apagarlo lo saca de TODAS las
+ * sucursales.
+ *
+ * Quien no es editor ve el aviso; el backend responde 403 igual (la UI es comodidad, el guard es
+ * la verdad).
  */
 export default function CartaPage() {
   const { empleado, negocio } = useEmpleado();
@@ -33,6 +49,9 @@ export default function CartaPage() {
   const [categoria, setCategoria] = React.useState('todas');
   const [busqueda, setBusqueda] = React.useState('');
   const [editando, setEditando] = React.useState<ItemCarta | null>(null);
+  const [creando, setCreando] = React.useState(false);
+  const [aEliminar, setAEliminar] = React.useState<ItemCarta | null>(null);
+  const [borrando, setBorrando] = React.useState(false);
 
   const refetch = React.useCallback(async () => {
     try {
@@ -56,6 +75,13 @@ export default function CartaPage() {
   const features = (negocio?.features ?? {}) as Record<string, { habilitada?: boolean } | undefined>;
   const configuracion = (negocio?.configuracion ?? {}) as { menuActivo?: boolean };
 
+  /** Baseline del backend: el rol que ya editaba antes. */
+  const esEditor =
+    empleado !== null && (ROLES_EDITORES.includes(empleado.rol) || empleado.puedeEditarCarta === true);
+  /** El paquete completo: el dueno, o el empleado al que el dueno le prendio el permiso. */
+  const paqueteCompleto =
+    empleado !== null && (empleado.rol === 'DUENO' || empleado.puedeEditarCarta === true);
+
   /**
    * Reemplaza un item dentro de su grupo (el estado vive agrupado).
    *
@@ -74,11 +100,11 @@ export default function CartaPage() {
   if (negocio && features.menu?.habilitada !== true) {
     return <Aviso titulo="Tu plan no incluye carta digital" detalle="Pedile al dueno que active el modulo de menu." />;
   }
-  if (empleado && !ROLES_EDITORES.includes(empleado.rol)) {
+  if (empleado && !esEditor) {
     return (
       <Aviso
-        titulo="Solo el dueno o el encargado editan la carta"
-        detalle={`Tu rol (${empleado.rol}) puede tomar pedidos y aprobar visitas, pero no cambiar precios ni disponibilidad.`}
+        titulo="No podes editar la carta"
+        detalle={`Tu rol (${empleado.rol}) puede tomar pedidos y aprobar visitas, pero no cambiar la carta. Si necesitas precios, fotos o items nuevos, pedile al dueno que te habilite "Puede configurar la carta completa" en Personal.`}
       />
     );
   }
@@ -102,6 +128,50 @@ export default function CartaPage() {
       const { mensaje } = normalizarError(e);
       parchearItem(item.id, { disponible: item.disponible });
       toast.error(`No se pudo cambiar ${item.nombre}. ${mensaje}`);
+    }
+  }
+
+  /**
+   * Mueve un item dentro de SU categoria y renumera el grupo entero (0..n-1) en un solo batch: el
+   * `orden` de origen puede empatar, asi el resultado es determinista. Mismo criterio que el admin
+   * del dueno.
+   */
+  async function mover(item: ItemCarta, delta: -1 | 1) {
+    const hermanos = lista
+      .filter((i) => i.categoria === item.categoria)
+      .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre));
+    const desde = hermanos.findIndex((h) => h.id === item.id);
+    const hasta = desde + delta;
+    if (desde < 0 || hasta < 0 || hasta >= hermanos.length) return;
+
+    const reordenados = [...hermanos];
+    const movido = reordenados[desde];
+    if (!movido) return;
+    reordenados.splice(desde, 1);
+    reordenados.splice(hasta, 0, movido);
+
+    try {
+      await cartaApi.reordenar(reordenados.map((h, indice) => ({ id: h.id, orden: indice })));
+      await refetch();
+    } catch (e) {
+      const { mensaje } = normalizarError(e);
+      toast.error(`No se pudo reordenar. ${mensaje}`);
+    }
+  }
+
+  async function confirmarEliminar() {
+    if (!aEliminar) return;
+    setBorrando(true);
+    try {
+      await cartaApi.eliminar(aEliminar.id);
+      toast.success(`Se elimino ${aEliminar.nombre}`);
+      setAEliminar(null);
+      await refetch();
+    } catch (e) {
+      const { mensaje } = normalizarError(e);
+      toast.error(`No se pudo eliminar ${aEliminar.nombre}. ${mensaje}`);
+    } finally {
+      setBorrando(false);
     }
   }
 
@@ -129,11 +199,18 @@ export default function CartaPage() {
 
   return (
     <main className="space-y-3 p-4">
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold">Carta</h1>
-        <p className="text-sm text-muted-foreground">
-          {disponibles} de {lista.length} items disponibles
-        </p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-xl font-semibold">Carta</h1>
+          <p className="text-sm text-muted-foreground">
+            {disponibles} de {lista.length} items disponibles
+          </p>
+        </div>
+        {paqueteCompleto ? (
+          <Button className="min-h-12 shrink-0" onClick={() => setCreando(true)}>
+            + Nuevo item
+          </Button>
+        ) : null}
       </header>
 
       {configuracion.menuActivo === false ? (
@@ -163,7 +240,11 @@ export default function CartaPage() {
       ) : null}
 
       {visibles.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">No hay items que coincidan.</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          {lista.length === 0 && paqueteCompleto
+            ? 'La carta esta vacia. Crea el primer item con "+ Nuevo item".'
+            : 'No hay items que coincidan.'}
+        </p>
       ) : (
         visibles.map((grupo) => (
           <section key={grupo.categoria} className="space-y-2">
@@ -204,42 +285,147 @@ export default function CartaPage() {
         disponibilidad es del negocio, no de una sucursal.
       </p>
 
-      <BottomSheet abierto={editando !== null} onCerrar={() => setEditando(null)} titulo="Editar item">
+      {/* Alta: solo con el paquete completo (el backend responde 403 a quien no lo tenga). */}
+      <BottomSheet abierto={creando} onCerrar={() => setCreando(false)} titulo="Nuevo item" altura="completa">
+        {creando ? (
+          <FormularioItem
+            item={null}
+            categorias={categorias}
+            paqueteCompleto
+            onGuardado={async () => {
+              setCreando(false);
+              await refetch();
+            }}
+            onCancelar={() => setCreando(false)}
+          />
+        ) : null}
+      </BottomSheet>
+
+      <BottomSheet
+        abierto={editando !== null}
+        onCerrar={() => setEditando(null)}
+        titulo="Editar item"
+        altura="completa"
+      >
         {editando ? (
           <FormularioItem
             key={editando.id}
             item={editando}
+            categorias={categorias}
+            paqueteCompleto={paqueteCompleto}
             onGuardado={async () => {
               setEditando(null);
               await refetch();
             }}
+            onCancelar={() => setEditando(null)}
+            onMover={async (delta) => {
+              const actual = editando;
+              setEditando(null);
+              await mover(actual, delta);
+            }}
+            onEliminar={(item) => {
+              setEditando(null);
+              setAEliminar(item);
+            }}
           />
         ) : null}
       </BottomSheet>
+
+      <AlertDialog
+        open={aEliminar !== null}
+        onOpenChange={(abierto) => {
+          if (!abierto) setAEliminar(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar {aEliminar?.nombre}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deja de verse en la carta del cliente (el sistema lo marca como agotado: los pedidos ya
+              hechos lo referencian). Podes volver a prenderlo cuando quieras.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void confirmarEliminar()}
+              disabled={borrando}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {borrando ? 'Eliminando...' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }
 
-function FormularioItem({ item, onGuardado }: { item: ItemCarta; onGuardado: () => void | Promise<void> }) {
-  const [precio, setPrecio] = React.useState(String(item.precio));
-  const [descripcion, setDescripcion] = React.useState(item.descripcion ?? '');
-  const [disponible, setDisponible] = React.useState(item.disponible);
+/**
+ * Alta y edicion comparten formulario: `item === null` es alta.
+ *
+ * `paqueteCompleto` decide que se puede tocar: sin el permiso quedan precio/descripcion/
+ * disponibilidad (lo de siempre para un ENCARGADO) y el nombre es de solo lectura.
+ */
+function FormularioItem({
+  item,
+  categorias,
+  paqueteCompleto,
+  onGuardado,
+  onCancelar,
+  onMover,
+  onEliminar,
+}: {
+  item: ItemCarta | null;
+  categorias: string[];
+  paqueteCompleto: boolean;
+  onGuardado: () => void | Promise<void>;
+  onCancelar: () => void;
+  onMover?: ((delta: -1 | 1) => void | Promise<void>) | undefined;
+  onEliminar?: ((item: ItemCarta) => void) | undefined;
+}) {
+  const creando = item === null;
+  const [nombre, setNombre] = React.useState(item?.nombre ?? '');
+  const [categoria, setCategoria] = React.useState(item?.categoria ?? categorias[0] ?? '');
+  const [precio, setPrecio] = React.useState(item ? String(item.precio) : '');
+  const [descripcion, setDescripcion] = React.useState(item?.descripcion ?? '');
+  const [fotoUrl, setFotoUrl] = React.useState(item?.fotoUrl ?? '');
+  const [disponible, setDisponible] = React.useState(item?.disponible ?? true);
   const [guardando, setGuardando] = React.useState(false);
 
   const precioNum = Number(precio.replace(',', '.'));
   const precioValido = precio.trim() !== '' && Number.isFinite(precioNum) && precioNum >= 0;
-  const cambioPrecio = precioValido && Math.abs(precioNum - item.precio) > 0.004;
+  const cambioPrecio = !creando && precioValido && item !== null && Math.abs(precioNum - item.precio) > 0.004;
+  const puedeGuardar =
+    precioValido && (!creando || (nombre.trim().length >= 2 && categoria.trim() !== '')) && !guardando;
 
   async function guardar() {
-    if (!precioValido) return;
+    if (!puedeGuardar) return;
     setGuardando(true);
     try {
-      await cartaApi.actualizar(item.id, {
-        precio: precioNum,
-        descripcion: descripcion.trim(),
-        disponible,
-      });
-      toast.success('Item actualizado');
+      if (creando) {
+        await cartaApi.crear({
+          categoria: categoria.trim(),
+          nombre: nombre.trim(),
+          precio: precioNum,
+          descripcion: descripcion.trim(),
+          fotoUrl: fotoUrl.trim() === '' ? undefined : fotoUrl.trim(),
+          disponible,
+        });
+        toast.success('Item creado');
+      } else if (item) {
+        await cartaApi.actualizar(item.id, {
+          // Con el paquete completo se mandan tambien nombre/categoria/foto; sin el, solo lo de
+          // siempre (precio/descripcion/disponibilidad), que es lo que el backend ya permitia.
+          ...(paqueteCompleto
+            ? { nombre: nombre.trim(), categoria: categoria.trim(), fotoUrl: fotoUrl.trim() }
+            : {}),
+          precio: precioNum,
+          descripcion: descripcion.trim(),
+          disponible,
+        });
+        toast.success('Item actualizado');
+      }
       await onGuardado();
     } catch (e) {
       const { mensaje } = normalizarError(e);
@@ -251,10 +437,48 @@ function FormularioItem({ item, onGuardado }: { item: ItemCarta; onGuardado: () 
 
   return (
     <div className="space-y-4 pb-2">
-      <div className="space-y-1">
-        <Label>Nombre</Label>
-        <p className="text-sm text-muted-foreground">{item.nombre}</p>
-      </div>
+      {paqueteCompleto ? (
+        <div className="space-y-2">
+          <Label htmlFor="nombre">Nombre</Label>
+          <Input
+            id="nombre"
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value.slice(0, 120))}
+            placeholder="Milanesa napolitana"
+          />
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <Label>Nombre</Label>
+          <p className="text-sm text-muted-foreground">{item?.nombre}</p>
+        </div>
+      )}
+
+      {paqueteCompleto ? (
+        <div className="space-y-2">
+          <Label htmlFor="categoria">Categoria</Label>
+          <Input
+            id="categoria"
+            value={categoria}
+            onChange={(e) => setCategoria(e.target.value.slice(0, 60))}
+            placeholder="Platos principales"
+          />
+          {categorias.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {categorias.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategoria(c)}
+                  className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground"
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         <Label htmlFor="precio">Precio</Label>
@@ -282,26 +506,73 @@ function FormularioItem({ item, onGuardado }: { item: ItemCarta; onGuardado: () 
         />
       </div>
 
+      {paqueteCompleto ? <SubirImagen valor={fotoUrl} onCambio={setFotoUrl} etiqueta="Foto (opcional)" /> : null}
+
       <div className="flex items-center justify-between">
         <Label htmlFor="disponible-item">Disponible</Label>
         <Switch id="disponible-item" checked={disponible} onCheckedChange={setDisponible} />
       </div>
 
       {/* Confirmacion del cambio de precio: es lo unico que el cliente ve al instante. */}
-      {cambioPrecio ? (
+      {cambioPrecio && item ? (
         <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          El precio pasa de ${item.precio.toFixed(2)} a ${precioNum.toFixed(2)} y se ve en la carta
-          del cliente apenas guardes.
+          El precio pasa de ${item.precio.toFixed(2)} a ${precioNum.toFixed(2)} y se ve en la carta del
+          cliente apenas guardes.
         </p>
+      ) : null}
+
+      {/* Orden y baja: solo con el paquete completo, y solo editando un item que ya existe. */}
+      {paqueteCompleto && !creando && item ? (
+        <div className="space-y-2 rounded-xl border p-3">
+          <p className="text-xs text-muted-foreground">
+            Orden dentro de <strong>{item.categoria}</strong>
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-12 flex-1"
+              onClick={() => void onMover?.(-1)}
+              disabled={guardando}
+            >
+              Subir
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-12 flex-1"
+              onClick={() => void onMover?.(1)}
+              disabled={guardando}
+            >
+              Bajar
+            </Button>
+          </div>
+          <Button
+            type="button"
+            variant="destructive"
+            className="min-h-12 w-full"
+            onClick={() => onEliminar?.(item)}
+            disabled={guardando}
+          >
+            Eliminar item
+          </Button>
+        </div>
       ) : null}
 
       {/* El boton de guardar queda fijo al pie del sheet: la descripcion tiene textarea y con el
           teclado abierto este boton era el que se iba fuera de la vista (mismo bug que en pedidos
           y en el rechazo de visitas). */}
       <div className="sticky bottom-0 -mx-5 mt-1 border-t border-border bg-background px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-3">
-        <Button className="min-h-12 w-full" onClick={() => void guardar()} disabled={!precioValido || guardando}>
-          {guardando ? 'Guardando...' : cambioPrecio ? 'Guardar nuevo precio' : 'Guardar'}
-        </Button>
+        <div className="flex gap-2">
+          {creando ? (
+            <Button type="button" variant="outline" className="min-h-12 flex-1" onClick={onCancelar} disabled={guardando}>
+              Cancelar
+            </Button>
+          ) : null}
+          <Button className="min-h-12 flex-1" onClick={() => void guardar()} disabled={!puedeGuardar}>
+            {guardando ? 'Guardando...' : creando ? 'Crear item' : cambioPrecio ? 'Guardar nuevo precio' : 'Guardar'}
+          </Button>
+        </div>
       </div>
     </div>
   );

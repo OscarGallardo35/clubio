@@ -3422,3 +3422,42 @@ negocio por DEFECTO, que es el que confirma si el fallo es sistémico y no del t
 Redis, **pausa la cola** y la reanuda solo a los 5 minutos (con el error logueado una vez por pausa, no
 en loop); ademas `drainDelay` paso de 5s a 30s, porque cada vuelta del worker es un comando. El backoff
 de los JOBS ya estaba bien (`attempts: 3` + `backoff: custom` -> 5s/30s/5min) y no se toco.
+
+---
+
+## PWA Cliente — flujo de visitas (QR #2)
+
+### Reanudar un token persistido es condicional a que siga VIVO
+
+Un token de visita guardado en `localStorage` (`visita_<negocioSlug>`) se reanuda al aterrizar en
+`/club`, pero **solo si su `expiraEn` sigue en el futuro**. Si ya paso (o si no hay fecha parseable),
+se descarta (`token`/`expiraEn`/`sucursalId`/`mensajeWhatsApp`/`urlValidacion` se sueltan) y el cliente
+arranca en el paso inicial: registro / "Sumar mi visita".
+
+Regla: **reanudar un token persistido es condicional a que siga vivo: si el `expiraEn` ya paso se
+descarta y el cliente arranca en el paso inicial. El timer local de vencimiento no puede pisar la
+respuesta del backend.**
+
+Por que importa: con un token de un intento anterior ya vencido, reanudarlo como `esperando` hace que el
+**timer local de vencimiento** (`hooks/useVisitaQr.ts`, ~196-202) dispare `EXPIRAR` en el primer tick
+(~150 ms), ANTES de que vuelva el `GET /visitas/estado/:token`. Resultado: "No se sumo esta vez / La
+solicitud expiro" en el PRIMER intento, obligando a apretar "Intentar de nuevo" (que si anda). Medido: a
+~379 ms el registro, a ~535 ms el cartel (156 ms de falla). Solo le pasa a un navegador que ya uso el
+club antes (tiene el token guardado); contexto limpio entra bien.
+
+Las tres capas del fix (cualquiera corta el sintoma; juntas cubren los bordes):
+
+1. `visitaStore.hidratar()` solo reanuda si `tokenDeVisitaVivo(expiraEn)`; el mismo filtro se aplica en
+   `useVisitaQr` antes de `hidratar()`.
+2. Defensa en profundidad: el reducer (`lib/visita-maquina.ts`) acepta `ESTADO_RECIBIDO` para corregir
+   un `noSumada/expirada` que vino de REANUDAR (`reanudado === true && motivo === 'expirada'`); para una
+   expirada normal sigue cerrado. Ademas el hook no dispara `EXPIRAR` mientras el consult del resume
+   esta en vuelo.
+3. Sintoma hermano: un token persistido **usado y vivo** hacia que el resume cayera en `aprobada` y el
+   cliente viera la confirmacion de la visita ANTERIOR sin poder arrancar una nueva en ese dispositivo.
+   Se resuelve **soltando el token persistido al llegar a `aprobada`** (ojo: `partialize` no persiste
+   `paso`, asi que en cada carga el token se re-siembra como `esperando` y el resume lo vuelve a
+   encontrar).
+
+`reanudado` distingue este caso de una solicitud nueva: el evento `SOLICITADA` acepta
+`reanudado?: boolean` (default `false`), y solo la reanudacion lo pone en `true`.

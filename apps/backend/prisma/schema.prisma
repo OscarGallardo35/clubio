@@ -217,6 +217,7 @@ model Negocio {
   notificacionesPush    NotificacionPush[]
   notificacionesPushEmp NotificacionPushEmpleado[]
   campanas              CampanaMarketing[]
+  enviosPush            EnvioPushLog[]
   plantillasPush        PlantillaPush[]
   disparosPush          DisparoPush[]
   tokensValidacion      TokenValidacion[]
@@ -946,6 +947,7 @@ model CampanaMarketing {
   creadaEn          DateTime     @default(now())
 
   negocio Negocio @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  envios  EnvioPushLog[]
 
   @@index([negocioId, enviadaEn])
   @@index([negocioId, esAutomatizacion])
@@ -999,6 +1001,7 @@ model DisparoPush {
   negocio   Negocio         @relation(fields: [negocioId], references: [id], onDelete: Cascade)
   plantilla PlantillaPush   @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
   logs      DisparoPushLog[]
+  envios    EnvioPushLog[]
 
   @@index([negocioId, tipo, activa])
 }
@@ -1007,9 +1010,14 @@ model DisparoPush {
 // `@@unique([disparoId, clave])` hace que un mismo evento (pedido, vista de
 // saldo, dia) no se pueda procesar dos veces para un disparo. Tambien es la
 // fuente de los topes (limitePorCliente por dia/mes) y de la auditoria del regalo.
+//
+// HISTORIAL INMUTABLE: la relacion con el disparo es `onDelete: SetNull` (no
+// Cascade) y el nombre del disparo/plantilla se guarda como SNAPSHOT en la fila.
+// Asi, si el dueno borra un disparo, la historia NO desaparece: las filas siguen
+// y se entienden solas (`disparoNombre`/`plantillaNombre`).
 model DisparoPushLog {
   id                String      @id @default(cuid())
-  disparoId         String
+  disparoId         String?
   negocioId         String
   clienteId         String?
   pedidoId          String?
@@ -1022,14 +1030,62 @@ model DisparoPushLog {
   sellosAcreditados Int         @default(0)
   puntosAcreditados Int         @default(0)
   detalle           Json?
+  /// Snapshot del nombre del disparo (sobrevive al borrado del disparo).
+  disparoNombre     String?
+  /// Snapshot del nombre de la plantilla usada en esa ejecucion.
+  plantillaNombre   String?
   creadoEn          DateTime    @default(now())
 
-  disparo DisparoPush @relation(fields: [disparoId], references: [id], onDelete: Cascade)
+  disparo DisparoPush? @relation(fields: [disparoId], references: [id], onDelete: SetNull)
 
   @@unique([disparoId, clave])
   @@unique([disparoId, clienteId, pedidoId])
   @@index([disparoId, clienteId, creadoEn])
   @@index([negocioId, creadoEn])
+}
+
+// Historial de ENVIOS de push: una fila por (envio x destinatario x endpoint).
+// La escribe el ENCOLADO (una fila ENCOLADO por destinatario, con el `jobId`) y la
+// COMPLETA el procesador, que es el unico que conoce los endpoints y el 404/410.
+// Invariante: cada fila cuelga de una campana (`campanaId`) o de un disparo
+// (`disparoId`); los avisos transaccionales de staff (visita/pedido) no se
+// registran aca a proposito.
+// INMUTABLE: `onDelete: SetNull` en campana/disparo + snapshots de los textos,
+// asi las filas no se borran con la campana y se leen solas.
+model EnvioPushLog {
+  id            String    @id @default(cuid())
+  negocioId     String
+  campanaId     String?
+  disparoId     String?
+  clienteId     String?
+  empleadoId    String?
+  /// `NotificacionPush.id` / `NotificacionPushEmpleado.id` del dispositivo.
+  endpointId    String?
+  /// 'ENCOLADO' | 'ENVIADO' | 'FALLIDO' | 'SIN_SUSCRIPCION' | 'SUPRIMIDO_EXCLUIDO'.
+  estado        String
+  /// Motivo corto y legible: '410', 'sin suscripcion', 'quota'.
+  motivo        String?
+  statusCode    Int?
+  /// `job.id` de BullMQ que manda ese envio (para cruzar con la cola).
+  jobId         String?
+  intentos      Int       @default(0)
+  /// Snapshots para que la fila se entienda sin joins.
+  campanaTitulo String?
+  disparoNombre String?
+  segmento      String?
+  endpoint      String?
+  error         String?
+  creadoEn      DateTime  @default(now())
+  enviadoEn     DateTime?
+
+  negocio Negocio           @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  campana CampanaMarketing? @relation(fields: [campanaId], references: [id], onDelete: SetNull)
+  disparo DisparoPush?      @relation(fields: [disparoId], references: [id], onDelete: SetNull)
+
+  @@index([negocioId, creadoEn])
+  @@index([campanaId, estado])
+  @@index([disparoId, estado])
+  @@index([jobId])
 }
 
 // ============================================================================

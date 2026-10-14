@@ -10,6 +10,8 @@ import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
+import { HorariosService } from '../horarios/horarios.service';
+import { proximaAperturaTexto, type EstadoHorario } from '../horarios/helpers/horario-negocio';
 import { PushService } from '../push/push.service';
 import { DisparosService } from '../push/disparos.service';
 import type { ResultadoAcreditacion } from '../fidelizacion/fidelizacion.service';
@@ -46,6 +48,7 @@ export class PedidosService {
     private readonly auditoria: AuditoriaService,
     private readonly resolver: SucursalResolverService,
     private readonly configuracion: ConfiguracionService,
+    private readonly horarios: HorariosService,
     private readonly push: PushService,
     private readonly disparos: DisparosService,
     private readonly gateway: PedidosGateway,
@@ -163,8 +166,25 @@ export class PedidosService {
       );
     }
 
+    // HORARIO DE ATENCION: gate ortogonal a `tiposPedidoHabilitados` (que habilita QUE se
+    // puede pedir; este decide CUANDO). Fuente unica de verdad: HorariosService.estaAbierto.
+    // Sin horarios configurados devuelve abierto (los tenants sin config no se rompen).
+    // Se BLOQUEA con aviso (400) por decision del producto; la respuesta trae `proximaApertura`.
+    const ahora = new Date();
+    const horarioAtencion = await this.horarios.estaAbierto({ negocioId, sucursalId, tipo: 'atencion', ahora });
+    if (!horarioAtencion.abierto) {
+      throw this.errorCerrado('El local esta cerrado ahora', horarioAtencion, ahora);
+    }
+
     // Reglas por tipo
     if (dto.tipo === 'DELIVERY') {
+      // El DELIVERY se chequea ADEMAS del horario de atencion (esta franja es propia del
+      // delivery): con la atencion abierta pero el delivery cerrado, este pedido se bloquea
+      // y uno MESA pasa.
+      const horarioDelivery = await this.horarios.estaAbierto({ negocioId, sucursalId, tipo: 'delivery', ahora });
+      if (!horarioDelivery.abierto) {
+        throw this.errorCerrado('El delivery esta cerrado ahora', horarioDelivery, ahora);
+      }
       if (config.costoEnvio === null || config.costoEnvio === undefined) {
         throw new BadRequestException('Delivery no configurado: falta el costo de envio');
       }
@@ -337,6 +357,25 @@ export class PedidosService {
       // Cliente y un guest): exponer IDs de empleados seria una fuga. El detalle
       // queda en la auditoria y en los logs del server.
     };
+  }
+
+  /**
+   * 400 de "cerrado" con el aviso y la PRÓXIMA APERTURA (UTC) para que el cliente pueda
+   * decir "cerrado ahora, abre manana 12:00". Mismo payload en `message`/`mensaje`.
+   */
+  private errorCerrado(
+    prefijo: string,
+    estado: EstadoHorario,
+    ahora: Date,
+  ): BadRequestException {
+    const cuando = proximaAperturaTexto(estado.proximaApertura, ahora);
+    const mensaje = cuando ? `${prefijo}. Abre ${cuando}.` : `${prefijo}.`;
+    return new BadRequestException({
+      message: mensaje,
+      mensaje,
+      proximaApertura: estado.proximaApertura,
+      motivo: estado.motivo,
+    });
   }
 
   /**

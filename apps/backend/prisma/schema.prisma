@@ -390,6 +390,13 @@ model Empleado {
 
   accesoMultiSucursal   Boolean     @default(false)
 
+  /// Permiso por empleado: si esta prendido, el empleado puede administrar la carta
+  /// completa (precio, descripcion, disponibilidad, foto, crear, eliminar y reordenar),
+  /// aunque su rol no sea de editor. Arranca APAGADO para todos. Se evalua por CLAVE en
+  /// `common/guards/permiso.guard.ts` (nunca dentro del RolesGuard generico: esa excepcion
+  /// valdria para TODOS los endpoints del producto).
+  puedeEditarCarta      Boolean     @default(false)
+
   activo                Boolean     @default(true)
   ultimoAcceso          DateTime?
   creadoEn              DateTime    @default(now())

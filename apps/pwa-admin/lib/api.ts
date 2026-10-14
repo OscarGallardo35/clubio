@@ -27,6 +27,7 @@ import type {
   FirmaSubida,
   GoogleEstado,
   HistorialDisparosRespuesta,
+  HistorialEnviosRespuesta,
   ItemCartaAdmin,
   ItemOverrideAdmin,
   LoginDuenoRespuesta,
@@ -331,6 +332,30 @@ export const disparosApi = {
   /** Manda el disparo a UN cliente para ver como llega. */
   probar: (id: string, clienteId: string) =>
     api.post<ResultadoProbarDisparo>(endpoints.push.disparoProbar(id), { clienteId }),
+};
+
+/**
+ * Envios de push (`/push/envios/logs`): una fila por (envio x destinatario x endpoint)
+ * con el estado REAL de entrega. Es la fuente que une el tab Historial: cubre las
+ * campañas (segmento/todos desde Plantillas) y los disparos del motor.
+ */
+export const enviosApi = {
+  historial: (
+    filtros: {
+      page?: number;
+      pageSize?: number;
+      campanaId?: string;
+      disparoId?: string;
+      estado?: string;
+      clienteId?: string;
+    } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filtros))
+      if (v !== undefined && v !== '') qs.set(k, String(v));
+    const q = qs.toString();
+    return api.get<HistorialEnviosRespuesta>(`${endpoints.push.envioLogs}${q ? `?${q}` : ''}`);
+  },
 };
 
 /**

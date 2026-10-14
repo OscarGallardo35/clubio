@@ -663,8 +663,9 @@ export interface ResultadoProbarDisparo {
  */
 export interface DisparoPushLogItem {
   id: string
-  disparoId: string
-  /** `disparo eliminado` si el disparo ya no existe (el log se borra en cascada, defensivo). */
+  /** null si el disparo se borro: el historial es inmutable (onDelete SetNull). */
+  disparoId: string | null
+  /** Snapshot del nombre: sobrevive al borrado (y al renombre) del disparo. */
   disparoNombre: string
   plantillaNombre: string | null
   tipo: TipoDisparo
@@ -692,6 +693,63 @@ export interface HistorialDisparosRespuesta {
   total: number
   page: number
   pageSize: number
+}
+
+/**
+ * Una fila del historial de ENVIOS (`GET /push/envios/logs`): un envio a UN
+ * destinatario en UN endpoint. `estado` es el resultado REAL de la entrega
+ * (`ENCOLADO` mientras esta en la cola).
+ */
+export interface EnvioPushLogItem {
+  id: string
+  /** 'ENCOLADO' | 'ENVIADO' | 'FALLIDO' | 'SIN_SUSCRIPCION' | 'SUPRIMIDO_EXCLUIDO'. */
+  estado: string
+  /** Motivo corto de lo que paso: '410', 'sin suscripcion', 'quota'. */
+  motivo: string | null
+  /** HTTP del proveedor de push (410 cuando el navegador revoco la suscripcion). */
+  statusCode: number | null
+  /** Intento de BullMQ en el que quedo esta fila (1 = primer envio). */
+  intentos: number
+  creadoEn: string
+  /** Cuando se entrego de verdad (null si no se entrego). */
+  enviadoEn: string | null
+  campanaId: string | null
+  /** Snapshot del titulo: la fila se entiende aunque la campana ya no exista. */
+  campanaTitulo: string | null
+  disparoId: string | null
+  disparoNombre: string | null
+  segmento: string | null
+  clienteId: string | null
+  clienteNombre: string | null
+  empleadoId: string | null
+  /** Endpoint del dispositivo, RECORTADO (es una URL de capacidad). */
+  endpoint: string | null
+}
+
+/** Resumen por campana dentro de `GET /push/envios/logs` ("a cuantos les llego"). */
+export interface ResumenCampanaEnvios {
+  campanaId: string
+  titulo: string
+  segmento: string
+  enviadaEn: string
+  total: number
+  encolados: number
+  enviados: number
+  fallidos: number
+  sinSuscripcion: number
+  suprimidos: number
+}
+
+/**
+ * `GET /push/envios/logs`: envelope paginado + el resumen de las ultimas campanas
+ * (los conteos salen del log, no de los contadores de la campana).
+ */
+export interface HistorialEnviosRespuesta {
+  data: EnvioPushLogItem[]
+  total: number
+  page: number
+  pageSize: number
+  campanas: ResumenCampanaEnvios[]
 }
 
 /** Cliente del listado `GET /clientes` (proyeccion reducida: alcanza para elegir uno). */

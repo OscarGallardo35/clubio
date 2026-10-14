@@ -372,6 +372,8 @@ export const endpoints = {
     disparo: (id: string) => `/api/push/disparos/${encodeURIComponent(id)}`,
     /** Historial paginado de ejecuciones del motor (enviados + omitidos + regalo). */
     disparoLogs: '/api/push/disparos/logs',
+    /** Historial paginado de ENVIOS (una fila por envio x destinatario x endpoint). */
+    envioLogs: '/api/push/envios/logs',
     /** Prueba UN disparo contra UN cliente (`{ clienteId }`). */
     disparoProbar: (id: string) => `/api/push/disparos/${encodeURIComponent(id)}/probar`,
   },

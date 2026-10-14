@@ -2,6 +2,7 @@ import { InjectQueue, OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullm
 import { Logger } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { COLA_DISPAROS, DIA_TICK_MIN, DisparosService } from './disparos.service';
+import { CHEQUEO_DEMORADOS_S, INTERVALO_STALLED_S } from './worker-redis-guard';
 
 /** Zona horaria de los negocios: los `hora` de los disparos DIA se leen en AR. */
 const TZ_AR = 'America/Argentina/Buenos_Aires';
@@ -16,9 +17,12 @@ const TZ_AR = 'America/Argentina/Buenos_Aires';
  */
 @Processor(COLA_DISPAROS, {
   concurrency: 1,
-  // Igual criterio que la cola de push: no reaccionar al segundo (cada vuelta es
-  // un comando contra Redis).
-  drainDelay: 30,
+  // Igual criterio que la cola de push (ver worker-redis-guard.ts): no reaccionar
+  // al segundo, porque cada vuelta del worker es un comando contra Redis. NO
+  // retrasa los jobs: BullMQ los señaliza por el `marker`.
+  drainDelay: CHEQUEO_DEMORADOS_S,
+  // 300s (default 30s): un job trabado tarda hasta 5 min mas en recuperarse.
+  stalledInterval: INTERVALO_STALLED_S,
 })
 export class DisparosProcessor extends WorkerHost {
   private readonly logger = new Logger('DisparosProcessor');

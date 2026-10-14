@@ -3,22 +3,18 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PushService, COLA_PUSH } from './push.service';
 import type { PushJob } from './push.service';
+import {
+  CHEQUEO_DEMORADOS_S,
+  INTERVALO_STALLED_S,
+  pausarColaPorRedis,
+} from './worker-redis-guard';
+import type { EstadoCandado } from './worker-redis-guard';
 
 /** 5s, 30s, 5min. BullMQ pasa attemptsMade=1 en el primer fallo. */
 function backoffEscalonado(attemptsMade: number) {
   const escalones = [5_000, 30_000, 300_000];
   return escalones[Math.min(Math.max(attemptsMade, 1), escalones.length) - 1];
 }
-
-/**
- * Cuanto se pausa la cola cuando Redis falla, y cada cuanto chequea BullMQ los jobs demorados.
- *
- * Esto no es performance: es cuota. Cada chequeo del worker es un comando que cuenta en Upstash, y
- * con el proveedor rechazando (cuota agotada) el worker reintenta en loop: asi se quemo la cuota una
- * vez. Ver TROUBLESHOOTING.
- */
-const PAUSA_POR_REDIS_MS = 5 * 60_000;
-const CHEQUEO_DEMORADOS_S = 30;
 
 /**
  * Procesador de la cola "push-send".
@@ -29,46 +25,28 @@ const CHEQUEO_DEMORADOS_S = 30;
  */
 @Processor(COLA_PUSH, {
   concurrency: 5,
-  // 30s en vez de los 5s por defecto: la cola solo mira sus jobs demorados, no necesita reaccionar
-  // al segundo, y cada vuelta del worker es un comando contra Redis.
+  // 300s en vez de los 5s por defecto: la cola solo mira sus jobs demorados, no necesita reaccionar
+  // al segundo, y cada vuelta del worker es un comando contra Redis. NO retrasa los jobs (BullMQ los
+  // señaliza por el `marker`); ver worker-redis-guard.ts.
   drainDelay: CHEQUEO_DEMORADOS_S,
+  // 300s (default de BullMQ: 30s): un job realmente trabado tarda hasta 5 min mas en recuperarse;
+  // aceptable para envios push, y cada chequeo de stalled es un comando mas contra Redis.
+  stalledInterval: INTERVALO_STALLED_S,
   settings: { backoffStrategy: (attemptsMade: number) => backoffEscalonado(attemptsMade) },
 })
 export class PushProcessor extends WorkerHost {
   private readonly logger = new Logger('PushProcessor');
-  /** Timer del resume diferido: mientras exista, la cola ya esta pausada. */
-  private reanudarEn?: NodeJS.Timeout;
+  /** Estado del candado de cuota (ver worker-redis-guard.ts). */
+  private readonly candado: EstadoCandado = {};
 
   constructor(private readonly push: PushService) {
     super();
   }
 
-  /**
-   * Si Redis falla (cuota agotada, corte del proveedor) el worker de BullMQ reintenta en loop y CADA
-   * intento es un comando: es la forma mas rapida de quemar la cuota. En vez de eso se pausa la cola y
-   * se reanuda sola unos minutos despues, con el error logueado UNA vez por pausa (no en loop).
-   */
+  /** Si Redis falla, se pausa la cola y se reanuda sola (candado de cuota). */
   @OnWorkerEvent('error')
   async alFallarRedis(err: Error) {
-    if (this.reanudarEn) return; // ya esta pausada: no reprogramar en cada reintento
-    this.logger.error(
-      `Redis fallo; la cola ${COLA_PUSH} se pausa ${PAUSA_POR_REDIS_MS / 60_000} min: ${err.message}`,
-    );
-    try {
-      await this.worker.pause();
-    } catch {
-      // Si no se pudo pausar, igual se reprograma: peor es dejarla reintentando sin freno.
-    }
-    this.reanudarEn = setTimeout(() => {
-      this.reanudarEn = undefined;
-      try {
-        void this.worker.resume();
-        this.logger.log(`Cola ${COLA_PUSH} reanudada`);
-      } catch (e) {
-        this.logger.error(`No se pudo reanudar ${COLA_PUSH}: ${(e as Error).message}`);
-      }
-    }, PAUSA_POR_REDIS_MS);
-    this.reanudarEn.unref?.();
+    await pausarColaPorRedis(this.worker, this.logger, COLA_PUSH, this.candado, err);
   }
 
   async process(job: Job<PushJob>) {

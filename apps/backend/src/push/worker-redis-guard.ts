@@ -28,13 +28,19 @@ export const PAUSA_POR_REDIS_MS = 5 * 60_000;
 export const CHEQUEO_DEMORADOS_S = 300;
 
 /**
- * Cada cuanto BullMQ revisa jobs TRABADOS (stalled) y los reencola
- * (`stalledInterval`, opcion top-level del Worker; el default de BullMQ es 30s).
- * Subirlo de 30s a 300s: un job realmente colgado tarda hasta 5 min mas en
- * recuperarse. Hoy son envios push —aceptable— y cada chequeo extra es un
- * comando de mas contra Redis.
+ * Cada cuanto BullMQ revisa jobs TRABADOS (stalled) y los reencola.
+ *
+ * OJO: `stalledInterval` esta en MILISEGUNDOS (el default de BullMQ es 30000
+ * = 30s; ver worker.js: "then every opts.stalledInterval milliseconds" y
+ * `setTimeout(resolve, this.opts.stalledInterval)`). Se sube a 300_000 ms (5 min):
+ * un job realmente colgado tarda hasta 5 min mas en recuperarse, aceptable para
+ * envios push, y cada chequeo de stalled es un comando (Lua) contra Redis.
+ *
+ * Footgun medido: pasar 300 (creyendo que era 300s) deja el chequeo en 300 ms y
+ * MULTIPLICA el trafico (~20x) en vez de bajarlo: el worker corre el script de
+ * stalled 3.3 veces por segundo.
  */
-export const INTERVALO_STALLED_S = 300;
+export const INTERVALO_STALLED_MS = 5 * 60_000;
 
 /** Estado del candado por cola: mientras exista el timer, la cola ya esta pausada. */
 export interface EstadoCandado {

@@ -5,7 +5,7 @@ import { PushService, COLA_PUSH } from './push.service';
 import type { PushJob } from './push.service';
 import {
   CHEQUEO_DEMORADOS_S,
-  INTERVALO_STALLED_S,
+  INTERVALO_STALLED_MS,
   pausarColaPorRedis,
 } from './worker-redis-guard';
 import type { EstadoCandado } from './worker-redis-guard';
@@ -29,9 +29,10 @@ function backoffEscalonado(attemptsMade: number) {
   // al segundo, y cada vuelta del worker es un comando contra Redis. NO retrasa los jobs (BullMQ los
   // señaliza por el `marker`); ver worker-redis-guard.ts.
   drainDelay: CHEQUEO_DEMORADOS_S,
-  // 300s (default de BullMQ: 30s): un job realmente trabado tarda hasta 5 min mas en recuperarse;
-  // aceptable para envios push, y cada chequeo de stalled es un comando mas contra Redis.
-  stalledInterval: INTERVALO_STALLED_S,
+  // 300_000 ms = 5 min (default de BullMQ: 30000 ms = 30s): un job trabado tarda
+  // hasta 5 min mas en recuperarse; aceptable para envios push, y cada chequeo de
+  // stalled es un comando contra Redis. OJO: va en MILISEGUNDOS.
+  stalledInterval: INTERVALO_STALLED_MS,
   settings: { backoffStrategy: (attemptsMade: number) => backoffEscalonado(attemptsMade) },
 })
 export class PushProcessor extends WorkerHost {

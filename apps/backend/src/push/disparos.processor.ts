@@ -4,7 +4,7 @@ import { Job, Queue } from 'bullmq';
 import { COLA_DISPAROS, DIA_TICK_MIN, DisparosService } from './disparos.service';
 import {
   CHEQUEO_DEMORADOS_S,
-  INTERVALO_STALLED_S,
+  INTERVALO_STALLED_MS,
   pausarColaPorRedis,
 } from './worker-redis-guard';
 import type { EstadoCandado } from './worker-redis-guard';
@@ -26,8 +26,9 @@ const TZ_AR = 'America/Argentina/Buenos_Aires';
   // al segundo, porque cada vuelta del worker es un comando contra Redis. NO
   // retrasa los jobs: BullMQ los señaliza por el `marker`.
   drainDelay: CHEQUEO_DEMORADOS_S,
-  // 300s (default 30s): un job trabado tarda hasta 5 min mas en recuperarse.
-  stalledInterval: INTERVALO_STALLED_S,
+  // 300_000 ms = 5 min (default 30000 ms): un job trabado tarda hasta 5 min mas en
+  // recuperarse. OJO: va en MILISEGUNDOS.
+  stalledInterval: INTERVALO_STALLED_MS,
 })
 export class DisparosProcessor extends WorkerHost {
   private readonly logger = new Logger('DisparosProcessor');

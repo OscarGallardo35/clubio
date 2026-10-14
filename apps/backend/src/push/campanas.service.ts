@@ -490,6 +490,10 @@ export class CampanasPushService {
     // Link del cliente: absoluto y con el slug. Se resuelve UNA vez y se renderiza por cliente.
     const urlBase = await this.push.urlDePush(c.negocioId, c.url, 'cliente');
 
+    // Los SEEDS del historial se escriben ANTES de encolar, con el `jobId` DETERMINISTA
+    // (`cp-<campanaId>-<clienteId>`): si se encolara primero, el worker podria procesar
+    // el job antes de que exista su fila y el historial perderia ese destinatario.
+    const payloads: Array<{ clienteId: string; jobId: string; data: PushJob }> = [];
     const seeds: Prisma.EnvioPushLogCreateManyInput[] = [];
     for (const d of nuevos) {
       const vars = {
@@ -501,9 +505,11 @@ export class CampanasPushService {
         faltantes: Math.max(0, ctx.meta - d.sellosActuales),
         numero: '',
       };
-      const job = await this.colaPush.add(
-        'enviar',
-        {
+      const jobId = `cp-${c.campanaId}-${d.id}`;
+      payloads.push({
+        clienteId: d.id,
+        jobId,
+        data: {
           negocioId: c.negocioId,
           destino: 'cliente',
           id: d.id,
@@ -512,15 +518,7 @@ export class CampanasPushService {
           ...(urlBase ? { url: this.push.renderizar(urlBase, vars) } : {}),
           campanaId: c.campanaId,
         },
-        {
-          // jobId determinista: un reintento/reanudacion no duplica el job en BullMQ.
-          jobId: `cp-${c.campanaId}-${d.id}`,
-          attempts: 3,
-          backoff: { type: 'custom' },
-          removeOnComplete: 500,
-          removeOnFail: 1000,
-        },
-      );
+      });
       seeds.push({
         negocioId: c.negocioId,
         estado: 'ENCOLADO',
@@ -528,12 +526,31 @@ export class CampanasPushService {
         campanaTitulo: c.titulo,
         clienteId: d.id,
         segmento: c.segmento,
-        jobId: job.id === undefined || job.id === null ? null : String(job.id),
+        jobId,
       });
     }
-
-    // Historial: una fila ENCOLADO por destinatario (el procesador la completa).
     await this.prisma.envioPushLog.createMany({ data: seeds });
+
+    let encolados = 0;
+    for (const p of payloads) {
+      try {
+        await this.colaPush.add('enviar', p.data, {
+          jobId: p.jobId,
+          attempts: 3,
+          backoff: { type: 'custom' },
+          removeOnComplete: 500,
+          removeOnFail: 1000,
+        });
+        encolados++;
+      } catch (e) {
+        // Se cae el seed para que un reintento reenvie a este destinatario (no queda
+        // una fila ENCOLADO huerfana que el dispatch reanudable daria por enviada).
+        await this.prisma.envioPushLog
+          .deleteMany({ where: { campanaId: c.campanaId, clienteId: p.clienteId, estado: 'ENCOLADO' } })
+          .catch(() => undefined);
+        throw e;
+      }
+    }
 
     // El historial explica POR QUE alguien no recibio: fila SUPRIMIDO_EXCLUIDO con motivo.
     const suprimidos = publico.excluidosDetalle.filter((x) => !ya.has(x.id));
@@ -559,13 +576,13 @@ export class CampanasPushService {
       detalle: {
         campanaPushId: c.id,
         campanaId: c.campanaId,
-        encolados: seeds.length,
+        encolados,
         suprimidos: suprimidos.length,
         suscritos: publico.desglose.suscritos,
       },
     });
 
-    return { encolados: seeds.length, suprimidos: suprimidos.length };
+    return { encolados, suprimidos: suprimidos.length };
   }
 
   /** Marca la campaña como ENVIADA y sella `enviadaEn` (una sola vez). */

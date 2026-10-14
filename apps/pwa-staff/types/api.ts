@@ -361,3 +361,38 @@ export interface CartaAdminRespuesta {
   total: number
   categorias: GrupoCarta[]
 }
+
+/** Estado del ciclo de vida de un premio aceptado desde la notificacion. */
+export type EstadoPremio = 'PENDIENTE' | 'ACEPTADO' | 'CANJEADO' | 'VENCIDO'
+export type TipoPremio = 'SELLOS' | 'PUNTOS' | 'LIBRE'
+
+/**
+ * Premio que el STAFF ve en el link de verificacion (`/validar-premio?ref=TOKEN`).
+ * Solo el nombre de PILA del cliente (privacidad). `canjeable` = el cliente ya lo acepto.
+ */
+export interface PremioVerificacionRespuesta {
+  token: string
+  estado: EstadoPremio
+  tipo: TipoPremio
+  cantidad: number
+  texto: string
+  expiraEn: string | null
+  expiraLegible: string | null
+  aceptadoEn: string | null
+  canjeadoEn: string | null
+  disparoNombre: string | null
+  campanaNombre: string | null
+  cliente: { nombre: string }
+  negocio: {
+    nombre: string
+    slug: string | null
+    logoUrl: string | null
+    colorPrimario: string | null
+    colorSecundario: string | null
+    theme: unknown
+  }
+  premioTexto: string | null
+  modoFidelizacion: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
+  canjeable: boolean
+  verificadoEn: string
+}

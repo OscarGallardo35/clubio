@@ -1,6 +1,6 @@
 import type { SugerenciaUpsell } from './carrito-maquina'
 import { ApiClient, endpoints } from '@repo/api-client'
-import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta, CrearPedidoBody, PedidoCreadoRespuesta, PedidoPublico, VerificacionRespuesta } from '@/types/api'
+import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta, CrearPedidoBody, PedidoCreadoRespuesta, PedidoPublico, VerificacionRespuesta, PremioPublico, PremioAceptarRespuesta } from '@/types/api'
 
 /**
  * Cliente HTTP unico de la PWA.
@@ -109,5 +109,16 @@ export const modificadoresApi = {
  */
 export const verificacionApi = {
   obtener: (token: string) => api.get<VerificacionRespuesta>(endpoints.verificacion.verificar(token)),
+}
+
+/**
+ * PREMIOS que el cliente ACEPTA desde la notificacion. Publico (el token es la llave):
+ * la ruta vive en la app y no en el mapa de `@repo/api-client` para no tocar el package.
+ * El prefijo `/api` va explicito (misma regla que el resto de los endpoints).
+ */
+export const premiosApi = {
+  obtener: (token: string) => api.get<PremioPublico>(`/api/premios/${encodeURIComponent(token)}`),
+  aceptar: (token: string) =>
+    api.post<PremioAceptarRespuesta>(`/api/premios/${encodeURIComponent(token)}/aceptar`),
 }
 

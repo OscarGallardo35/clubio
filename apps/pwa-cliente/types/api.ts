@@ -301,6 +301,57 @@ export interface VerificacionRespuesta {
   verificadoEn: string
 }
 
+/** Estado del ciclo de vida de un premio aceptado desde la notificacion. */
+export type EstadoPremio = 'PENDIENTE' | 'ACEPTADO' | 'CANJEADO' | 'VENCIDO'
+export type TipoPremio = 'SELLOS' | 'PUNTOS' | 'LIBRE'
+
+/**
+ * Premio que el cliente ACEPTA desde la notificacion (GET /api/premios/:token). Publico:
+ * el token de la URL es la unica llave. Solo el nombre de PILA del cliente (privacidad).
+ */
+export interface PremioPublico {
+  token: string
+  estado: EstadoPremio
+  tipo: TipoPremio
+  cantidad: number
+  texto: string
+  expiraEn: string | null
+  expiraLegible: string | null
+  aceptadoEn: string | null
+  canjeadoEn: string | null
+  disparoNombre: string | null
+  campanaNombre: string | null
+  cliente: { nombre: string }
+  negocio: {
+    nombre: string
+    slug: string | null
+    logoUrl: string | null
+    colorPrimario: string | null
+    colorSecundario: string | null
+    theme: TenantTheme | null
+  }
+  premioTexto: string | null
+  modoFidelizacion: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
+}
+
+/** Mecanismo de canje (link de verificacion + WhatsApp al numero de atencion del local). */
+export interface PremioVerificacion {
+  url: string
+  whatsapp: string | null
+  numero: string | null
+  mensaje: string
+  texto: string
+}
+
+/** Respuesta de POST /api/premios/:token/aceptar. */
+export interface PremioAceptarRespuesta extends PremioPublico {
+  ok: boolean
+  motivo: 'vencido' | 'ya-aceptado' | null
+  yaAceptado: boolean
+  acreditado: { sellos: number; puntos: number }
+  verificacion: PremioVerificacion | null
+}
+
 export interface VisitaHistorial {
   id: string
   tipo: string

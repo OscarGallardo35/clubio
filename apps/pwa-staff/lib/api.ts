@@ -11,6 +11,7 @@ import type {
   EstadoPedido,
   Paginado,
   PedidoStaff,
+  PremioVerificacionRespuesta,
   LoginEmpleadoRespuesta,
   RespuestaAprobacion,
   RespuestaCanje,
@@ -195,4 +196,21 @@ export const cartaApi = {
 export const mediaApi = {
   firmarSubida: (body: { tipo?: 'carta' } = {}) =>
     api.post<FirmaSubidaMedia>(endpoints.media.firmarSubida, body),
+};
+
+/**
+ * PREMIOS que el cliente ACEPTA desde la notificacion: el STAFF abre el link
+ * (`/validar-premio?ref=TOKEN`), ve el premio y lo marca CANJEADO. La ruta vive aca y no
+ * en `@repo/api-client` para no tocar el package.
+ */
+export const premiosApi = {
+  /** Datos del premio (publico: el token es la llave). 404 si el token no existe. */
+  verificacion: (token: string) =>
+    api.get<PremioVerificacionRespuesta>(`/api/premios/${encodeURIComponent(token)}/verificacion`),
+  /** Marca CANJEADO (requiere sesion de staff). 409 si el cliente aun no lo acepto. */
+  canjear: (token: string) =>
+    api.post<PremioVerificacionRespuesta & { ok: boolean; yaCanjeado: boolean }>(
+      `/api/premios/${encodeURIComponent(token)}/canjear`,
+      {},
+    ),
 };

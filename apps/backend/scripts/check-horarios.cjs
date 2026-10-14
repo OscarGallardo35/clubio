@@ -210,6 +210,16 @@ let negocioId = null;
     chk('[5] atencion abierta: un MESA PASA aunque el delivery este cerrado (201)', r.status === 201, `status ${r.status} ${trunc(r.data)}`);
     if (r.status === 201) await prisma.pedido.delete({ where: { id: r.data.pedidoId } }).catch(() => undefined);
 
+    // ---------------- [7] LECTURA PUBLICA: la carta del cliente trae la grilla + las excepciones ----------------
+    const excPub = await req('POST', '/api/horarios/excepciones', {
+      body: { desdeFecha: hoyAr, hastaFecha: hoyAr, motivo: 'Harness publico' }, token, slug: SLUG,
+    });
+    const pub = await req('GET', `/api/negocios/publico/${SLUG}`);
+    chk('[7] GET /negocios/publico trae horariosAtencion (la grilla)', !!pub.data?.configuracion?.horariosAtencion, trunc(pub.data?.configuracion?.horariosAtencion, 60));
+    chk('[7] GET /negocios/publico trae horariosDelivery', !!pub.data?.configuracion?.horariosDelivery, trunc(pub.data?.configuracion?.horariosDelivery, 60));
+    chk('[7] GET /negocios/publico trae las excepciones (feriados)', Array.isArray(pub.data?.excepciones) && pub.data.excepciones.length === 1, trunc(pub.data?.excepciones));
+    if (excPub.status === 201) await req('DELETE', `/api/horarios/excepciones/${excPub.data.id}`, { token, slug: SLUG });
+
     // ---------------- [6] REGRESION de los DOS tenants reales (solo lectura) ----------------
     for (const slug of ['que-lomitos', 'bar-la-esquina']) {
       const neg = await prisma.negocio.findFirst({ where: { slug }, select: { id: true, slug: true } });

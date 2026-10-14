@@ -90,6 +90,21 @@ function arWallAUtcMs(wall) {
   if (!m) return NaN;
   return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) + AR_OFFSET_MS;
 }
+/** Minutos desde las 00:00 en AR. */
+function arMinutosAhora() {
+  const d = new Date(Date.now() - AR_OFFSET_MS);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+/** Minutos -> 'HH:mm' (con wrap de 24h). */
+function fmtMin(m) {
+  const x = ((m % 1440) + 1440) % 1440;
+  return `${p2(Math.floor(x / 60))}:${p2(x % 60)}`;
+}
+/** Date UTC -> 'HH:mm' en AR. */
+function hhmmAr(d) {
+  const x = new Date(d.getTime() - AR_OFFSET_MS);
+  return `${p2(x.getUTCHours())}:${p2(x.getUTCMinutes())}`;
+}
 
 const RUN = `${Date.now().toString(36)}`;
 const DIG = String(Date.now() % 1_000_000).padStart(6, '0');
@@ -124,6 +139,8 @@ async function main() {
   let realSubsApagadas = [];
   let realesRestauradas = false;
   let usoPrevio = null;
+  let ventanaPrevia = null;
+  let ventanaTocada = false;
   const periodo = `${new Date().getFullYear()}-${p2(new Date().getMonth() + 1)}`;
 
   const restaurarReales = async () => {
@@ -408,11 +425,105 @@ async function main() {
     });
     chk('POST /push/campanas/probar responde 201/200', rProbar.status === 201 || rProbar.status === 200, `status=${rProbar.status} ${trunc(rProbar.data)}`);
     chk('[+] la prueba se envio a 1 dispositivo', rProbar.data?.enviados === 1 || rProbar.data?.prueba === true, trunc(rProbar.data));
+
+    // ==========================================================================
+    console.log('\n[10] VENTANA HORARIA: fuera de la ventana se DIFIERE (no se descarta)');
+    ventanaPrevia = await prisma.configuracionClub.findUnique({
+      where: { negocioId },
+      select: { pushVentanaInicio: true, pushVentanaFin: true },
+    });
+    const minAhora = arMinutosAhora();
+    const aperturaEsperada = fmtMin(minAhora + 120);
+    await prisma.configuracionClub.update({
+      where: { negocioId },
+      data: { pushVentanaInicio: aperturaEsperada, pushVentanaFin: fmtMin(minAhora + 180) },
+    });
+    ventanaTocada = true;
+
+    const rVent = await req('POST', '/api/push/campanas', {
+      token: staffToken,
+      body: {
+        nombre: `TEST campanas VENTANA ${RUN}`,
+        titulo: 'Ventana',
+        cuerpo: 'No deberia salir de madrugada',
+        segmento: 'TODOS',
+        programadoPara: arWall(new Date(Date.now() - 60_000)),
+      },
+    });
+    const campanaVent = rVent.data ?? {};
+    if (campanaVent.id) campanasPushIds.push(campanaVent.id);
+    if (campanaVent.campanaId) campanasMkIds.push(campanaVent.campanaId);
+    chk('crear la campaña de la ventana responde 201/200', rVent.status === 201 || rVent.status === 200, `status=${rVent.status}`);
+
+    const rTickVent = await req('POST', '/api/push/campanas/tick', { token: staffToken });
+    chk('el tick responde 201/200', rTickVent.status === 201 || rTickVent.status === 200, trunc(rTickVent.data));
+    const postVent = await prisma.campanaPush.findUnique({ where: { id: campanaVent.id } });
+    chk('[10] fuera de la ventana queda PROGRAMADA (diferida, no descartada)',
+      postVent?.estado === 'PROGRAMADA',
+      `estado=${postVent?.estado} tick=${trunc(rTickVent.data)}`);
+    chk('[10] se reprogramo a la PROXIMA APERTURA (futuro)',
+      (postVent?.programadoPara?.getTime() ?? 0) > Date.now(),
+      `programadoPara=${postVent?.programadoPara?.toISOString()}`);
+    chk('[10] la proxima apertura es la hora de inicio de la ventana',
+      !!postVent?.programadoPara && hhmmAr(postVent.programadoPara) === aperturaEsperada,
+      `apertura=${postVent?.programadoPara ? hhmmAr(postVent.programadoPara) : null} esperada=${aperturaEsperada}`);
+    chk('[10] NO se encolo nada fuera de la ventana',
+      (await prisma.envioPushLog.count({ where: { campanaId: campanaVent.campanaId } })) === 0);
+
+    // DENTRO de la ventana: ahora SI sale.
+    await prisma.configuracionClub.update({
+      where: { negocioId },
+      data: { pushVentanaInicio: fmtMin(minAhora - 60), pushVentanaFin: fmtMin(minAhora + 120) },
+    });
+    await prisma.campanaPush.update({
+      where: { id: campanaVent.id },
+      data: { programadoPara: new Date(Date.now() - 60_000) },
+    });
+    const rTickVent2 = await req('POST', '/api/push/campanas/tick', { token: staffToken });
+    const postVent2 = await esperar(async () => {
+      const c = await prisma.campanaPush.findUnique({ where: { id: campanaVent.id } });
+      return c?.estado === 'ENVIADA' ? c : null;
+    }, 60_000);
+    chk('[10] DENTRO de la ventana se despacha',
+      postVent2?.estado === 'ENVIADA',
+      `estado=${postVent2?.estado} tick=${trunc(rTickVent2.data)}`);
+
+    // Restaura la ventana del club tal cual estaba.
+    await prisma.configuracionClub.update({
+      where: { negocioId },
+      data: {
+        pushVentanaInicio: ventanaPrevia?.pushVentanaInicio ?? null,
+        pushVentanaFin: ventanaPrevia?.pushVentanaFin ?? null,
+      },
+    });
+    ventanaTocada = false;
+    const ventanaRestaurada = await prisma.configuracionClub.findUnique({
+      where: { negocioId },
+      select: { pushVentanaInicio: true, pushVentanaFin: true },
+    });
+    chk('[10] la ventana horaria del club se restauro',
+      ventanaRestaurada?.pushVentanaInicio === (ventanaPrevia?.pushVentanaInicio ?? null) &&
+        ventanaRestaurada?.pushVentanaFin === (ventanaPrevia?.pushVentanaFin ?? null),
+      `ventana=${JSON.stringify(ventanaRestaurada)}`);
   } finally {
     // ==========================================================================
     console.log('\n[limpieza]');
     // Las suscripciones REALES se restauran YA (y de nuevo al final).
     await restaurarReales();
+
+    // La ventana horaria del club se restaura SIEMPRE (aunque el bloque [10] haya fallado).
+    if (ventanaTocada) {
+      await prisma.configuracionClub
+        .update({
+          where: { negocioId },
+          data: {
+            pushVentanaInicio: ventanaPrevia?.pushVentanaInicio ?? null,
+            pushVentanaFin: ventanaPrevia?.pushVentanaFin ?? null,
+          },
+        })
+        .catch(() => undefined);
+      ventanaTocada = false;
+    }
 
     if (clientes.length) {
       await prisma.envioPushLog.deleteMany({ where: { negocioId, clienteId: { in: clientes } } }).catch(() => undefined);

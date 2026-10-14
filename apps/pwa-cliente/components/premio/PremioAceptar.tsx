@@ -194,7 +194,9 @@ function PanelCanje({
   estado: string
   esLibre: boolean
 }) {
-  const ver = aceptado?.verificacion ?? null
+  // Se usa el mecanismo de canje del aceptar (memoria) o el que trae el GET publico al
+  // recargar la pagina (premio ACEPTADO/CANJEADO).
+  const ver = aceptado?.verificacion ?? premio.verificacion ?? null
 
   if (estado === 'CANJEADO') {
     return (

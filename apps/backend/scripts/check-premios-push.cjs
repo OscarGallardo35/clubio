@@ -160,6 +160,11 @@ async function main() {
     chk('devuelve el link de verificacion del staff (absoluto + slug)', /\/que-lomitos\/validar-premio\?ref=/.test(urlVer) && /^https:\/\//.test(urlVer), trunc(urlVer));
     chk('devuelve el boton de WhatsApp al numero de atencion', typeof rAcep.data?.verificacion?.whatsapp === 'string' && rAcep.data.verificacion.whatsapp.startsWith('https://wa.me/'), trunc(rAcep.data?.verificacion?.whatsapp));
 
+    const gPub2 = await req('GET', `/api/premios/${premio.token}`);
+    chk('el GET publico de un premio ACEPTADO trae el mecanismo de canje (para recargar la pagina)',
+      !!gPub2.data?.verificacion?.url && /\/validar-premio\?ref=/.test(gPub2.data.verificacion.url),
+      trunc(gPub2.data?.verificacion?.url));
+
     const s2 = (await prisma.cliente.findUnique({ where: { id: cliente.id }, select: { sellosActuales: true } })).sellosActuales;
     chk('el saldo subio EXACTAMENTE lo acreditado', (s2 - s1) === esperadoSellos, `antes=${s1} despues=${s2} esperado=+${esperadoSellos}`);
 

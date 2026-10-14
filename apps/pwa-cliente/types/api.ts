@@ -332,6 +332,11 @@ export interface PremioPublico {
   }
   premioTexto: string | null
   modoFidelizacion: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
+  /**
+   * Mecanismo de canje. `null`/ausente mientras el premio este PENDIENTE; presente con el
+   * premio ACEPTADO/CANJEADO (asi la modal lo muestra tambien al recargar la pagina).
+   */
+  verificacion?: PremioVerificacion | null
 }
 
 /** Mecanismo de canje (link de verificacion + WhatsApp al numero de atencion del local). */

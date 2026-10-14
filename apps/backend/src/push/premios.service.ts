@@ -44,7 +44,15 @@ export class PremiosService {
   /** GET /premios/:token -> datos para la modal de aceptar. 404 si el token no existe. */
   async publico(token: string) {
     const premio = await this.exigir(token);
-    return this.detalle(premio);
+    const det = await this.detalle(premio);
+    // Si el premio YA fue aceptado (o canjeado), se devuelve tambien el mecanismo de canje
+    // (link + WhatsApp): asi la modal muestra el boton tambien al RECARGAR la pagina, no
+    // solo en la respuesta del aceptar (que vive en memoria).
+    const verificacion =
+      premio.estado === 'ACEPTADO' || premio.estado === 'CANJEADO'
+        ? await this.linkCanje(premio)
+        : null;
+    return { ...det, verificacion };
   }
 
   /**

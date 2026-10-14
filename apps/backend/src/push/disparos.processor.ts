@@ -2,7 +2,12 @@ import { InjectQueue, OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullm
 import { Logger } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { COLA_DISPAROS, DIA_TICK_MIN, DisparosService } from './disparos.service';
-import { CHEQUEO_DEMORADOS_S, INTERVALO_STALLED_S } from './worker-redis-guard';
+import {
+  CHEQUEO_DEMORADOS_S,
+  INTERVALO_STALLED_S,
+  pausarColaPorRedis,
+} from './worker-redis-guard';
+import type { EstadoCandado } from './worker-redis-guard';
 
 /** Zona horaria de los negocios: los `hora` de los disparos DIA se leen en AR. */
 const TZ_AR = 'America/Argentina/Buenos_Aires';
@@ -26,6 +31,8 @@ const TZ_AR = 'America/Argentina/Buenos_Aires';
 })
 export class DisparosProcessor extends WorkerHost {
   private readonly logger = new Logger('DisparosProcessor');
+  /** Estado del candado de cuota (ver worker-redis-guard.ts). */
+  private readonly candado: EstadoCandado = {};
 
   constructor(
     private readonly disparos: DisparosService,
@@ -55,9 +62,14 @@ export class DisparosProcessor extends WorkerHost {
     }
   }
 
+  /**
+   * Mismo candado de cuota que la cola de push: si Redis falla, la cola de
+   * disparos se pausa y se reanuda sola (antes esto solo logueaba y el worker
+   * seguia reintentando en loop, quemando cuota). Ver worker-redis-guard.ts.
+   */
   @OnWorkerEvent('error')
-  alFallarRedis(err: Error) {
-    this.logger.error(`Worker ${COLA_DISPAROS} con error: ${err.message}`);
+  async alFallarRedis(err: Error) {
+    await pausarColaPorRedis(this.worker, this.logger, COLA_DISPAROS, this.candado, err);
   }
 
   async process(job: Job) {

@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { ESTADO_INICIAL, visitaReducir } from '@/lib/visita-maquina'
+import { ESTADO_INICIAL, reanudarVisitaGuardada, visitaReducir } from '@/lib/visita-maquina'
 import type { EstadoFlujo, EventoFlujo } from '@/lib/visita-maquina'
 
 /** Como esta la conexion en vivo. El UI lo usa para explicar esperas largas. */
@@ -57,7 +57,31 @@ export const useVisitaStore = create<VisitaState>()(
                 }
           }
           if (evento.tipo === 'RESET') {
-            return { flujo, token: null, expiraEn: null, sucursalId: null, ws: 'desconectado' }
+            return {
+              flujo,
+              token: null,
+              expiraEn: null,
+              sucursalId: null,
+              mensajeWhatsApp: null,
+              urlValidacion: null,
+              ws: 'desconectado',
+            }
+          }
+          // Sintoma hermano: al llegar a 'aprobada' se suelta el token persistido.
+          // `partialize` no persiste `paso`, asi que en la proxima carga el token
+          // usado se re-sembraria como 'esperando' y el resume volveria a caer en
+          // 'aprobada': el cliente veria la confirmacion de la visita ANTERIOR sin
+          // forma de arrancar una nueva en ese dispositivo. Soltandolo, cada carga
+          // arranca en el paso inicial.
+          if (flujo.paso === 'aprobada') {
+            return {
+              flujo,
+              token: null,
+              expiraEn: null,
+              sucursalId: null,
+              mensajeWhatsApp: null,
+              urlValidacion: null,
+            }
           }
           return { flujo }
         }),
@@ -67,22 +91,35 @@ export const useVisitaStore = create<VisitaState>()(
       reiniciar: () => get().despachar({ tipo: 'RESET' }),
 
       /**
-       * Tras rehidratar: si habia un token guardado, el flujo arranca en
-       * 'esperando' para poder consultarle el estado real al backend (que es
-       * quien sabe si sigue pendiente, si se aprobo o si vencio).
+       * Tras rehidratar: si habia un token guardado Y SIGUE VIVO, el flujo arranca
+       * en 'esperando' para consultarle el estado real al backend (que es quien
+       * sabe si sigue pendiente, si se aprobo o si vencio).
+       *
+       * Si el token ya vencio (o no tiene fecha), NO se reanuda: se descarta y el
+       * cliente arranca en el paso inicial. Reanudarlo haria que el timer local de
+       * vencimiento dispare EXPIRAR antes de que vuelva la respuesta del backend y
+       * el cliente veria "no se sumo / la solicitud expiro" en el PRIMER intento.
        */
       hidratar: () => {
         const { token, expiraEn, sucursalId, mensajeWhatsApp, urlValidacion, flujo } = get()
         if (!token || flujo.paso !== 'inicio') return
+        const reanudado = reanudarVisitaGuardada(flujo, {
+          token,
+          expiraEn,
+          sucursalId,
+          mensajeWhatsApp,
+          urlValidacion,
+        })
+        if (reanudado.paso !== 'inicio') {
+          set({ flujo: reanudado })
+          return
+        }
         set({
-          flujo: visitaReducir(flujo, {
-            tipo: 'SOLICITADA',
-            token,
-            expiraEn: expiraEn ?? new Date().toISOString(),
-            sucursalId,
-              mensajeWhatsApp,
-              urlValidacion,
-          }),
+          token: null,
+          expiraEn: null,
+          sucursalId: null,
+          mensajeWhatsApp: null,
+          urlValidacion: null,
         })
       },
     }),

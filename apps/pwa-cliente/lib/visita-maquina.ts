@@ -112,6 +112,8 @@ export type EventoFlujo =
       sucursalId: string | null
       mensajeWhatsApp?: string | null
       urlValidacion?: string | null
+      /** true cuando el token viene de reanudar lo persistido (no de una solicitud nueva). */
+      reanudado?: boolean
     }
   | { tipo: 'SOLICITUD_RECHAZADA'; motivo: 'esperaHoras' | 'yaSumadaHoy' | 'otro'; faltanHoras?: number; mensaje?: string }
   | { tipo: 'ESTADO_RECIBIDO'; estado: EstadoVisitaToken; motivo?: string; sellosActuales?: number; premioDesbloqueado?: boolean }
@@ -144,6 +146,59 @@ export function puedeReintentar(estado: EstadoFlujo): boolean {
 /** Estados de los que ya no se sale solo (para cortar timers en la UI). */
 export function esFinal(estado: EstadoFlujo): boolean {
   return estado.paso === 'aprobada' || estado.paso === 'noSumada' || estado.paso === 'error'
+}
+
+/**
+ * true si un token persistido todavia puede aprobarse.
+ *
+ * Un token SIN `expiraEn` (guardado por una version vieja) o con una fecha no
+ * parseable se considera VENCIDO a proposito: reanudarlo haria que el timer local
+ * (useVisitaQr) dispare EXPIRAR antes de que vuelva el GET /visitas/estado/:token,
+ * y el cliente veria "no se sumo" aunque el backend lo tuviera vivo.
+ */
+export function tokenDeVisitaVivo(expiraEn: string | null, ahora: number = Date.now()): boolean {
+  if (!expiraEn) return false
+  const ms = new Date(expiraEn).getTime()
+  return Number.isFinite(ms) && ms > ahora
+}
+
+/** Los campos que se persisten por negocio para poder reanudar al reabrir. */
+export interface VisitaGuardada {
+  token: string | null
+  expiraEn: string | null
+  sucursalId: string | null
+  mensajeWhatsApp: string | null
+  urlValidacion: string | null
+}
+
+/**
+ * Decide el flujo al REHIDRATAR a partir de lo persistido. Es una funcion pura:
+ * el store solo la cablea (y asi se puede testear en node).
+ *
+ * - Sin token, o ya en un paso distinto de 'inicio': no toca nada.
+ * - Token vencido (o sin fecha): NO se reanuda. El flujo se queda en `inicio`, asi
+ *   el cliente aterriza en el registro / "Sumar mi visita" en vez de ver un
+ *   "expiro" por un token de un intento anterior (bug del primer intento).
+ * - Token vivo: arranca en 'esperando' con `reanudado: true`, para que el hook le
+ *   pregunte el estado real al backend y para que esa respuesta pueda corregir,
+ *   mas tarde, un vencimiento local (ver el caso ESTADO_RECIBIDO).
+ */
+export function reanudarVisitaGuardada(
+  estado: EstadoFlujo,
+  guardado: VisitaGuardada,
+  ahora: number = Date.now(),
+): EstadoFlujo {
+  if (estado.paso !== 'inicio' || !guardado.token) return estado
+  if (!tokenDeVisitaVivo(guardado.expiraEn, ahora)) return estado
+  return visitaReducir(estado, {
+    tipo: 'SOLICITADA',
+    token: guardado.token,
+    expiraEn: guardado.expiraEn ?? '',
+    sucursalId: guardado.sucursalId,
+    mensajeWhatsApp: guardado.mensajeWhatsApp,
+    urlValidacion: guardado.urlValidacion,
+    reanudado: true,
+  })
 }
 
 /** Texto que ve el cliente. Vive aca para poder testearlo. */
@@ -196,7 +251,7 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
         motivo: null,
         mensaje: null,
         faltanHoras: null,
-        reanudado: false,
+        reanudado: evento.reanudado ?? false,
       
       mensajeWhatsApp: evento.mensajeWhatsApp ?? null,
       urlValidacion: evento.urlValidacion ?? null,}
@@ -222,8 +277,21 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
     // Respuesta de estado/:token (polling o al reanudar). Solo se aplica desde
     // los pasos donde tiene sentido: desde 'noSumada' se IGNORA, porque volver a
     // 'esperando' ahi seria reanudar automaticamente algo ya cerrado.
+    //
+    // UNA excepcion (defensa en profundidad): si el token venia REANUDADO y el
+    // timer local de vencimiento lo mando a noSumada/expirada ANTES de que el
+    // backend contestara, la respuesta SI manda. Si no, el timer local (~150ms) le
+    // gana siempre a la verdad del backend y el cliente ve "no se sumo" en el
+    // primer intento aunque el backend lo tuviera pendiente o aprobado.
     case 'ESTADO_RECIBIDO': {
-      if (estado.paso === 'noSumada' || estado.paso === 'error' || estado.paso === 'aprobada') return estado
+      const expiradaDeReanudacion =
+        estado.paso === 'noSumada' && estado.motivo === 'expirada' && estado.reanudado === true
+      if (
+        (estado.paso === 'noSumada' || estado.paso === 'error' || estado.paso === 'aprobada') &&
+        !expiradaDeReanudacion
+      ) {
+        return estado
+      }
       if (evento.estado === 'PENDIENTE') {
         return { ...estado, paso: 'esperando', reanudado: true, motivo: null, mensaje: null }
       }

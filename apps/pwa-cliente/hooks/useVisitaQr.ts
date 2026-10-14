@@ -5,7 +5,7 @@ import { useBrandingCtx } from '@/components/BrandingProvider'
 import { useClienteStore } from '@/stores/clienteStore'
 import { configurarNegocioDeVisita, useVisitaStore } from '@/stores/visitaStore'
 import { consultarEstado, crearSocketVisita, registrarCliente, sesionActual, solicitarVisita } from '@/lib/visita-service'
-import { esFinal, eventoDeAprobacion, puedeReintentar, textoDelMotivo } from '@/lib/visita-maquina'
+import { esFinal, eventoDeAprobacion, puedeReintentar, textoDelMotivo, tokenDeVisitaVivo } from '@/lib/visita-maquina'
 import type { EstadoFlujo } from '@/lib/visita-maquina'
 import type { EstadoWs } from '@/stores/visitaStore'
 import { leerParametrosQr } from '@/lib/tenant'
@@ -55,6 +55,8 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
   const reiniciar = useVisitaStore((s) => s.reiniciar)
 
   const [listo, setListo] = React.useState(false)
+  /** true cuando el consult del resume (efecto 2) ya contesto (ok o no). */
+  const [consultaLista, setConsultaLista] = React.useState(false)
   /** Evita reconsultar el mismo token en cada render. */
   const consultados = React.useRef<string | null>(null)
   /** Evita aplicar dos veces los sellos de la misma aprobacion. */
@@ -67,7 +69,13 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
     configurarNegocioDeVisita(negocioSlug)
     void Promise.resolve(useVisitaStore.persist.rehydrate()).finally(() => {
       if (!vivo) return
-      useVisitaStore.getState().hidratar()
+      const s = useVisitaStore.getState()
+      // Complemento del filtro del store: un token persistido que YA vencio (o que
+      // no trae fecha) no se reanuda. Se suelta ANTES de hidratar para no arrancar
+      // ni un tick en 'esperando' con un contador vencido: ese tick disparaba
+      // EXPIRAR antes de que volviera el backend (el bug del primer intento).
+      if (s.token && !tokenDeVisitaVivo(s.expiraEn)) s.reiniciar()
+      else s.hidratar()
       setListo(true)
     })
     return () => {
@@ -80,9 +88,12 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
     const token = flujo.token
     if (!listo || flujo.paso !== 'esperando' || !token || consultados.current === token) return
     consultados.current = token
+    setConsultaLista(false)
     let vivo = true
     void consultarEstado(token).then((r) => {
-      if (!vivo || !r) return
+      if (!vivo) return
+      setConsultaLista(true)
+      if (!r) return
       despachar({
         tipo: 'ESTADO_RECIBIDO',
         estado: r.estado,
@@ -194,12 +205,18 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
   }, [flujo.paso, flujo.token, tokenAcceso, despachar, fijarWs])
 
   // 4) Vencimiento del token: el contador manda (y nunca pisa una aprobacion).
+  //    Con un token REANUDADO, mientras el consult del resume esta en vuelo NO se
+  //    dispara: el timer local le ganaria por ~150ms a la respuesta del backend y
+  //    el cliente veria "expiro" en el primer intento. Cuando el consult contesta,
+  //    el contador se re-arma con la vida real del token (y el reducer, ademas,
+  //    deja que esa respuesta corrija un vencimiento local).
   React.useEffect(() => {
     if (flujo.paso !== 'esperando' || !flujo.expiraEn) return
+    if (flujo.reanudado && !consultaLista) return
     const faltan = new Date(flujo.expiraEn).getTime() - Date.now()
     const temporizador = setTimeout(() => despachar({ tipo: 'EXPIRAR' }), Math.max(0, faltan))
     return () => clearTimeout(temporizador)
-  }, [flujo.paso, flujo.expiraEn, despachar])
+  }, [flujo.paso, flujo.expiraEn, flujo.reanudado, consultaLista, despachar])
 
   // 5) Sincronizar los sellos: el payload del WS es la fuente de verdad, sin fetch.
   React.useEffect(() => {

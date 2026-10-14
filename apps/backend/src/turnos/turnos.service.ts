@@ -17,7 +17,7 @@ import type { DiaSemanal } from './interfaces/turno-semanal.interface';
 
 export const CACHE_SEMANA = (negocioId: string, sucursalId: string, lunes: string) =>
   `turnos:semana:${negocioId}:${sucursalId}:${lunes}`;
-export const TTL_SEMANA = 600; // 10 min
+export const TTL_SEMANA = 3600; // 1 h (antes 10 min): la grilla cambia poco; se invalida en cada CUD de turnos
 
 export const CACHE_ENCARGADO = (negocioId: string, sucursalId: string, fecha: string) =>
   `turnos:encargado:${negocioId}:${sucursalId}:${fecha}`;

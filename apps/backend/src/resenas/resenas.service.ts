@@ -8,7 +8,7 @@ import { WebhooksService } from '../webhooks/webhooks.service';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import type { FiltrarResenasDto } from './dto/resenas.dto';
 
-const CACHE_TTL = 300; // 5 min
+const CACHE_TTL = 1800; // 30 min (antes 5 min): las resenas cambian poco; se invalida al sincronizar/responder
 /** En la vista publica solo se muestran resenas de 3 estrellas o mas. */
 const MIN_ESTRELLAS_PUBLICO = 3;
 

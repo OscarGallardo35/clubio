@@ -12,7 +12,7 @@ import type { ReordenarGruposDto, ReordenarOpcionesDto } from './dto/reordenar-g
 import type { GrupoResuelto } from './interfaces/modificador-resuelto.interface';
 
 export const CACHE_GRUPOS = (negocioId: string) => `modificadores:grupos:${negocioId}`;
-export const TTL_GRUPOS = 600; // 10 min
+export const TTL_GRUPOS = 3600; // 1 h (antes 10 min): cambia rara vez y se invalida en cada CUD
 
 export interface CtxMod {
   empleadoId: string;

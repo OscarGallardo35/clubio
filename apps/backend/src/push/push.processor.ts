@@ -51,7 +51,7 @@ export class PushProcessor extends WorkerHost {
   }
 
   async process(job: Job<PushJob>) {
-    const { negocioId, destino, id, titulo, cuerpo, url, campanaId } = job.data;
+    const { negocioId, destino, id, titulo, cuerpo, url, tag, campanaId } = job.data;
     const jobId = String(job.id);
     const intentos = job.attemptsMade + 1;
 
@@ -84,6 +84,7 @@ export class PushProcessor extends WorkerHost {
           title: titulo,
           body: cuerpo,
           url,
+          ...(tag ? { tag } : {}),
           timestamp: Date.now(),
         });
         enviados++;

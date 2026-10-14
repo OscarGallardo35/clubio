@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { SEGMENTOS_ENVIO } from './enviar-plantilla.dto';
 import type { SegmentoEnvio } from './enviar-plantilla.dto';
 
@@ -32,6 +32,13 @@ export class CrearCampanaDto {
 
   @IsOptional() @IsString() @MaxLength(500)
   icono?: string;
+
+  /**
+   * PREMIO que cada destinatario ACEPTA desde la notificacion (no se acredita solo):
+   * { tipo:'SELLOS'|'PUNTOS'|'LIBRE', cantidad?:number, texto?:string, expiraDias?:number }.
+   */
+  @IsOptional() @IsObject()
+  premio?: Record<string, unknown>;
 
   /** Base del publico ('TODOS' por defecto). */
   @IsOptional() @IsIn(SEGMENTOS_ENVIO)

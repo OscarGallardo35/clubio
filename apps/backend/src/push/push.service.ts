@@ -13,6 +13,8 @@ import type { CrearPlantillaDto } from './dto/crear-plantilla.dto';
 import type { ActualizarPlantillaDto } from './dto/actualizar-plantilla.dto';
 import type { EnviarPlantillaDto, SegmentoEnvio } from './dto/enviar-plantilla.dto';
 import type { HistorialEnviosDto } from './dto/historial-envios.dto';
+import { expiraDe, generarTokenPremio } from './premio.types';
+import type { DescriptorPremio } from './premio.types';
 
 export const COLA_PUSH = 'push-send';
 
@@ -74,6 +76,13 @@ export interface PushJob {
   titulo: string;
   cuerpo: string;
   url?: string;
+  /**
+   * `tag` de la notificacion: el service worker REEMPLAZA una notificacion con el
+   * mismo tag y solo RE-ALERTA si el tag llega (`renotify: Boolean(tag)`). Sin tag,
+   * el SW cae a `'clubio'` y TODAS las push del cliente se pisan entre si sin
+   * volver a sonar. Cada emisor manda el suyo (p. ej. `disparo-<id>`, `campana-<id>`).
+   */
+  tag?: string;
   /** Campana que origino el envio (va en el job para que el log la pueda completar). */
   campanaId?: string;
 }
@@ -269,6 +278,71 @@ export class PushService {
     return `${base}/${slug}/${rel}`;
   }
 
+  /**
+   * URL ABSOLUTA de la pagina de ACEPTAR un premio (`/<slug>/premio/<token>`).
+   *
+   * Regla de la casa (igual que `urlDePush` y `urlValidacion`): el servidor arma el
+   * link con `PUBLIC_APP_URL` + slug, NUNCA con `window.location.origin` (en los
+   * subdominios `<slug>.clubio.lat` saldria con el slug duplicado). Es la ruta propia
+   * del premio: el service worker solo ENFOGA la ventana si coincide el pathname.
+   */
+  async urlPremio(negocioId: string, token: string): Promise<string> {
+    const slug = await this.slugDelNegocio(negocioId);
+    const base = this.baseCliente();
+    return slug ? `${base}/${slug}/premio/${token}` : `${base}/premio/${token}`;
+  }
+
+  /**
+   * URL ABSOLUTA del link de VERIFICACION/CANJE del premio en la PWA Staff
+   * (`/<slug>/validar-premio?ref=<token>`). Es el mismo patron que `urlValidacion`
+   * de visitas: el staff abre el link que le llega por WhatsApp y marca el canje.
+   */
+  async urlVerificacionPremio(negocioId: string, token: string): Promise<string> {
+    const slug = await this.slugDelNegocio(negocioId);
+    const base = this.baseStaff();
+    return slug
+      ? `${base}/${slug}/validar-premio?ref=${token}`
+      : `${base}/validar-premio?ref=${token}`;
+  }
+
+  /**
+   * Crea un `PremioOtorgado` PENDIENTE (NO acredita saldo) y devuelve su token, la
+   * URL de aceptar y el vencimiento. Lo usan el motor de disparos y el despacho de
+   * campañas; la acreditacion ocurre recien cuando el cliente ACEPTA (`PremiosService`).
+   */
+  async otorgarPremio(params: {
+    negocioId: string;
+    clienteId: string;
+    descriptor: DescriptorPremio;
+    disparoId?: string | null;
+    disparoNombre?: string | null;
+    campanaId?: string | null;
+    campanaNombre?: string | null;
+    sucursalId?: string | null;
+  }): Promise<{ id: string; token: string; url: string; expiraEn: Date | null }> {
+    const token = generarTokenPremio();
+    const expiraEn = expiraDe(params.descriptor.expiraDias);
+    const creado = await this.prisma.premioOtorgado.create({
+      data: {
+        negocioId: params.negocioId,
+        clienteId: params.clienteId,
+        tipo: params.descriptor.tipo,
+        cantidad: params.descriptor.cantidad,
+        texto: params.descriptor.texto,
+        token,
+        expiraEn,
+        ...(params.disparoId ? { disparoId: params.disparoId } : {}),
+        ...(params.campanaId ? { campanaId: params.campanaId } : {}),
+        ...(params.disparoNombre ? { disparoNombre: params.disparoNombre } : {}),
+        ...(params.campanaNombre ? { campanaNombre: params.campanaNombre } : {}),
+        ...(params.sucursalId ? { sucursalId: params.sucursalId } : {}),
+      },
+      select: { id: true, token: true, expiraEn: true },
+    });
+    const url = await this.urlPremio(params.negocioId, creado.token);
+    return { id: creado.id, token: creado.token, url, expiraEn: creado.expiraEn };
+  }
+
   /** Suscribe un CLIENTE (upsert por endpoint: un endpoint es de un solo dispositivo). */
   async suscribirCliente(negocioId: string, clienteId: string, dto: SuscribirPushDto) {
     this.exigirVapid();
@@ -391,6 +465,7 @@ export class PushService {
           'enviar',
           {
             negocioId, destino: 'cliente', id, titulo: dto.titulo, cuerpo: dto.cuerpo, url,
+            tag: `campana-${campana.id}`,
             campanaId: campana.id,
           },
           {
@@ -453,7 +528,7 @@ export class PushService {
       suscripciones.map((s) =>
         this.cola.add(
           'enviar',
-          { negocioId, destino: 'empleado', id: s.empleadoId, titulo: payload.title, cuerpo: payload.body, url },
+          { negocioId, destino: 'empleado', id: s.empleadoId, titulo: payload.title, cuerpo: payload.body, url, ...(payload.tag ? { tag: payload.tag } : {}) },
           { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
         ),
       ),
@@ -477,7 +552,7 @@ export class PushService {
 
     const job = await this.cola.add(
       'enviar',
-      { negocioId, destino: 'empleado', id: empleadoId, titulo: payload.title, cuerpo: payload.body, url },
+      { negocioId, destino: 'empleado', id: empleadoId, titulo: payload.title, cuerpo: payload.body, url, ...(payload.tag ? { tag: payload.tag } : {}) },
       { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
     );
     return { encolados: 1, jobId: job.id };
@@ -511,6 +586,7 @@ export class PushService {
       {
         negocioId: suscripciones.negocioId, destino: 'cliente', id: clienteId,
         titulo: payload.title, cuerpo: payload.body, url,
+        ...(payload.tag ? { tag: payload.tag } : {}),
       },
       { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
     );
@@ -530,7 +606,13 @@ export class PushService {
   }
 
   /** Encola un aviso puntual (lo usa el flujo de visitas). */
-  async encolarAvisoStaff(negocioId: string, empleadoId: string, titulo: string, cuerpo: string) {
+  async encolarAvisoStaff(
+    negocioId: string,
+    empleadoId: string,
+    titulo: string,
+    cuerpo: string,
+    tag?: string,
+  ) {
     if (!this.habilitado) return { encolados: 0, motivo: 'VAPID no configurado' };
     const activas = await this.prisma.notificacionPushEmpleado.count({
       where: { negocioId, empleadoId, activa: true },
@@ -539,7 +621,7 @@ export class PushService {
 
     const job = await this.cola.add(
       'enviar',
-      { negocioId, destino: 'empleado', id: empleadoId, titulo, cuerpo },
+      { negocioId, destino: 'empleado', id: empleadoId, titulo, cuerpo, ...(tag ? { tag } : {}) },
       { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },
     );
     return { encolados: 1, jobId: job.id };
@@ -1288,6 +1370,7 @@ export class PushService {
             titulo: this.renderizar(titulo, vars),
             cuerpo: this.renderizar(cuerpo, vars),
             ...(urlCampana ? { url: this.renderizar(urlCampana, vars) } : {}),
+            tag: `campana-${campana.id}`,
             campanaId: campana.id,
           },
           { attempts: 3, backoff: { type: 'custom' }, removeOnComplete: 500, removeOnFail: 1000 },

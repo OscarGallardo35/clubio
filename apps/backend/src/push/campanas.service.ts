@@ -15,6 +15,7 @@ import {
   horaAMinutos,
 } from './disparos.service';
 import type { PushJob, PublicoResuelto } from './push.service';
+import { leerPremio } from './premio.types';
 import type { CrearCampanaDto } from './dto/crear-campana.dto';
 import type { ActualizarCampanaDto } from './dto/actualizar-campana.dto';
 import type { PreviewCampanaDto } from './dto/preview-campana.dto';
@@ -212,6 +213,7 @@ export class CampanasPushService {
           icono,
           plantillaId: dto.plantillaId ?? null,
           segmento,
+          ...(dto.premio ? { premio: dto.premio as unknown as Prisma.InputJsonValue } : {}),
           ...(exclusiones ? { exclusiones: exclusiones as unknown as Prisma.InputJsonValue } : {}),
           programadoPara,
           campanaId: mk.id,
@@ -279,6 +281,14 @@ export class CampanasPushService {
           ...(urlNueva !== undefined ? { url: urlNueva } : {}),
           ...(dto.icono !== undefined ? { icono: dto.icono.trim() ? dto.icono.trim() : null } : {}),
           ...(dto.segmento !== undefined ? { segmento: dto.segmento } : {}),
+          ...(dto.premio !== undefined
+            ? {
+                premio:
+                  dto.premio === null
+                    ? Prisma.JsonNull
+                    : (dto.premio as unknown as Prisma.InputJsonValue),
+              }
+            : {}),
           ...(tocaExclusiones
             ? { exclusiones: exclusiones ? (exclusiones as unknown as Prisma.InputJsonValue) : Prisma.JsonNull }
             : {}),
@@ -492,46 +502,79 @@ export class CampanasPushService {
     // Link del cliente: absoluto y con el slug. Se resuelve UNA vez y se renderiza por cliente.
     const urlBase = await this.push.urlDePush(c.negocioId, c.url, 'cliente');
 
+    // PREMIO de la campaña (si tiene): se crea UN `PremioOtorgado` PENDIENTE por
+    // destinatario y el push abre la pantalla de aceptar. La acreditacion ocurre recien
+    // cuando el cliente ACEPTA. Si el otorgamiento falla, se borran los premios ya
+    // creados y NO se escribe ninguna fila del historial (el tick siguiente reintenta).
+    const descriptor = leerPremio(c.premio);
+
     // Los SEEDS del historial se escriben ANTES de encolar, con el `jobId` DETERMINISTA
     // (`cp-<campanaId>-<clienteId>`): si se encolara primero, el worker podria procesar
     // el job antes de que exista su fila y el historial perderia ese destinatario.
     const payloads: Array<{ clienteId: string; jobId: string; data: PushJob }> = [];
     const seeds: Prisma.EnvioPushLogCreateManyInput[] = [];
-    for (const d of nuevos) {
-      const vars = {
-        nombre: d.nombre,
-        negocio: ctx.nombreNegocio,
-        premio: ctx.premioTexto,
-        actuales: d.sellosActuales,
-        meta: ctx.meta,
-        faltantes: Math.max(0, ctx.meta - d.sellosActuales),
-        numero: '',
-      };
-      const jobId = `cp-${c.campanaId}-${d.id}`;
-      payloads.push({
-        clienteId: d.id,
-        jobId,
-        data: {
+    const premiosIds: string[] = [];
+    try {
+      for (const d of nuevos) {
+        const vars = {
+          nombre: d.nombre,
+          negocio: ctx.nombreNegocio,
+          premio: ctx.premioTexto,
+          actuales: d.sellosActuales,
+          meta: ctx.meta,
+          faltantes: Math.max(0, ctx.meta - d.sellosActuales),
+          numero: '',
+        };
+        const jobId = `cp-${c.campanaId}-${d.id}`;
+        let urlCliente = urlBase ? this.push.renderizar(urlBase, vars) : undefined;
+        if (descriptor) {
+          const premio = await this.push.otorgarPremio({
+            negocioId: c.negocioId,
+            clienteId: d.id,
+            descriptor,
+            campanaId: c.id,
+            campanaNombre: c.nombre,
+          });
+          premiosIds.push(premio.id);
+          urlCliente = premio.url;
+        }
+        payloads.push({
+          clienteId: d.id,
+          jobId,
+          data: {
+            negocioId: c.negocioId,
+            destino: 'cliente',
+            id: d.id,
+            titulo: this.push.renderizar(c.titulo, vars),
+            cuerpo: this.push.renderizar(c.cuerpo, vars),
+            ...(urlCliente ? { url: urlCliente } : {}),
+            tag: `campana-${c.campanaId}`,
+            campanaId: c.campanaId,
+          },
+        });
+        seeds.push({
           negocioId: c.negocioId,
-          destino: 'cliente',
-          id: d.id,
-          titulo: this.push.renderizar(c.titulo, vars),
-          cuerpo: this.push.renderizar(c.cuerpo, vars),
-          ...(urlBase ? { url: this.push.renderizar(urlBase, vars) } : {}),
+          estado: 'ENCOLADO',
           campanaId: c.campanaId,
-        },
-      });
-      seeds.push({
-        negocioId: c.negocioId,
-        estado: 'ENCOLADO',
-        campanaId: c.campanaId,
-        campanaTitulo: c.titulo,
-        clienteId: d.id,
-        segmento: c.segmento,
-        jobId,
-      });
+          campanaTitulo: c.titulo,
+          clienteId: d.id,
+          segmento: c.segmento,
+          jobId,
+        });
+      }
+      await this.prisma.envioPushLog.createMany({ data: seeds });
+    } catch (e) {
+      // Rollback: sin premios huerfanos y sin filas ENCOLADO que un reintento daria por enviadas.
+      if (premiosIds.length) {
+        await this.prisma.premioOtorgado
+          .deleteMany({ where: { id: { in: premiosIds } } })
+          .catch(() => undefined);
+      }
+      await this.prisma.envioPushLog
+        .deleteMany({ where: { campanaId: c.campanaId, estado: 'ENCOLADO' } })
+        .catch(() => undefined);
+      throw e;
     }
-    await this.prisma.envioPushLog.createMany({ data: seeds });
 
     let encolados = 0;
     for (const p of payloads) {
@@ -550,6 +593,15 @@ export class CampanasPushService {
         await this.prisma.envioPushLog
           .deleteMany({ where: { campanaId: c.campanaId, clienteId: p.clienteId, estado: 'ENCOLADO' } })
           .catch(() => undefined);
+        // El premio de ESE destinatario tampoco debe quedar huerfano.
+        const ids = premiosIds.length ? premiosIds : [];
+        if (ids.length) {
+          await this.prisma.premioOtorgado
+            .deleteMany({
+              where: { campanaId: c.id, clienteId: p.clienteId, estado: 'PENDIENTE', id: { in: ids } },
+            })
+            .catch(() => undefined);
+        }
         throw e;
       }
     }

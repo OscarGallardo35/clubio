@@ -7,6 +7,8 @@ import { PushProcessor } from './push.processor';
 import { DisparosProcessor } from './disparos.processor';
 import { PushScheduler } from './push.scheduler';
 import { PushController } from './push.controller';
+import { PremiosController } from './premios.controller';
+import { PremiosService } from './premios.service';
 import { HorariosModule } from '../horarios/horarios.module';
 
 @Module({
@@ -14,7 +16,7 @@ import { HorariosModule } from '../horarios/horarios.module';
     BullModule.registerQueue({ name: COLA_PUSH }, { name: COLA_DISPAROS }),
     HorariosModule,
   ],
-  controllers: [PushController],
+  controllers: [PushController, PremiosController],
   providers: [
     PushService,
     PushProcessor,
@@ -22,7 +24,8 @@ import { HorariosModule } from '../horarios/horarios.module';
     DisparosService,
     DisparosProcessor,
     CampanasPushService,
+    PremiosService,
   ],
-  exports: [PushService, DisparosService, CampanasPushService],
+  exports: [PushService, DisparosService, CampanasPushService, PremiosService],
 })
 export class PushModule {}

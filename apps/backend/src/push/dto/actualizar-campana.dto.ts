@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { SEGMENTOS_ENVIO } from './enviar-plantilla.dto';
 import type { SegmentoEnvio } from './enviar-plantilla.dto';
 
@@ -24,6 +24,14 @@ export class ActualizarCampanaDto {
 
   @IsOptional() @IsString() @MaxLength(500)
   icono?: string;
+
+  /**
+   * PREMIO que cada destinatario ACEPTA desde la notificacion:
+   * { tipo:'SELLOS'|'PUNTOS'|'LIBRE', cantidad?:number, texto?:string, expiraDias?:number }.
+   * `null` lo quita.
+   */
+  @IsOptional() @IsObject()
+  premio?: Record<string, unknown>;
 
   @IsOptional() @IsIn(SEGMENTOS_ENVIO)
   segmento?: SegmentoEnvio;

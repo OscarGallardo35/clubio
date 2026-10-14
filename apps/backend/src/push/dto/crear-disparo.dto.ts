@@ -32,6 +32,14 @@ export class CrearDisparoDto {
   @IsOptional() @IsObject()
   regalo?: Record<string, unknown>;
 
+  /**
+   * PREMIO que el cliente ACEPTA desde la notificacion (no se acredita solo):
+   * { tipo:'SELLOS'|'PUNTOS'|'LIBRE', cantidad?:number, texto?:string, expiraDias?:number }.
+   * No se combina con `regalo`.
+   */
+  @IsOptional() @IsObject()
+  premio?: Record<string, unknown>;
+
   /** { porDia?:number, porMes?:number } */
   @IsOptional() @IsObject()
   limitePorCliente?: Record<string, unknown>;

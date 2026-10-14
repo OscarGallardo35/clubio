@@ -8,6 +8,7 @@ import { PushService, VariablesPlantilla } from './push.service';
 import type { CrearDisparoDto } from './dto/crear-disparo.dto';
 import type { ActualizarDisparoDto } from './dto/actualizar-disparo.dto';
 import type { HistorialDisparosDto } from './dto/historial-disparos.dto';
+import { leerPremio } from './premio.types';
 
 /** Cola de los jobs de tiempo (DIA / INACTIVIDAD). */
 export const COLA_DISPAROS = 'push-disparos';
@@ -111,6 +112,8 @@ interface ContextoClub {
   meta: number;
   premio: string;
 }
+
+export type { ContextoClub };
 
 /**
  * MOTOR de los DisparoPush.
@@ -284,6 +287,7 @@ export class DisparosService {
         config: (dto.config ?? {}) as Prisma.InputJsonValue,
         ...(dto.activa !== undefined ? { activa: dto.activa } : {}),
         ...(dto.regalo !== undefined ? { regalo: dto.regalo as Prisma.InputJsonValue } : {}),
+        ...(dto.premio !== undefined ? { premio: dto.premio as Prisma.InputJsonValue } : {}),
         ...(dto.limitePorCliente !== undefined
           ? { limitePorCliente: dto.limitePorCliente as Prisma.InputJsonValue }
           : {}),
@@ -316,6 +320,9 @@ export class DisparosService {
         ...(dto.config !== undefined ? { config: dto.config as Prisma.InputJsonValue } : {}),
         ...(dto.regalo !== undefined
           ? { regalo: dto.regalo === null ? Prisma.JsonNull : (dto.regalo as Prisma.InputJsonValue) }
+          : {}),
+        ...(dto.premio !== undefined
+          ? { premio: dto.premio === null ? Prisma.JsonNull : (dto.premio as Prisma.InputJsonValue) }
           : {}),
         ...(dto.limitePorCliente !== undefined
           ? {
@@ -655,9 +662,41 @@ export class DisparosService {
     });
     if (!lock) return { disparoId: d.id, omitido: 'duplicado' };
 
-    // 3) Regalo (si tiene): acredita sellos/puntos respetando el modo del club.
+    // 3) PREMIO (si tiene): NO acredita aca. Deja un `PremioOtorgado` PENDIENTE y el
+    //    push abre la pantalla de aceptar; la acreditacion ocurre cuando el CLIENTE
+    //    ACEPTA (claim atomico en PremiosService). Si el disparo NO tiene premio, cae
+    //    al regalo automatico de siempre (acredita sin aceptacion).
+    const descriptor = leerPremio(d.premio);
     let aplicado = { sellos: 0, puntos: 0 };
-    if (regaloCalc.sellos || regaloCalc.puntos) {
+    let premioUrl: string | undefined;
+    if (descriptor) {
+      const sucursalId = await this.sucursalDe(d.negocioId, cliente.id, opts.sucursalId);
+      const premio = await this.push.otorgarPremio({
+        negocioId: d.negocioId,
+        clienteId: cliente.id,
+        descriptor,
+        disparoId: d.id,
+        disparoNombre: d.nombre,
+        sucursalId,
+      });
+      premioUrl = premio.url;
+      await this.auditoria.registrar({
+        negocioId: d.negocioId,
+        accion: 'push.disparo_premio',
+        clienteId: cliente.id,
+        detalle: {
+          disparoId: d.id,
+          tipo: d.tipo,
+          origen: opts.origen,
+          pedidoId: opts.pedidoId,
+          premioId: premio.id,
+          premioTipo: descriptor.tipo,
+          cantidad: descriptor.cantidad,
+          sucursalId,
+        },
+      });
+    } else if (regaloCalc.sellos || regaloCalc.puntos) {
+      // 3b) Regalo (automatico): acredita sellos/puntos respetando el modo del club.
       const sucursalId = await this.sucursalDe(d.negocioId, cliente.id, opts.sucursalId);
       aplicado = await this.aplicarRegalo(cliente.id, sucursalId, d.regalo, cfg);
       await this.auditoria.registrar({
@@ -676,8 +715,8 @@ export class DisparosService {
       });
     }
 
-    // 4) Push (encolado, best-effort).
-    const pushRes = await this.enviarPush(d, cliente, cfg, {});
+    // 4) Push (encolado, best-effort). Con premio, el link abre la pantalla de aceptar.
+    const pushRes = await this.enviarPush(d, cliente, cfg, {}, premioUrl);
 
     await this.prisma.disparoPushLog
       .update({
@@ -694,8 +733,11 @@ export class DisparosService {
    * ignora puntos; HIBRIDO da ambos. El saldo se toca con la MISMA regla que
    * `FidelizacionService.acreditar`: con POR_SUCURSAL vive en la tarjeta de la
    * sucursal (y NO en el contador del cliente); con GLOBAL, en el cliente.
+   *
+   * PUBLICO a proposito: lo reusa `PremiosService.aceptar` para acreditar el premio
+   * cuando el cliente ACEPTA la notificacion (misma logica del club, sin divergir).
    */
-  private async aplicarRegalo(
+  public async aplicarRegalo(
     clienteId: string,
     sucursalId: string,
     regalo: unknown,
@@ -833,15 +875,19 @@ export class DisparosService {
     cliente: ClienteMin,
     cfg: ContextoClub,
     extra: Partial<VariablesPlantilla>,
+    urlOverride?: string,
   ) {
     const vars = this.varsDe(cfg, cliente, extra);
     const p = d.plantilla;
+    // Con premio, el push abre la pantalla de aceptar (`/<slug>/premio/<token>`); si
+    // no, la url de la plantilla de siempre.
+    const url = urlOverride ?? (p.url ? this.push.renderizar(p.url, vars) : undefined);
     const res = await this.push.enviarACliente(
       cliente.id,
       {
         title: this.push.renderizar(p.titulo, vars),
         body: this.push.renderizar(p.cuerpo, vars),
-        ...(p.url ? { url: this.push.renderizar(p.url, vars) } : {}),
+        ...(url ? { url } : {}),
         tag: `disparo-${d.id}`,
       },
       // El envio cuelga del disparo en el historial de envios (`EnvioPushLog`).
@@ -866,8 +912,8 @@ export class DisparosService {
     };
   }
 
-  /** Negocio activo + modos + meta/premio del club. */
-  private async contexto(negocioId: string): Promise<ContextoClub> {
+  /** Negocio activo + modos + meta/premio del club. Publico: lo reusa `PremiosService`. */
+  public async contexto(negocioId: string): Promise<ContextoClub> {
     const [neg, cfg] = await Promise.all([
       this.prisma.negocio.findUnique({
         where: { id: negocioId },

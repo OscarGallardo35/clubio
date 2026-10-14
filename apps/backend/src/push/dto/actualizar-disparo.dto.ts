@@ -24,6 +24,14 @@ export class ActualizarDisparoDto {
   @IsOptional() @IsObject()
   regalo?: Record<string, unknown>;
 
+  /**
+   * PREMIO que el cliente ACEPTA desde la notificacion (no se acredita solo):
+   * { tipo:'SELLOS'|'PUNTOS'|'LIBRE', cantidad?:number, texto?:string, expiraDias?:number }.
+   * `null` lo quita.
+   */
+  @IsOptional() @IsObject()
+  premio?: Record<string, unknown>;
+
   @IsOptional() @IsObject()
   limitePorCliente?: Record<string, unknown>;
 }

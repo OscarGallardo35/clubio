@@ -306,6 +306,9 @@ async function main() {
     console.log('\n[8] LIMPIEZA');
     if (cola) await cola.close().catch(() => undefined);
     const pedidosIds = pedidos.slice();
+    // El historial de ENVIOS cuelga del disparo con `onDelete: SetNull`: si no se borra
+    // aca, las filas de prueba quedan huerfanas en el historial del negocio.
+    await prisma.envioPushLog.deleteMany({ where: { negocioId, clienteId: { in: clientes } } }).catch(() => undefined);
     await prisma.disparoPushLog.deleteMany({ where: { disparoId: { in: disparos } } }).catch(() => undefined);
     await prisma.disparoPush.deleteMany({ where: { id: { in: disparos } } }).catch(() => undefined);
     await prisma.plantillaPush.deleteMany({ where: { id: { in: plantillas } } }).catch(() => undefined);

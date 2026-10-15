@@ -66,10 +66,15 @@ export class UsoMensualScheduler {
         });
         if (!dueno) continue;
         const pct = Math.round((usos[0].cantidad / Math.max(1, usos[0].limiteBase)) * 100);
+        // Destino del tap: `/perfil` de la PWA Staff, que es donde el empleado ve su plan y
+        // los limites del local. Antes apuntaba a `/plan`, una ruta que NO existe en la PWA
+        // Staff (verificado: solo hay carta/pedidos/perfil/turnos/validar*/visitas), asi que
+        // tocar la notificacion caia en un 404. Relativa a proposito: `PushService.urlDePush`
+        // le antepone `STAFF_APP_URL/<slug>` al encolar (misma convencion que `/tarjeta`/`/pedidos`).
         await this.push.enviarAEmpleado(negocioId, dueno.id, {
           title: `Estas al ${pct}% de tu limite`,
           body: `${detalle}. Mejora a un plan superior para no bloquear tu cuenta.`,
-          url: '/plan', tag: 'limite-advertencia',
+          url: '/perfil', tag: 'limite-advertencia',
         }).catch(() => undefined);
         await this.auditoria.registrar({
           negocioId, accion: 'plan.recordatorio_limite',

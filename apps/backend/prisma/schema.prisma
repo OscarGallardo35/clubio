@@ -44,6 +44,17 @@ enum EtiquetaCliente {
   INACTIVO
 }
 
+/// Genero autodeclarado del cliente (perfilado progresivo). `PREFIERO_NO_DECIR` es una
+/// respuesta VALIDA (distinta de no responder): cuenta como dato declarado y por lo tanto
+/// registra el consentimiento. `OTRO` = no encaja en las etiquetas cerradas.
+enum GeneroCliente {
+  FEMENINO
+  MASCULINO
+  NO_BINARIO
+  OTRO
+  PREFIERO_NO_DECIR
+}
+
 // Tipo de visita registrada
 enum TipoVisita {
   VISITA
@@ -378,6 +389,11 @@ model ConfiguracionClub {
   pushAUnoDelPremio    Boolean @default(true)
   pushInactivos30Dias  Boolean @default(false)
 
+  /// PERFILADO PROGRESIVO: a partir de que visita la PWA Cliente le pide fecha de nacimiento y
+  /// genero (con consentimiento). La PWA lo lee de la config publica del negocio. El dueno puede
+  /// subirlo o bajarlo (min 1).
+  perfilDesdeVisita Int @default(3)
+
   /// VENTANA HORARIA de despacho de campanas de push, en hora ARGENTINA ('HH:mm').
   /// Con las dos vacias (default) NO hay ventana: la campana sale a su hora.
   /// Con ambas seteadas, si el despacho cae FUERA de la ventana se DIFIERE a la
@@ -556,25 +572,38 @@ model RegistroAcceso {
 
 // Cliente miembro del club (único por negocio)
 model Cliente {
-  id                   String          @id @default(cuid())
-  negocioId            String
-  nombre               String
-  telefono             String
-  email                String?
-  fechaNacimiento      DateTime?
-  aceptaNotificaciones Boolean         @default(false)
-  tienePwaInstalada    Boolean         @default(false)
-  sellosActuales       Int             @default(0)
-  puntosActuales       Int             @default(0)
-  totalVisitas         Int             @default(0)
-  premiosCanjeados     Int             @default(0)
+  id                      String          @id @default(cuid())
+  negocioId               String
+  nombre                  String
+  telefono                String
+  email                   String?
+  fechaNacimiento         DateTime?
+  /// Genero autodeclarado (perfilado progresivo). Null = sin declarar.
+  genero                  GeneroCliente?
+  aceptaNotificaciones    Boolean         @default(false)
+  tienePwaInstalada       Boolean         @default(false)
+  /// Perfilado progresivo (Ley 25.326): el cliente dijo "no quiero responder". Es DEFINITIVO:
+  /// la PWA nunca mas le muestra el pedido de fecha/genero (aunque despues borre sus datos).
+  perfiladoRechazado      Boolean         @default(false)
+  /// Ultima vez que se le MOSTRO el pedido de perfilado y no respondio (ni datos ni rechazo).
+  /// La PWA lo usa para no insistir en cada visita.
+  perfiladoOmitidoEn      DateTime?
+  /// Consentimiento del perfilado: cuando otorgo el permiso para guardar fecha/genero y que
+  /// version del texto de consentimiento acepto (Ley 25.326, art. 5: el consentimiento tiene
+  /// que poder probarse). Null = nunca consintio.
+  consentimientoPerfilEn  DateTime?
+  consentimientoPerfilVer String?
+  sellosActuales          Int             @default(0)
+  puntosActuales          Int             @default(0)
+  totalVisitas            Int             @default(0)
+  premiosCanjeados        Int             @default(0)
   /// Ultimo canje de premio (sellos o puntos). Null = nunca canjeo.
-  ultimoCanjeEn        DateTime?
-  etiqueta             EtiquetaCliente @default(NUEVO)
-  notasInternas        String?         @db.Text
-  creadoEn             DateTime        @default(now())
-  ultimaVisita         DateTime?
-  eliminadoEn          DateTime? // Soft delete (Lote 3): los listados filtran eliminadoEn: null
+  ultimoCanjeEn           DateTime?
+  etiqueta                EtiquetaCliente @default(NUEVO)
+  notasInternas           String?         @db.Text
+  creadoEn                DateTime        @default(now())
+  ultimaVisita            DateTime?
+  eliminadoEn             DateTime? // Soft delete (Lote 3): los listados filtran eliminadoEn: null
 
   /// Token OPACO para la pagina PUBLICA de verificacion de sellos/premio
   /// (`/<slug>/verificar/<token>`). Unico y no adivinable: 32 bytes random.
@@ -595,6 +624,8 @@ model Cliente {
   @@index([negocioId, ultimaVisita])
   @@index([negocioId, etiqueta])
   @@index([negocioId, eliminadoEn])
+  /// Disparo de cumpleanos (fase 2): busca por (negocio, fechaNacimiento) sin escanear el club.
+  @@index([negocioId, fechaNacimiento])
 }
 
 // Dispositivo asociado a un cliente (identidad multi-capa)

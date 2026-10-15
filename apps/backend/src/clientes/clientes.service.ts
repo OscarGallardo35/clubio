@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ModoClientes, Prisma } from '@prisma/client';
+import { GeneroCliente, ModoClientes, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
@@ -7,6 +7,7 @@ import { LimitesService } from '../planes/limites.service';
 import { DisparosService } from '../push/disparos.service';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { enmascararTelefono, normalizarTelefonoE164 } from '../common/utils/phone.util';
+import { parseFechaNacimientoPerfil } from '../common/utils/perfil-cliente.util';
 import { esRolPrivilegiado } from './dto/cliente-response.dto';
 import type { ClienteResponseStaff, TarjetaSucursalResponse } from './dto/cliente-response.dto';
 import { SegmentosService } from './segmentos.service';
@@ -82,7 +83,7 @@ export class ClientesService {
       id: true, nombre: true, telefono: true, email: true, etiqueta: true,
       sellosActuales: true, puntosActuales: true, totalVisitas: true,
       premiosCanjeados: true, ultimaVisita: true, creadoEn: true,
-      notasInternas: true, fechaNacimiento: true, aceptaNotificaciones: true,
+      notasInternas: true, fechaNacimiento: true, genero: true, aceptaNotificaciones: true,
     } satisfies Prisma.ClienteSelect;
 
     const selectStaff = {
@@ -216,16 +217,18 @@ export class ClientesService {
     if (esNuevo) await this.limites.exigirLimite(negocioId, 'CLIENTES');
 
     // Si existia soft-deleted, se revive.
+    const perfil = this.datosPerfil(dto);
     const cliente = existente
       ? await this.prisma.cliente.update({
           where: { id: existente.id },
-          data: { nombre: dto.nombre, email: dto.email ?? null, notasInternas: dto.notasInternas ?? null, eliminadoEn: null, aceptaNotificaciones: dto.aceptaNotificaciones ?? false },
+          data: { nombre: dto.nombre, email: dto.email ?? null, notasInternas: dto.notasInternas ?? null, eliminadoEn: null, aceptaNotificaciones: dto.aceptaNotificaciones ?? false, ...perfil },
         })
       : await this.prisma.cliente.create({
           data: {
             negocioId, nombre: dto.nombre, telefono,
             email: dto.email ?? null, notasInternas: dto.notasInternas ?? null,
             aceptaNotificaciones: dto.aceptaNotificaciones ?? false,
+            ...perfil,
           },
         });
 
@@ -259,14 +262,34 @@ export class ClientesService {
 
   async actualizar(negocioId: string, clienteId: string, dto: ActualizarClienteDto, ctx: AuthCtx) {
     await this.exigirCliente(negocioId, clienteId);
+    const perfil = this.datosPerfil(dto);
     const cliente = await this.prisma.cliente.update({
-      where: { id: clienteId }, data: { ...dto },
+      where: { id: clienteId }, data: { ...dto, ...perfil },
     });
     await this.auditoria.registrar({
       negocioId, accion: 'cliente.actualizado', empleadoId: ctx.empleadoId,
       clienteId, detalle: { campos: Object.keys(dto) }, ip: ctx.ip,
     });
     return cliente;
+  }
+
+  /**
+   * Traduce `fechaNacimiento` (string del formulario) y `genero` a columnas.
+   *
+   * Solo agrega la clave si el campo VINO en la request (`!== undefined`): asi un PATCH que no
+   * menciona la fecha no la borra, y `null` explicito SI la borra. La validacion es la misma que
+   * usa la PWA del cliente (fecha valida, no futura, edad >= 13, no mas de 100 años).
+   */
+  private datosPerfil(dto: {
+    fechaNacimiento?: string | null;
+    genero?: GeneroCliente | null;
+  }): { fechaNacimiento?: Date | null; genero?: GeneroCliente | null } {
+    const data: { fechaNacimiento?: Date | null; genero?: GeneroCliente | null } = {};
+    if (dto.fechaNacimiento !== undefined) {
+      data.fechaNacimiento = parseFechaNacimientoPerfil(dto.fechaNacimiento);
+    }
+    if (dto.genero !== undefined) data.genero = dto.genero;
+    return data;
   }
 
   /** Refinamiento 3: soft delete. */

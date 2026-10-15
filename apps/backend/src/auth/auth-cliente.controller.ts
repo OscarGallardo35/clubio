@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Post, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto';
 import { RecuperarClienteDto } from './dto/recuperar-cliente.dto';
+import { ActualizarPerfilClienteDto } from './dto/actualizar-perfil-cliente.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentCliente } from '../common/decorators/current-cliente.decorator';
 import { JwtClienteGuard } from '../common/guards/jwt-cliente.guard';
@@ -50,6 +51,26 @@ export class AuthClienteController {
   @Get('me')
   me(@CurrentCliente() cli: ClienteAuth) {
     return this.auth.meCliente(cli.id);
+  }
+
+  /**
+   * PERFILADO PROGRESIVO (fase 1): el cliente guarda SU fecha de nacimiento y su genero, o
+   * dice "no quiero responder". El id sale del token: no se puede tocar el perfil de otro.
+   */
+  @UseGuards(JwtClienteGuard, TenantGuard)
+  @Patch('perfil')
+  actualizarPerfil(
+    @CurrentCliente() cli: ClienteAuth,
+    @Body() dto: ActualizarPerfilClienteDto,
+  ) {
+    return this.auth.actualizarPerfilCliente(cli.id, dto);
+  }
+
+  /** "Borrar mis datos de perfil" (Ley 25.326): fecha y genero vuelven a null. */
+  @UseGuards(JwtClienteGuard, TenantGuard)
+  @Delete('perfil')
+  borrarPerfil(@CurrentCliente() cli: ClienteAuth) {
+    return this.auth.borrarPerfilCliente(cli.id);
   }
 
   /** Limpia la cookie. El token de cliente no tiene estado en el servidor. */

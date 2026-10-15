@@ -72,4 +72,10 @@ export class ActualizarConfiguracionDto {
   @IsOptional() @IsBoolean() pushPremioPorVencer?: boolean;
   @IsOptional() @IsBoolean() pushAUnoDelPremio?: boolean;
   @IsOptional() @IsBoolean() pushInactivos30Dias?: boolean;
+
+  /**
+   * PERFILADO PROGRESIVO: a partir de que visita la PWA Cliente le pide fecha de nacimiento y
+   * genero. Default 3 en el schema; el dueno puede bajarlo (2) o subirlo.
+   */
+  @IsOptional() @IsInt() @Min(1) @Max(50) perfilDesdeVisita?: number;
 }

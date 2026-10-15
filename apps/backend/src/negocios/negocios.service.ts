@@ -81,6 +81,8 @@ export class NegociosService {
           modoFidelizacion: true, sellosParaPremio: true, premioTexto: true, menuActivo: true,
           tiposPedidoHabilitados: true, modosPagoHabilitados: true, mostrarResenaPostVisita: true,
           numeroAtendiente: true, usarNumeroAtendienteDistinto: true,
+          // Perfilado progresivo (fase 1): desde que visita la PWA pide fecha/genero.
+          perfilDesdeVisita: true,
           // Grillas de horarios (JSON): el cliente las usa para calcular "abierto" con Intl.
           horariosAtencion: true, horariosDelivery: true,
         },
@@ -96,6 +98,13 @@ export class NegociosService {
     const configuracion = sucursal
       ? await this.configuracion.configEfectivaCacheada(negocio.id, sucursal.id)
       : config;
+
+    // PERFILADO PROGRESIVO: umbral de visitas desde el que la PWA pide fecha/genero. Se expone
+    // ARRIBA ademas de dentro de `configuracion` porque es el nombre que la PWA Cliente lee.
+    // Si el club todavia no tiene el campo (o quedo fuera del select por el camino de sucursal),
+    // el default es 3: el mismo `@default(3)` del schema.
+    const perfilDesdeVisita =
+      (configuracion as { perfilDesdeVisita?: number } | null)?.perfilDesdeVisita ?? 3;
 
     const numeroAtendiente = await this.resolver.resolverNumeroAtendiente(
       negocio.id, sucursal?.id ?? null,
@@ -114,6 +123,8 @@ export class NegociosService {
     return {
       ...negocio,
       configuracion,
+      // Perfilado progresivo: la PWA Cliente lee ESA clave para saber cuando preguntar.
+      perfilDesdeVisita,
       numeroAtendiente,
       sucursalActiva: sucursal,
       sucursales,

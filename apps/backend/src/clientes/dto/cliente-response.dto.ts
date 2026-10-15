@@ -1,4 +1,4 @@
-import { EtiquetaCliente } from '@prisma/client';
+import { EtiquetaCliente, GeneroCliente } from '@prisma/client';
 
 /**
  * Dos contratos de respuesta segun el rol que consulta (aprobado por el usuario).
@@ -40,6 +40,7 @@ export interface ClienteResponseAdmin {
   creadoEn: Date;
   notasInternas: string | null;
   fechaNacimiento: Date | null;
+  genero: GeneroCliente | null;
   aceptaNotificaciones: boolean;
   tarjetas?: TarjetaSucursalResponse[];
 }

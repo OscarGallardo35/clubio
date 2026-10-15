@@ -3,18 +3,24 @@ import { randomUUID } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as speakeasy from 'speakeasy';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { DisparosService } from '../push/disparos.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
 import { requireEnv } from '../common/utils/env.util';
+import {
+  CONSENTIMIENTO_PERFIL_VERSION,
+  parseFechaNacimientoPerfil,
+} from '../common/utils/perfil-cliente.util';
 import type { LoginEmpleadoDto } from './dto/login-empleado.dto';
 import type { LoginDuenoDto } from './dto/login-dueno.dto';
 import type { Verificar2FaDto } from './dto/verificar-2fa.dto';
 import type { RefreshTokenDto } from './dto/refresh-token.dto';
 import type { RegistrarClienteDto } from './dto/registrar-cliente.dto';
 import type { RecuperarClienteDto } from './dto/recuperar-cliente.dto';
+import type { ActualizarPerfilClienteDto } from './dto/actualizar-perfil-cliente.dto';
 
 // ---- Lockout por NEGOCIO (refinamiento 1) ----
 const LOCKOUT_PREFIX = 'lockout:negocio:';
@@ -424,6 +430,9 @@ export class AuthService {
         id: true, negocioId: true, nombre: true, telefono: true, aceptaNotificaciones: true,
         sellosActuales: true, puntosActuales: true, totalVisitas: true, etiqueta: true,
         ultimaVisita: true, creadoEn: true,
+        // PERFILADO PROGRESIVO: la PWA decide con esto si mostrar el pedido de fecha/genero
+        // (y la pantalla "mis datos" para editarlos o borrarlos).
+        fechaNacimiento: true, genero: true, perfiladoRechazado: true, perfiladoOmitidoEn: true,
       },
     });
     if (!cliente) throw new UnauthorizedException('Cliente no valido');
@@ -473,6 +482,9 @@ export class AuthService {
         id: cliente.id, nombre: cliente.nombre, telefono: cliente.telefono,
         etiqueta: cliente.etiqueta, totalVisitas: cliente.totalVisitas,
         ultimaVisita: cliente.ultimaVisita, aceptaNotificaciones: cliente.aceptaNotificaciones,
+        fechaNacimiento: cliente.fechaNacimiento, genero: cliente.genero,
+        perfiladoRechazado: cliente.perfiladoRechazado,
+        perfiladoOmitidoEn: cliente.perfiladoOmitidoEn,
       },
       negocio: {
         id: negocio.id, slug: negocio.slug, nombre: negocio.nombre, plan: negocio.plan,
@@ -490,6 +502,106 @@ export class AuthService {
       sumoHoy: visitasHoy > 0,
       visitasHoy,
     };
+  }
+
+  // =========================================================================
+  // 5b) PERFILADO PROGRESIVO DEL CLIENTE (fecha de nacimiento / genero)
+  // =========================================================================
+
+  /** Columnas del perfilado (lo que se devuelve al cliente dueño de los datos). */
+  private static readonly PERFIL_SELECT = {
+    fechaNacimiento: true,
+    genero: true,
+    perfiladoRechazado: true,
+    perfiladoOmitidoEn: true,
+    consentimientoPerfilEn: true,
+    consentimientoPerfilVer: true,
+  } as const;
+
+  /** Lee el perfilado del cliente y falla con 401 si el cliente no existe o esta eliminado. */
+  private async leerPerfil(clienteId: string) {
+    const perfil = await this.prisma.cliente.findFirst({
+      where: { id: clienteId, eliminadoEn: null },
+      select: AuthService.PERFIL_SELECT,
+    });
+    if (!perfil) throw new UnauthorizedException('Cliente no valido');
+    return perfil;
+  }
+
+  /**
+   * PATCH /auth/cliente/perfil (autenticado como cliente: el id sale del TOKEN, nunca del body).
+   *
+   * Semantica:
+   *  - `{ fechaNacimiento?, genero? }` -> guarda lo que venga y registra el consentimiento
+   *    (`consentimientoPerfilEn = now()`, `consentimientoPerfilVer = 'v1-2026-10'`).
+   *  - `null` en cualquiera de los dos -> lo BORRA (queda en null). Eso NO registra consentimiento.
+   *  - `{ rechazar: true }` -> marca `perfiladoRechazado` y NO guarda el resto. Es DEFINITIVO en
+   *    cuanto a "no preguntar mas", pero NO bloquea un guardado posterior (si el cliente se
+   *    arrepiente y carga sus datos desde "mis datos", la request siguiente entra igual).
+   *  - `{ omitido: true }` -> `perfiladoOmitidoEn = now()`: se le mostro el pedido y no respondio.
+   *
+   * La validacion de la fecha (valida, no futura, no mas de 100 años atras, edad >= 13) corre
+   * en el SERVIDOR (`parseFechaNacimientoPerfil`), no solo en el input de la PWA.
+   */
+  async actualizarPerfilCliente(clienteId: string, dto: ActualizarPerfilClienteDto) {
+    await this.leerPerfil(clienteId); // 401 si no es un cliente valido
+
+    if (dto.rechazar === true) {
+      await this.prisma.cliente.update({
+        where: { id: clienteId },
+        data: { perfiladoRechazado: true },
+      });
+      return { perfil: await this.leerPerfil(clienteId), guardado: false, rechazado: true };
+    }
+
+    const data: Prisma.ClienteUpdateInput = {};
+    let guardado = false;
+
+    if (dto.fechaNacimiento !== undefined) {
+      const fecha = parseFechaNacimientoPerfil(dto.fechaNacimiento);
+      data.fechaNacimiento = fecha;
+      if (fecha) guardado = true;
+    }
+    if (dto.genero !== undefined) {
+      data.genero = dto.genero;
+      if (dto.genero) guardado = true;
+    }
+    if (dto.omitido === true) {
+      data.perfiladoOmitidoEn = new Date();
+    }
+
+    // El consentimiento se registra UNA vez por guardado con datos (no al borrar ni al omitir).
+    if (guardado) {
+      data.consentimientoPerfilEn = new Date();
+      data.consentimientoPerfilVer = CONSENTIMIENTO_PERFIL_VERSION;
+    }
+
+    if (Object.keys(data).length > 0) {
+      await this.prisma.cliente.update({ where: { id: clienteId }, data });
+    }
+    return { perfil: await this.leerPerfil(clienteId), guardado };
+  }
+
+  /**
+   * DELETE /auth/cliente/perfil: "borrar mis datos de perfil" (Ley 25.326, derecho de supresion).
+   *
+   * Borra fecha de nacimiento y genero, y TAMBIEN el registro de consentimiento: sin los datos
+   * no hay nada que ese consentimiento justifique (y seria quedarse con un dato del cliente de
+   * mas). `perfiladoRechazado` NO se toca: es la decision del cliente de "no preguntar mas", y
+   * borrar datos no la revierte.
+   */
+  async borrarPerfilCliente(clienteId: string) {
+    await this.leerPerfil(clienteId);
+    await this.prisma.cliente.update({
+      where: { id: clienteId },
+      data: {
+        fechaNacimiento: null,
+        genero: null,
+        consentimientoPerfilEn: null,
+        consentimientoPerfilVer: null,
+      },
+    });
+    return { perfil: await this.leerPerfil(clienteId), borrado: true };
   }
 
   /** POST /auth/cliente/logout. El JWT de cliente es stateless: solo se limpia la cookie. */

@@ -24,6 +24,7 @@ import { useMiTarjeta } from '@/hooks/useMiTarjeta'
 import { useSucursalActiva } from '@/hooks/useSucursalActiva'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { CardNotificaciones } from '@/components/notificaciones/CardNotificaciones'
+import { PerfilamientoGate } from '@/components/perfil/PerfilamientoGate'
 import { COLOR_PRIMARIO_DEFECTO, COLOR_SECUNDARIO_DEFECTO, RUTAS } from '@/lib/constants'
 import { vistaDeTarjeta } from '@/lib/tarjeta'
 import { numeroAtencionEfectivo } from '@/lib/numero-atencion'
@@ -245,6 +246,21 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
 
       {/* Solo si el plan del local incluye push (si no, el backend responde 403 al suscribir). */}
       {tieneFeature('push') ? <CardNotificaciones /> : null}
+
+      {/* Acceso permanente a Mis datos (ver / editar / borrar lo declarado + politica). */}
+      <Link
+        href={RUTAS.perfil(negocio?.slug ?? slugNegocio)}
+        className="text-center text-sm text-white/80 underline underline-offset-4"
+      >
+        Mis datos y privacidad
+      </Link>
+
+      {/*
+        Fallback del perfilado progresivo: quien cerró el cartel en la confirmación de /club puede
+        responder acá (o desde Mis datos). El gate respeta el cooldown, el rechazo y el umbral, así
+        que no aparece si no corresponde.
+      */}
+      <PerfilamientoGate />
     </div>
   )
 }

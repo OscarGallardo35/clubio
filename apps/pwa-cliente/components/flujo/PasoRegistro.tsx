@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { registrarClienteSchema } from '@repo/validators'
 import { Badge, Button, Input, Label, TarjetaSellos } from '@repo/ui'
 import type { TemaTarjeta } from '@repo/ui'
@@ -32,6 +33,8 @@ export interface PasoRegistroProps {
   theme?: TemaTarjeta | null
   /** Slug del tenant para el icono de esquina (rama con theme). */
   slugTenant?: string | null
+  /** Ruta de la politica de privacidad del local (la arma FlujoVisita). Sin esto, no hay link. */
+  hrefPrivacidad?: string | null
   onRegistrar: (datos: { nombre: string; telefono: string }) => void
   onSumar: () => void
 }
@@ -50,6 +53,7 @@ export function PasoRegistro({
   cargando,
   theme,
   slugTenant,
+  hrefPrivacidad,
   onRegistrar,
   onSumar,
 }: PasoRegistroProps) {
@@ -158,9 +162,16 @@ export function PasoRegistro({
             {cargando ? 'Entrando…' : 'Sumar mi visita'}
           </Button>
 
-          <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          {/* El aviso del telefono y, al lado, la politica de privacidad: es el momento en que el
+              cliente esta entregando el dato, o sea cuando tiene que poder leer para que se usa. */}
+          <p className="flex flex-wrap items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
             <IconoCheck className="size-3.5" />
-            Usamos tu número solo para el club del local.
+            <span>Usamos tu número solo para el club del local.</span>
+            {hrefPrivacidad ? (
+              <Link href={hrefPrivacidad} className="underline underline-offset-4">
+                Ver cómo cuidamos tus datos
+              </Link>
+            ) : null}
           </p>
         </form>
       )}

@@ -29,9 +29,20 @@ export function FlujoVisita() {
   const router = useRouter()
   const { negocio, configuracion, cargando: cargandoBranding } = useBranding()
   const { sucursal, slugParaApi } = useSucursalActiva()
-  const { autenticado, cliente, resuelto } = useCliente()
+  const { autenticado, cliente, resuelto, refetch } = useCliente()
   const tarjetas = useClienteStore((s) => s.tarjetas)
   const visita = useVisitaQr(slugParaApi)
+  const pasoAprobada = visita.flujo.paso === 'aprobada'
+
+  /**
+   * Al entrar a la confirmacion se refresca la sesion (/auth/cliente/me) UNA vez: recien ahi el
+   * `totalVisitas` del cliente incluye la visita que se acaba de aprobar, y el perfilado
+   * progresivo (PerfilamientoGate, montado en PasoConfirmado) decide con el numero correcto.
+   * Sin esto, el cliente que llega a la 3ra visita se quedaria sin el cartel hasta la 4ta.
+   */
+  React.useEffect(() => {
+    if (pasoAprobada) void refetch()
+  }, [pasoAprobada, refetch])
 
   // Mismo camino que PantallaTarjeta: el theme del tenant sale de getTheme(negocio).
   // Se propaga a las tarjetas del flujo (registro, espera, confirmacion) para que
@@ -79,6 +90,7 @@ export function FlujoVisita() {
         autenticado={autenticado}
         theme={theme}
         slugTenant={slugTenant}
+        hrefPrivacidad={negocio?.slug ? RUTAS.privacidad(negocio.slug) : null}
         // Mientras no se sabe si hay sesion, el boton queda inhabilitado: con
         // eso no se le pide el nombre a alguien que ya es del club.
         cargando={visita.flujo.paso === 'solicitando' || (!resuelto && cargandoBranding)}

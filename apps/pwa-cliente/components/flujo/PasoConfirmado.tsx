@@ -7,6 +7,7 @@ import { resumenDeAprobacion } from '@/lib/visita-maquina'
 import type { SellosTrasAprobar } from '@/lib/visita-maquina'
 import { BloqueResena } from './BloqueResena'
 import { IconoCheck } from './iconos'
+import { PerfilamientoGate } from '@/components/perfil/PerfilamientoGate'
 
 export interface PasoConfirmadoProps {
   nombreCliente: string | null
@@ -184,6 +185,14 @@ export function PasoConfirmado({
           Volver al menú
         </Button>
       </div>
+
+      {/*
+        PERFILADO PROGRESIVO. Este es el mejor momento para pedir el dato: el cliente acaba de
+        sumar su visita y esta mirando la confirmacion. El gate decide solo (3ra visita o mas,
+        config del local, cooldown, rechazo) y no muestra nada si no corresponde. El refresco de
+        `totalVisitas` lo hace FlujoVisita al entrar al paso `aprobada`.
+      */}
+      <PerfilamientoGate />
     </div>
   )
 }

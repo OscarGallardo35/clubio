@@ -34,6 +34,7 @@
     "test:horarios": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-horarios.cjs",
     "test:staff-hibrido": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-staff-hibrido.cjs",
     "test:auth-dueno": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-auth-dueno.cjs",
+    "test:perfil-cliente": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-perfil-cliente.cjs",
     "test:cloudinary": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-cloudinary.cjs",
     "test:permiso-carta": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-permiso-carta.cjs",
     "test:superadmin-media": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-superadmin-media.cjs",

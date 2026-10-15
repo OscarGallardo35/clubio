@@ -10,6 +10,7 @@ import { JwtGlobalModule } from './common/auth/jwt-global.module';
 import { RedisModule } from './common/redis/redis.module';
 import { conexionBullmq } from './common/redis/redis-cliente.util';
 import { AuditoriaModule } from './common/auditoria/auditoria.module';
+import { SaldoNotificadorModule } from './common/saldo/saldo-notificador.module';
 import { mensajeDeThrottle } from './common/constants/throttle-messages';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
@@ -53,6 +54,8 @@ import { SuperadminModule } from './superadmin/superadmin.module';
     JwtGlobalModule,
     RedisModule,
     AuditoriaModule,
+    // Evento UNICO de saldo (`saldo:cambiado`): lo usan visitas, fidelizacion y push.
+    SaldoNotificadorModule,
     SucursalesModule,
     HealthModule,
     AuthModule,

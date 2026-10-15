@@ -11,6 +11,7 @@ import { SegmentosService } from '../clientes/segmentos.service';
 import { enmascararTelefono } from '../common/utils/phone.util';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { VisitasGateway } from './visitas.gateway';
+import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
 import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
 import { DisparosService } from '../push/disparos.service';
 import { HorariosService } from '../horarios/horarios.service';
@@ -69,6 +70,7 @@ export class VisitasService {
     private readonly fidelizacion: FidelizacionService,
     private readonly disparos: DisparosService,
     private readonly horarios: HorariosService,
+    private readonly saldo: SaldoNotificador,
   ) {}
 
   /**
@@ -716,6 +718,17 @@ export class VisitasService {
     await this.auditoria.registrar({
       negocioId, accion: 'visita.monto_editado', empleadoId: empleado.id, clienteId: visita.clienteId,
       detalle: { ...resultado }, ip: empleado.ip,
+    });
+
+    // EVENTO UNICO DE SALDO (hueco #3, el historico): editar el monto mueve los PUNTOS del cliente
+    // (y por eso la tarjeta abierta mostraba el saldo viejo). Va DESPUES de la transaccion, con el
+    // par real que la transaccion dejo escrito; el delta de sellos es 0 (el sello es por visita).
+    await this.saldo.avisar(negocioId, visita.clienteId, {
+      sellos: 0,
+      puntos: resultado.puntosDespues - resultado.puntosAntes,
+      saldoDespues: resultado.saldo.despues,
+      motivo: 'visita_monto_editado',
+      ref: visita.id,
     });
 
     return { ok: true, visitaId: visita.id, ...resultado };

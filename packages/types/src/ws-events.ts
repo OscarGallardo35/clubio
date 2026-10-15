@@ -42,3 +42,35 @@ export interface VisitaAprobadaPayload {
 
 /** Re-export para que el union del payload y el enum del schema no se separen. */
 export type { ModoFidelizacion };
+
+/** Par sellos+puntos EFECTIVOS del cliente (respeta GLOBAL vs POR_SUCURSAL del club). */
+export interface SaldoPar {
+  sellos: number;
+  puntos: number;
+}
+
+/**
+ * Payload del evento WS `saldo:cambiado` (namespace /visitas, sala `cliente:{clienteId}`).
+ *
+ * Es el evento UNICO de "tu saldo cambio": lo emite `SaldoNotificador.avisar` desde los TRES
+ * lugares que mueven el saldo del cliente y que antes no avisaban a la app (`acreditar`,
+ * `aplicarRegalo` y `editarMonto`). La PWA Cliente tiene UN solo listener
+ * (`hooks/useMiTarjeta`) que revalida la tarjeta; el par `antes`/`despues` viaja en el evento
+ * para que cualquier pantalla pueda mostrar el cambio SIN re-consultar.
+ *
+ * Declarado UNA sola vez (aca), igual que `VisitaAprobadaPayload`.
+ */
+export interface SaldoCambiadoPayload {
+  negocioId: string;
+  clienteId: string;
+  /** Cuanto sumo (o resto, si es negativo) este cambio en cada eje. */
+  sellos: number;
+  puntos: number;
+  /** Saldo efectivo antes y despues del cambio. Con un cambio de 0 son iguales. */
+  saldo: { antes: SaldoPar; despues: SaldoPar };
+  /** Que lo movio: 'visita_aprobada' | 'pedido_entregado' | 'disparo_regalo' | 'premio_aceptado' | 'visita_monto_editado'. */
+  motivo: string;
+  /** Referencia del cambio (id de visita / pedido / premio / disparo), para diagnostico. */
+  ref: string | null;
+  emitidoEn: string;
+}

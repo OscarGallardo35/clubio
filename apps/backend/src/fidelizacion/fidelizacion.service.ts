@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { MetodoVisita, Prisma, TipoVisita } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SegmentosService } from '../clientes/segmentos.service';
+import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
+import type { SaldoPar } from '@repo/types';
 
 export type ModoFidelizacion = 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO';
 
@@ -97,6 +99,7 @@ export class FidelizacionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly segmentos: SegmentosService,
+    private readonly saldo: SaldoNotificador,
   ) {}
 
   /**
@@ -192,6 +195,18 @@ export class FidelizacionService {
     const sellosEfectivos = cfg.porSucursal ? tarjeta.sellosActuales : actualizado.sellosActuales;
     const puntosEfectivos = cfg.porSucursal ? tarjeta.puntosActuales : actualizado.puntosActuales;
 
+    // EVENTO UNICO DE SALDO (hueco #1): la visita/pedido mueve el saldo y la app no se enteraba.
+    // El aviso va con los valores REALES que esta transaccion dejo escritos (`actualizado` y
+    // `tarjeta` son las filas post-acreditacion): ni un query extra ni un recalculado a mano.
+    // `motivo`/`ref` salen del contexto para que el evento diga QUE lo movio.
+    await this.saldo.avisar(ctx.negocioId, ctx.clienteId, {
+      sellos,
+      puntos,
+      saldoDespues: { sellos: sellosEfectivos, puntos: puntosEfectivos },
+      motivo: ctx.metodo === 'PEDIDO' ? 'pedido_entregado' : 'visita_aprobada',
+      ref: ctx.pedidoId ?? visita.id,
+    });
+
     return {
       visitaId: visita.id,
       sellos,
@@ -227,6 +242,8 @@ export class FidelizacionService {
   ): Promise<{
     montoAntes: number | null; montoDespues: number;
     puntosAntes: number; puntosDespues: number; saldoDespues: number;
+    /** Par EFECTIVO (sellos+puntos) antes y despues: lo usa el evento `saldo:cambiado`. */
+    saldo: { antes: SaldoPar; despues: SaldoPar };
   }> {
     const cfg = await this.contexto(ctx.negocioId);
     const visita = await tx.visita.findFirstOrThrow({
@@ -240,16 +257,23 @@ export class FidelizacionService {
     const puntosDespues = calcularPuntos(ctx.montoNuevo, cfg.puntosPorMil);
     const delta = puntosDespues - visita.puntosOtorgados;
 
-    const saldo = cfg.porSucursal
-      ? (await tx.tarjetaClienteSucursal.findUnique({
+    // El saldo a tocar sigue la MISMA regla que `acreditar`: con POR_SUCURSAL vive en la tarjeta.
+    // Se leen LOS DOS ejes: `editarMonto` solo mueve puntos, pero el evento `saldo:cambiado`
+    // reporta el par completo (con los sellos intactos) para que la tarjeta del cliente pueda
+    // mostrar antes/despues sin una consulta extra.
+    const fila = cfg.porSucursal
+      ? await tx.tarjetaClienteSucursal.findUnique({
           where: {
             clienteId_sucursalId: { clienteId: visita.clienteId, sucursalId: visita.sucursalId },
           },
-          select: { puntosActuales: true },
-        }))?.puntosActuales ?? 0
-      : (await tx.cliente.findUnique({
-          where: { id: visita.clienteId }, select: { puntosActuales: true },
-        }))?.puntosActuales ?? 0;
+          select: { sellosActuales: true, puntosActuales: true },
+        })
+      : await tx.cliente.findUnique({
+          where: { id: visita.clienteId },
+          select: { sellosActuales: true, puntosActuales: true },
+        });
+    const saldo = fila?.puntosActuales ?? 0;
+    const sellos = fila?.sellosActuales ?? 0;
 
     if (delta < 0 && saldo + delta < 0) {
       throw new BadRequestException(
@@ -284,6 +308,7 @@ export class FidelizacionService {
       puntosAntes: visita.puntosOtorgados,
       puntosDespues,
       saldoDespues: saldo + delta,
+      saldo: { antes: { sellos, puntos: saldo }, despues: { sellos, puntos: saldo + delta } },
     };
   }
 }

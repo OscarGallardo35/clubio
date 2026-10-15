@@ -1,10 +1,11 @@
 import { Logger } from '@nestjs/common';
 import {
-  OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer,
+  OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, WebSocketGateway, WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
 import { COOKIE_CLIENTE, COOKIE_EMPLEADO, leerCookie } from '../common/utils/cookie.util';
 import type { VisitaAprobadaPayload } from '@repo/types';
 
@@ -27,7 +28,7 @@ import type { VisitaAprobadaPayload } from '@repo/types';
  * ?token= -> Authorization -> cookie.
  */
 @WebSocketGateway({ namespace: '/visitas', cors: { origin: true, credentials: true } })
-export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   private readonly logger = new Logger('VisitasGateway');
 
   @WebSocketServer() server!: Server;
@@ -35,7 +36,17 @@ export class VisitasGateway implements OnGatewayConnection, OnGatewayDisconnect 
   constructor(
     private readonly wsGuard: WsJwtGuard,
     private readonly prisma: PrismaService,
+    private readonly saldo: SaldoNotificador,
   ) {}
+
+  /**
+   * El server de este namespace se publica al `SaldoNotificador` (que es @Global y NO puede
+   * inyectar este gateway: armaria el ciclo Visitas -> Push -> Visitas). Es el unico punto donde
+   * el server de `/visitas` esta disponible.
+   */
+  afterInit(server: Server) {
+    this.saldo.registrarServer(server);
+  }
 
   static salaSucursal(sucursalId: string) { return `sucursal:${sucursalId}:empleados`; }
   static salaDuenos(negocioId: string) { return `negocio:${negocioId}:duenos`; }

@@ -5,6 +5,8 @@ import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { PushService, VariablesPlantilla } from './push.service';
+import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
+import type { SaldoPar } from '@repo/types';
 import type { CrearDisparoDto } from './dto/crear-disparo.dto';
 import type { ActualizarDisparoDto } from './dto/actualizar-disparo.dto';
 import type { HistorialDisparosDto } from './dto/historial-disparos.dto';
@@ -132,6 +134,7 @@ export class DisparosService {
     private readonly push: PushService,
     private readonly auditoria: AuditoriaService,
     private readonly resolver: SucursalResolverService,
+    private readonly saldo: SaldoNotificador,
   ) {}
 
   // ==========================================================================
@@ -700,7 +703,7 @@ export class DisparosService {
     } else if (regaloCalc.sellos || regaloCalc.puntos) {
       // 3b) Regalo (automatico): acredita sellos/puntos respetando el modo del club.
       const sucursalId = await this.sucursalDe(d.negocioId, cliente.id, opts.sucursalId);
-      aplicado = await this.aplicarRegalo(cliente.id, sucursalId, d.regalo, cfg);
+      aplicado = await this.aplicarRegalo(d.negocioId, cliente.id, sucursalId, d.regalo, cfg, 'disparo_regalo', d.id);
       await this.auditoria.registrar({
         negocioId: d.negocioId,
         accion: 'push.disparo_regalo',
@@ -738,21 +741,35 @@ export class DisparosService {
    *
    * PUBLICO a proposito: lo reusa `PremiosService.aceptar` para acreditar el premio
    * cuando el cliente ACEPTA la notificacion (misma logica del club, sin divergir).
+   *
+   * Devuelve ademas el par REAL antes/despues (leido de las filas que esta misma
+   * transaccion escribio, no recalculado a mano): lo usan la modal del premio
+   * (`saldo.antes`/`saldo.despues`) y el evento `saldo:cambiado` (hueco #2).
    */
   public async aplicarRegalo(
+    negocioId: string,
     clienteId: string,
     sucursalId: string,
     regalo: unknown,
     cfg: ContextoClub,
-  ) {
+    /** Que lo origino, para el evento `saldo:cambiado` (ej. 'premio_aceptado'). */
+    motivo = 'disparo_regalo',
+    ref: string | null = null,
+  ): Promise<{ sellos: number; puntos: number; saldoAntes: SaldoPar; saldoDespues: SaldoPar }> {
     const { sellos, puntos } = this.calcularRegalo(regalo, cfg.modo);
-    if (!sellos && !puntos) return { sellos: 0, puntos: 0 };
+    if (!sellos && !puntos) {
+      // Nada que acreditar (premio LIBRE o modo que ignora ese eje): el par es el saldo ACTUAL y
+      // antes == despues. Se lee de la base porque aca no hay ninguna fila escrita que mirar.
+      const actual = await this.saldo.parActual(negocioId, clienteId, sucursalId);
+      return { sellos: 0, puntos: 0, saldoAntes: actual, saldoDespues: actual };
+    }
 
     const ops: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.tarjetaClienteSucursal.upsert({
         where: { clienteId_sucursalId: { clienteId, sucursalId } },
         update: { sellosActuales: { increment: sellos }, puntosActuales: { increment: puntos } },
         create: { clienteId, sucursalId, sellosActuales: sellos, puntosActuales: puntos },
+        select: { sellosActuales: true, puntosActuales: true },
       }),
     ];
     if (!cfg.porSucursal) {
@@ -760,14 +777,42 @@ export class DisparosService {
         this.prisma.cliente.update({
           where: { id: clienteId },
           data: { sellosActuales: { increment: sellos }, puntosActuales: { increment: puntos } },
+          select: { sellosActuales: true, puntosActuales: true },
         }),
       );
     }
-    await this.prisma.$transaction(ops);
-    return { sellos, puntos };
+    const filas = (await this.prisma.$transaction(ops)) as Array<{
+      sellosActuales: number; puntosActuales: number;
+    }>;
+    // El saldo EFECTIVO es el de la tarjeta de la sucursal con POR_SUCURSAL y el del cliente con
+    // GLOBAL (misma regla que `saldosEfectivos`): las dos filas se escriben siempre, pero solo la
+    // que manda el modo es la que se le muestra al cliente.
+    const saldoDespues = cfg.porSucursal ? filas[0] : filas[1];
+    const saldoAntes: SaldoPar = {
+      sellos: saldoDespues.sellosActuales - sellos,
+      puntos: saldoDespues.puntosActuales - puntos,
+    };
+
+    // EVENTO UNICO DE SALDO (hueco #2): el regalo de un disparo/campaña/premio movia el saldo en
+    // silencio. Se avisa con el delta y el par real que acaba de quedar escrito.
+    await this.saldo.avisar(negocioId, clienteId, {
+      sellos,
+      puntos,
+      saldoDespues: { sellos: saldoDespues.sellosActuales, puntos: saldoDespues.puntosActuales },
+      motivo,
+      ref,
+    });
+
+    return {
+      sellos,
+      puntos,
+      saldoAntes,
+      saldoDespues: { sellos: saldoDespues.sellosActuales, puntos: saldoDespues.puntosActuales },
+    };
   }
 
-  private calcularRegalo(regalo: unknown, modo: string): { sellos: number; puntos: number } {
+  /** PUBLICO: `PremiosService` lo reusa para PROYECTAR lo que acreditara un premio PENDIENTE. */
+  public calcularRegalo(regalo: unknown, modo: string): { sellos: number; puntos: number } {
     const r = (regalo ?? {}) as { sellos?: unknown; puntos?: unknown };
     const s = Math.max(0, Math.floor(Number(r.sellos ?? 0))) || 0;
     const p = Math.max(0, Math.floor(Number(r.puntos ?? 0))) || 0;

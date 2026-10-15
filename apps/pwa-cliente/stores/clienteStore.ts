@@ -22,6 +22,11 @@ interface ClienteState {
     token?: string | null
   }) => void
   actualizarSellos: (sucursalId: string, sellos: number, premioDesbloqueado?: boolean) => void
+  /**
+   * Mergea campos del cliente YA conocidos (ej. fechaNacimiento/genero tras el PATCH de
+   * /auth/cliente/perfil). No pisa lo que no viene y no inventa nada si no hay sesion.
+   */
+  actualizarCliente: (parcial: Partial<ClienteBasico>) => void
   limpiar: () => void
 }
 
@@ -55,6 +60,9 @@ export const useClienteStore = create<ClienteState>()((set, get) => ({
       premioPendiente: premioDesbloqueado === true ? true : s.premioPendiente,
       tarjetas: s.tarjetas.map((t) => (t.sucursalId === sucursalId ? { ...t, sellosActuales: sellos } : t)),
     })),
+
+  actualizarCliente: (parcial) =>
+    set((s) => (s.cliente ? { cliente: { ...s.cliente, ...parcial } } : {})),
 
   limpiar: () =>
     set({

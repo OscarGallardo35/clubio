@@ -1,6 +1,6 @@
 import type { SugerenciaUpsell } from './carrito-maquina'
 import { ApiClient, endpoints } from '@repo/api-client'
-import type { ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta, CrearPedidoBody, PedidoCreadoRespuesta, PedidoPublico, VerificacionRespuesta, PremioPublico, PremioAceptarRespuesta } from '@/types/api'
+import type { ClienteBasico, ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta, CrearPedidoBody, PedidoCreadoRespuesta, PedidoPublico, VerificacionRespuesta, PremioPublico, PremioAceptarRespuesta, Genero } from '@/types/api'
 
 /**
  * Cliente HTTP unico de la PWA.
@@ -25,6 +25,30 @@ export const clienteApi = {
     api.post<RegistroClienteRespuesta>(endpoints.auth.registrarCliente, body),
   recuperar: (body: { telefono: string; negocioSlug: string }) =>
     api.post<RecuperarClienteRespuesta>(endpoints.auth.recuperarCliente, body),
+}
+
+/**
+ * PERFILADO PROGRESIVO: los datos que el cliente declara (cumpleaños y genero).
+ *
+ * La ruta va escrita aca y no en `endpoints` (@repo/api-client) a proposito, igual que
+ * `premiosApi`: es una llamada de ESTA PWA y el package lo comparten las tres apps, con otros
+ * agentes trabajando en paralelo. El prefijo `/api` va explicito (misma regla que el resto).
+ *
+ * Semantica del body (contrato congelado del backend):
+ *  - `fechaNacimiento` / `genero` con valor: lo guarda.
+ *  - `fechaNacimiento: null` / `genero: null`: lo BORRA (derecho de supresion).
+ *  - `rechazar: true`: no le pidan mas datos nunca; `false` revierte esa decision.
+ */
+export const RUTA_PERFIL_CLIENTE = '/api/auth/cliente/perfil'
+
+export interface PerfilClienteBody {
+  fechaNacimiento?: string | null
+  genero?: Genero | null
+  rechazar?: boolean
+}
+
+export const clientePerfilApi = {
+  guardar: (body: PerfilClienteBody) => api.patch<ClienteMe | ClienteBasico>(RUTA_PERFIL_CLIENTE, body),
 }
 
 export const negocioApi = {

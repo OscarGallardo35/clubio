@@ -4,6 +4,8 @@ export const STORAGE = {
   sucursal: 'cliente:sucursal',
   carrito: 'cliente:carrito',
   preferencias: 'cliente:prefs',
+  /** Perfilado progresivo: sellos de tiempo por negocio (ver lib/perfilamiento-storage.ts). */
+  perfilamiento: 'cliente:perfilamiento',
 } as const
 
 /** Prefijo para lo que es por negocio: cliente:sucursal:<slug>. */
@@ -16,6 +18,10 @@ export const RUTAS = {
   club: (tenant: string) => `/${tenant}/club`,
   menu: (tenant: string) => `/${tenant}/menu`,
   tarjeta: (tenant: string) => `/${tenant}/tarjeta`,
+  /** Mi perfil: el cliente ve/edita/borra los datos que declaró. */
+  perfil: (tenant: string) => `/${tenant}/perfil`,
+  /** Politica de privacidad del local (Ley 25.326). */
+  privacidad: (tenant: string) => `/${tenant}/privacidad`,
   historial: '/historial',
   sucursales: '/seleccionar-sucursal',
   offline: '/offline',

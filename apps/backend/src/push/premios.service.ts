@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PremioOtorgado, Prisma } from '@prisma/client';
+import { EstadoPremio, PremioOtorgado, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
@@ -265,6 +265,84 @@ export class PremiosService {
   }
 
   // ==========================================================================
+  // LISTADO PROPIO (PWA Cliente -> "Mis premios" en /tarjeta)
+  // ==========================================================================
+
+  /**
+   * Premios del CLIENTE autenticado, SIEMPRE scoped por `negocioId + clienteId` (nunca por token
+   * suelto: un premio de otro cliente o de otro negocio no puede aparecer en esta lista).
+   *
+   * POR QUE EXISTE: el mecanismo de canje (link del staff + WhatsApp) vivia SOLO dentro de la modal
+   * de aceptar. Si el cliente la cerraba —o descartaba el push— un premio ACEPTADO quedaba
+   * IRRECUPERABLE, y en un LIBRE (que no mueve saldo: su unico valor es canjearlo en el local) eso
+   * significa perder el premio. Este listado es la fuente del bloque "Tus premios ganados".
+   *
+   * ESTADO COMPUTADO (clave): `VENCIDO` solo se PERSISTE cuando alguien intenta aceptar
+   * (`aceptar()`) o cuando pasa el cron de `PushScheduler.marcarPremiosVencidos`. En la DB puede
+   * haber filas PENDIENTE con `expiraEn` ya pasado, asi que aca el vencimiento se COMPUTA
+   * (`expiraEn < now` -> VENCIDO) para no mostrar como "pendiente" algo que ya no se puede aceptar.
+   * Un GET no escribe: la fila queda como estaba.
+   *
+   * ORDEN: por relevancia (PENDIENTE, que es lo unico accionable -> ACEPTADO, que hay que mostrar
+   * en el local -> CANJEADO -> VENCIDO) y, dentro de cada grupo, el mas nuevo primero.
+   * TOPE: `LIMITE_PREMIOS` (el diagnostico avisa que la acumulacion no tenia tope). Los activos se
+   * leen APARTE para que un PENDIENTE viejo no quede afuera por un tope de "los N mas nuevos".
+   */
+  async mios(negocioId: string, clienteId: string) {
+    const donde: Prisma.PremioOtorgadoWhereInput = { negocioId, clienteId };
+
+    const [total, activos, historial] = await Promise.all([
+      this.prisma.premioOtorgado.count({ where: donde }),
+      this.prisma.premioOtorgado.findMany({
+        where: { ...donde, estado: { in: ['PENDIENTE', 'ACEPTADO'] } },
+        orderBy: { creadoEn: 'desc' },
+        take: LIMITE_PREMIOS,
+      }),
+      this.prisma.premioOtorgado.findMany({
+        where: { ...donde, estado: { in: ['CANJEADO', 'VENCIDO'] } },
+        orderBy: { creadoEn: 'desc' },
+        take: LIMITE_PREMIOS,
+      }),
+    ]);
+
+    const ahora = Date.now();
+    const filas = [...activos, ...historial]
+      .map((fila) => ({ fila, estado: estadoComputado(fila, ahora) }))
+      .sort(
+        (a, b) =>
+          PESO_ESTADO[a.estado] - PESO_ESTADO[b.estado] ||
+          b.fila.creadoEn.getTime() - a.fila.creadoEn.getTime(),
+      )
+      .slice(0, LIMITE_PREMIOS);
+
+    // El mecanismo de canje se resuelve DESPUES del tope: son 2-3 queries por premio (slug del
+    // negocio + numero de atencion) y no tiene sentido pagarlas por premios que no se muestran.
+    // Solo en ACEPTADO (para poder mostrarlo en el local) y CANJEADO (comprobante del historial):
+    // un PENDIENTE todavia no tiene nada que verificar y uno VENCIDO ya no se puede canjear.
+    const premios = await Promise.all(
+      filas.map(async ({ fila, estado }) => ({
+        token: fila.token,
+        tipo: fila.tipo,
+        cantidad: fila.cantidad,
+        texto: fila.texto,
+        expiraEn: fila.expiraEn ? fila.expiraEn.toISOString() : null,
+        expiraLegible: vencimientoLegible(fila.expiraEn),
+        aceptadoEn: fila.aceptadoEn ? fila.aceptadoEn.toISOString() : null,
+        canjeadoEn: fila.canjeadoEn ? fila.canjeadoEn.toISOString() : null,
+        creadoEn: fila.creadoEn.toISOString(),
+        disparoNombre: fila.disparoNombre ?? null,
+        campanaNombre: fila.campanaNombre ?? null,
+        /** Computado (ver arriba): NO es el `estado` crudo de la fila. */
+        estado,
+        verificacion:
+          estado === 'ACEPTADO' || estado === 'CANJEADO' ? await this.linkCanje(fila) : null,
+      })),
+    );
+
+    return { total, mostrados: premios.length, premios };
+  }
+
+  // ==========================================================================
   // INTERNOS
   // ==========================================================================
 
@@ -421,6 +499,36 @@ export class PremiosService {
       data: { premiosCanjeados: { increment: 1 }, ultimoCanjeEn: new Date() },
     });
   }
+}
+
+/**
+ * TOPE del listado "Mis premios". El diagnostico avisa que la acumulacion no tenia tope: con
+ * decenas de premios la tarjeta se vuelve ilegible. Los activos (PENDIENTE/ACEPTADO) se leen aparte,
+ * asi que el tope nunca esconde uno accionable.
+ */
+const LIMITE_PREMIOS = 20;
+
+/**
+ * Orden por RELEVANCIA del listado: lo unico accionable primero (PENDIENTE), despues lo que hay que
+ * mostrar en el local (ACEPTADO), y al final el historial. Dentro de cada grupo, el mas nuevo primero.
+ */
+const PESO_ESTADO: Record<EstadoPremio, number> = {
+  PENDIENTE: 0,
+  ACEPTADO: 1,
+  CANJEADO: 2,
+  VENCIDO: 3,
+};
+
+/**
+ * Estado EFECTIVO de un premio: el de la fila, salvo que este PENDIENTE y ya haya pasado `expiraEn`.
+ *
+ * `VENCIDO` solo se persiste al intentar aceptar (o en el cron de vencimiento), asi que sin este
+ * computo el listado mostraria como "pendiente" —con boton de Aceptar— un premio que el backend
+ * va a rechazar. Solo lectura: no escribe nada.
+ */
+function estadoComputado(premio: PremioOtorgado, ahoraMs: number): EstadoPremio {
+  if (premio.estado !== 'PENDIENTE') return premio.estado;
+  return premio.expiraEn && premio.expiraEn.getTime() < ahoraMs ? 'VENCIDO' : 'PENDIENTE';
 }
 
 /** Primer nombre: corta en el primer espacio. Un solo nombre se devuelve entero. */

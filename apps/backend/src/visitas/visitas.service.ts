@@ -14,6 +14,7 @@ import { VisitasGateway } from './visitas.gateway';
 import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
 import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
 import { DisparosService } from '../push/disparos.service';
+import { PremiosService } from '../push/premios.service';
 import { HorariosService } from '../horarios/horarios.service';
 import { proximaAperturaTexto } from '../horarios/helpers/horario-negocio';
 import type { SolicitarVisitaDto } from './dto/solicitar-visita.dto';
@@ -71,6 +72,9 @@ export class VisitasService {
     private readonly disparos: DisparosService,
     private readonly horarios: HorariosService,
     private readonly saldo: SaldoNotificador,
+    // PREMIOS GANADOS: los lista `GET /visitas/mi-tarjeta` (misma llamada de la tarjeta, sin
+    // requests extra). Los premios del club (por meta de sellos/puntos) NO pasan por aca.
+    private readonly premios: PremiosService,
   ) {}
 
   /**
@@ -875,6 +879,15 @@ export class VisitasService {
       },
     });
 
+    // PREMIOS GANADOS ("Tus premios ganados" en la tarjeta). Van en la MISMA respuesta de la
+    // tarjeta (cero requests extra y cero estado nuevo en el front): un premio ACEPTADO —y sobre
+    // todo uno LIBRE, que no mueve saldo— era IRRECUPERABLE si el cliente cerraba la modal, porque
+    // el link de canje vivia solo ahi. Aislado: si el listado falla, la tarjeta se sigue mostrando.
+    const premios = await this.premios.mios(negocioId, clienteId).catch((e) => {
+      this.logger.warn(`No se pudieron listar los premios del cliente: ${(e as Error).message}`);
+      return { total: 0, mostrados: 0, premios: [] as never[] };
+    });
+
     return {
       cliente: { ...cliente, tokenVerificacion },
       /** Link absoluto y canonico de la pagina publica de verificacion (lo arma el servidor). */
@@ -884,6 +897,12 @@ export class VisitasService {
         esPrincipal: sucursal.esPrincipal ?? false,
       },
       tarjetas,
+      /**
+       * Premios del cliente (scoped por JWT), ordenados por relevancia y con el vencimiento ya
+       * COMPUTADO. `premiosTotal` es el total real (el array viene capado).
+       */
+      premios: premios.premios,
+      premiosTotal: premios.total,
       ...base,
     };
   }

@@ -6,7 +6,8 @@
  * `habilitado` lo decide el que llama: sin sesion NO se pega (el backend contestaria 401 y ese 401
  * no es un error, es "no logueado").
  *
- * Se refresca solo cuando el staff aprueba una visita: el WS `visita:aprobada` dispara un refetch.
+ * Se refresca solo cuando el saldo del cliente cambia: los WS `saldo:cambiado` (el evento UNICO
+ * del backend) y `visita:aprobada` (el historico) disparan el MISMO refetch.
  * El WS necesita el token EN MEMORIA (la cookie es HttpOnly y el handshake no la lee desde JS).
  */
 import * as React from 'react'
@@ -62,7 +63,28 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
   React.useEffect(() => {
     if (!habilitado) return undefined
     const socket = crearSocketVisitas(token)
-    socket.on('visita:aprobada', () => void refetch())
+    /**
+     * UN solo handler para las dos senales de "tu saldo cambio":
+     *
+     *  - `saldo:cambiado` es el evento UNICO del backend: lo emiten los TRES lugares que mueven el
+     *    saldo (visita/pedido acreditado, regalo de un disparo/campaña, y la correccion del monto
+     *    de una visita, que era el hueco historico: la tarjeta abierta no se refrescaba).
+     *  - `visita:aprobada` se sigue escuchando porque el backend lo emite igual, el flujo de la
+     *    visita lo usa para la confirmacion, y hay PWAs cacheadas que solo conocen ese evento.
+     *
+     * Los dos disparan el MISMO refetch. Se descarta el segundo si llega pegado al primero: una
+     * visita aprobada emite los DOS eventos, y no tiene sentido pegarle dos veces al backend
+     * (mismo criterio que el `visibilitychange` de abajo).
+     */
+    const ultimo = { t: 0 }
+    const alCambiarElSaldo = () => {
+      const ahora = Date.now()
+      if (ahora - ultimo.t < 1200) return
+      ultimo.t = ahora
+      void refetch()
+    }
+    socket.on('saldo:cambiado', alCambiarElSaldo)
+    socket.on('visita:aprobada', alCambiarElSaldo)
     return () => {
       socket.disconnect()
     }
@@ -71,7 +93,7 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
   /**
    * Al VOLVER a la app, re-consultar la tarjeta.
    *
-   * El WS `visita:aprobada` solo empuja mientras la app esta en primer plano: si el cliente la
+   * El WS del saldo solo empuja mientras la app esta en primer plano: si el cliente la
    * manda al fondo (o el telefono se duerme) y despues abre la notificacion, el service worker
    * solo ENFOCA la ventana que ya estaba en `/tarjeta` (no la navega ni la recarga), asi que la
    * tarjeta seguia mostrando el saldo viejo — sin premio y sin el boton de canje. Re-consultar al

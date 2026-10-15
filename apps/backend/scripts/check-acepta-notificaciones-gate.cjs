@@ -132,7 +132,7 @@ async function main() {
   const plantillas = [];
   const pedidos = [];
   let campanaPushId = null;
-  let campanaMkId = null;
+  const campanasMkIds = [];
   let realSubsApagadas = [];
   let realesRestauradas = false;
   let usosPrevios = [];
@@ -278,7 +278,8 @@ async function main() {
     });
     chk('POST /push/campanas responde 201/200', rCrear.status === 201 || rCrear.status === 200, `status=${rCrear.status} ${trunc(rCrear.data)}`);
     campanaPushId = rCrear.data?.id ?? null;
-    campanaMkId = rCrear.data?.campanaId ?? null;
+    const campanaMkId = rCrear.data?.campanaId ?? null;
+    if (campanaMkId) campanasMkIds.push(campanaMkId);
     chk('la campana nace PROGRAMADA con su campanaId', rCrear.data?.estado === 'PROGRAMADA' && !!campanaMkId, trunc(rCrear.data));
 
     // Vence la campana (solo la fecha en la DB: el despacho sigue siendo el camino real).
@@ -346,6 +347,28 @@ async function main() {
       trunc(filaAudit?.detalle));
     chk('[5] el switch sigue APAGADO en la DB (no lo cambio este camino)',
       (await prisma.cliente.findUnique({ where: { id: C_OFF.id }, select: { aceptaNotificaciones: true } }))?.aceptaNotificaciones === false);
+
+    // ==========================================================================
+    console.log('\n[6] PROMOCION manual con `clienteIds` explicitos: el apagado no se cuenta');
+    const rPromo = await req('POST', '/api/push/promocion', {
+      token: staffToken,
+      body: {
+        titulo: 'Promo del local', cuerpo: 'Hola {{nombre}}', url: '/tarjeta',
+        clienteIds: [C_OFF.id, C_ON.id],
+      },
+    });
+    chk('POST /push/promocion responde 201/200', rPromo.status === 201 || rPromo.status === 200, `status=${rPromo.status} ${trunc(rPromo.data)}`);
+    const campanaPromoId = rPromo.data?.campanaId ?? null;
+    if (campanaPromoId) campanasMkIds.push(campanaPromoId);
+    chk('[6] el contador dice 1 destinatario y 1 encolado (el apagado NO se cuenta)',
+      rPromo.data?.destinatarios === 1 && rPromo.data?.encolados === 1,
+      `destinatarios=${rPromo.data?.destinatarios} encolados=${rPromo.data?.encolados}`);
+    const filasPromo = campanaPromoId
+      ? await prisma.envioPushLog.findMany({ where: { campanaId: campanaPromoId } })
+      : [];
+    chk('[6] solo el PRENDIDO tiene fila del historial de la promocion',
+      filasPromo.length === 1 && filasPromo[0]?.clienteId === C_ON.id,
+      `filas=${filasPromo.length} clientes=${filasPromo.map((f) => f.clienteId).join(',')}`);
   } finally {
     // ==========================================================================
     console.log('\n[limpieza]');
@@ -373,9 +396,11 @@ async function main() {
     if (pedidos.length) {
       await prisma.pedido.deleteMany({ where: { id: { in: pedidos } } }).catch(() => undefined);
     }
-    if (campanaMkId) await prisma.envioPushLog.deleteMany({ where: { campanaId: campanaMkId } }).catch(() => undefined);
+    for (const cid of campanasMkIds) {
+      await prisma.envioPushLog.deleteMany({ where: { campanaId: cid } }).catch(() => undefined);
+    }
     if (campanaPushId) await prisma.campanaPush.deleteMany({ where: { id: campanaPushId } }).catch(() => undefined);
-    if (campanaMkId) await prisma.campanaMarketing.deleteMany({ where: { id: campanaMkId } }).catch(() => undefined);
+    if (campanasMkIds.length) await prisma.campanaMarketing.deleteMany({ where: { id: { in: campanasMkIds } } }).catch(() => undefined);
     if (disparos.length) await prisma.disparoPush.deleteMany({ where: { id: { in: disparos } } }).catch(() => undefined);
     if (plantillas.length) await prisma.plantillaPush.deleteMany({ where: { id: { in: plantillas } } }).catch(() => undefined);
     if (clientes.length) {

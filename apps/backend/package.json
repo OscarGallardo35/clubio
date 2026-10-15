@@ -26,6 +26,7 @@
     "test:google": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-google.cjs",
     "test:visita-pedido": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-visita-pedido.cjs",
     "test:disparos-push": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-disparos-push.cjs",
+    "test:cumpleanos": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-cumpleanos.cjs",
     "test:envios-push": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-envios-push.cjs",
     "test:campanas-push": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-campanas-push.cjs",
     "test:premios-push": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-premios-push.cjs",

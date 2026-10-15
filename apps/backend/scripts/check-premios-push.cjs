@@ -14,6 +14,11 @@
  *  [6] Un premio VENCIDO no se puede aceptar.
  *  [7] (estatico) El `tag` de la notificacion llega al payload del push (bug real: se
  *      descartaba y todas las push del cliente se colapsaban sin re-alertar).
+ *  [10] MIS PREMIOS (el listado de `GET /visitas/mi-tarjeta` -> bloque "Tus premios ganados"):
+ *      varios premios del mismo cliente con distintos tipos/estados, AISLAMIENTO entre clientes,
+ *      VENCIDO COMPUTADO (fila PENDIENTE con `expiraEn` pasado, sin que el GET la escriba) y —
+ *      el caso grave— un premio LIBRE ACEPTADO que se recupera del listado con su link de canje
+ *      despues de "cerrar la modal" (nadie lee la respuesta del aceptar).
  *
  * NO se crea NINGUNA suscripcion push: el flujo del premio no depende del push y asi no
  * se le manda nada a ningun cliente real. Todo lo creado se borra en el `finally`.
@@ -49,6 +54,8 @@ async function req(method, p, { body, token, slug } = {}) {
 
 const RUN = `${Date.now().toString(36)}`;
 const TEL = `+5****00${RUN.slice(-6).padEnd(6, '0')}`;
+/** Segundo cliente (solo para el aislamiento del listado): otro telefono, mismo negocio. */
+const TEL_AISLADO = `+5****01${RUN.slice(-6).padEnd(6, '0')}`;
 
 async function main() {
   const negocio = await prisma.negocio.findFirst({ where: { slug: SLUG, activo: true }, select: { id: true, nombre: true } });
@@ -330,6 +337,150 @@ async function main() {
     console.log('\n[8] Token inexistente -> 404 (nunca un listado)');
     const r404 = await req('GET', `/api/premios/no-existe-${RUN}`);
     chk('GET /premios/:token inexistente responde 404', r404.status === 404, `status=${r404.status}`);
+
+    // ==========================================================================
+    // [10] MIS PREMIOS: el listado de premios del cliente (GET /visitas/mi-tarjeta)
+    // ==========================================================================
+    console.log('\n[10] MIS PREMIOS: listado, aislamiento, vencido computado y el premio LIBRE recuperado');
+    const secretCliente = process.env.JWT_CLIENTE_SECRET;
+    if (!secretCliente) throw new Error('Falta JWT_CLIENTE_SECRET en el entorno');
+    const jwtCliente = (clienteId) =>
+      jwt.sign({ sub: clienteId, tipo: 'cliente', negocioId, negocioSlug: SLUG }, secretCliente, { expiresIn: '1h' });
+    const tokenCli = jwtCliente(cliente.id);
+
+    // Un premio por ESTADO/tipo, todos del MISMO cliente. Se crean directo en la DB: lo que se
+    // prueba aca es el LISTADO (el flujo de otorgar ya se probo en [1] y [4]).
+    const mkPremio = (clienteId, data) =>
+      prisma.premioOtorgado.create({ data: { negocioId, clienteId, ...data } });
+
+    const pPend = await mkPremio(cliente.id, {
+      tipo: 'SELLOS', cantidad: 2, texto: `2 sellos ${RUN}`, token: `test-mios-sellos-${RUN}`, estado: 'PENDIENTE',
+    });
+    premios.push(pPend.id);
+    const pLibreNuevo = await mkPremio(cliente.id, {
+      tipo: 'LIBRE', cantidad: 0, texto: `un postre gratis ${RUN}`, token: `test-mios-libre-${RUN}`, estado: 'PENDIENTE',
+    });
+    premios.push(pLibreNuevo.id);
+    // PENDIENTE con `expiraEn` YA PASADO: nadie lo persistio como VENCIDO (solo se escribe al
+    // intentar aceptar). El listado TIENE que devolverlo VENCIDO igual.
+    const pVencidoPend = await mkPremio(cliente.id, {
+      tipo: 'SELLOS', cantidad: 5, texto: `vencido sin persistir ${RUN}`, token: `test-mios-vencido-${RUN}`,
+      estado: 'PENDIENTE', expiraEn: new Date(Date.now() - 3_600_000),
+    });
+    premios.push(pVencidoPend.id);
+    const pCanjeado = await mkPremio(cliente.id, {
+      tipo: 'PUNTOS', cantidad: 50, texto: `50 puntos ${RUN}`, token: `test-mios-canjeado-${RUN}`,
+      estado: 'CANJEADO', aceptadoEn: new Date(Date.now() - 7_200_000), canjeadoEn: new Date(Date.now() - 3_600_000),
+    });
+    premios.push(pCanjeado.id);
+    // Premio ACEPTADO de otro cliente del MISMO negocio: sirve para el aislamiento.
+    const cliente2 = await prisma.cliente.create({
+      data: { negocioId, nombre: `TEST mios aislado ${RUN}`, telefono: TEL_AISLADO, aceptaNotificaciones: false, sellosActuales: 0 },
+    });
+    clientes.push(cliente2.id);
+    const pAjeno = await mkPremio(cliente2.id, {
+      tipo: 'SELLOS', cantidad: 9, texto: `ajeno ${RUN}`, token: `test-mios-ajeno-${RUN}`, estado: 'ACEPTADO',
+      aceptadoEn: new Date(),
+    });
+    premios.push(pAjeno.id);
+
+    const lista1 = await req('GET', '/api/visitas/mi-tarjeta', { token: tokenCli });
+    chk('[10.1] GET /visitas/mi-tarjeta con JWT de cliente responde 200', lista1.status === 200, `status=${lista1.status}`);
+    const mis = Array.isArray(lista1.data?.premios) ? lista1.data.premios : null;
+    chk('[10.1] la tarjeta trae `premios[]` (el listado no es un request aparte)', Array.isArray(mis), trunc(lista1.data?.premios));
+    const tokens = new Set((mis ?? []).map((p) => p.token));
+    chk('[10.1] el listado devuelve VARIOS premios distintos del mismo cliente (uno por estado/tipo)',
+      tokens.has(pPend.token) && tokens.has(pLibreNuevo.token) && tokens.has(pVencidoPend.token) && tokens.has(pCanjeado.token),
+      `n=${(mis ?? []).length} total=${lista1.data?.premiosTotal}`);
+    chk('[10.1] `premiosTotal` cuenta TODOS los premios del cliente (el array viene capado)',
+      lista1.data?.premiosTotal >= 4 && (mis ?? []).length <= 20, `total=${lista1.data?.premiosTotal} mostrados=${(mis ?? []).length}`);
+    chk('[10.1] el LIBRE pendiente viene PENDIENTE y SIN mecanismo de canje (todavia no hay nada que verificar)',
+      mis?.find((p) => p.token === pLibreNuevo.token)?.estado === 'PENDIENTE'
+      && mis?.find((p) => p.token === pLibreNuevo.token)?.verificacion === null);
+
+    // ORDEN por relevancia: lo accionable primero (PENDIENTE -> ACEPTADO -> CANJEADO -> VENCIDO).
+    const pos = (t) => (mis ?? []).findIndex((p) => p.token === t);
+    const estados = (mis ?? []).map((p) => p.estado);
+    const primerVencido = estados.indexOf('VENCIDO');
+    chk('[10.1] el orden pone lo PENDIENTE primero, el historial despues y TODO lo vencido al final',
+      estados[0] === 'PENDIENTE' && primerVencido > 0 && estados.slice(primerVencido).every((e) => e === 'VENCIDO'),
+      estados.join(' > '));
+    chk('[10.1] entre los no accionables, CANJEADO va ANTES que VENCIDO',
+      pos(pCanjeado.token) < pos(pVencidoPend.token), `canjeado=${pos(pCanjeado.token)} vencido=${pos(pVencidoPend.token)}`);
+
+    console.log('\n[10.2] AISLAMIENTO: otro cliente NO ve estos premios');
+    const listaAjeno = await req('GET', '/api/visitas/mi-tarjeta', { token: jwtCliente(cliente2.id) });
+    chk('[10.2] el otro cliente ve su propia tarjeta', listaAjeno.status === 200, `status=${listaAjeno.status}`);
+    const tokensAjenos = new Set((listaAjeno.data?.premios ?? []).map((p) => p.token));
+    chk('[10.2] el cliente 2 NO ve ninguno de los premios del cliente 1',
+      ![pPend.token, pLibreNuevo.token, pVencidoPend.token, pCanjeado.token].some((t) => tokensAjenos.has(t)),
+      `ajenos=${tokensAjenos.size}`);
+    chk('[10.2] el cliente 2 SI ve su propio premio', tokensAjenos.has(pAjeno.token));
+    chk('[10.2] el cliente 1 NO ve el premio del cliente 2', !tokens.has(pAjeno.token));
+    const listaSinAuth = await req('GET', '/api/visitas/mi-tarjeta');
+    chk('[10.2] sin sesion de cliente no hay listado (401)', listaSinAuth.status === 401, `status=${listaSinAuth.status}`);
+
+    console.log('\n[10.3] VENCIDO COMPUTADO: fila PENDIENTE con `expiraEn` pasado -> VENCIDO (la DB no se toca)');
+    const vencidoEnLista = mis?.find((p) => p.token === pVencidoPend.token);
+    chk('[10.3] el listado lo devuelve VENCIDO aunque la fila diga PENDIENTE', vencidoEnLista?.estado === 'VENCIDO', trunc(vencidoEnLista && { estado: vencidoEnLista.estado, expiraLegible: vencidoEnLista.expiraLegible }));
+    chk('[10.3] trae el vencimiento legible para el aviso de la tarjeta', typeof vencidoEnLista?.expiraLegible === 'string' && vencidoEnLista.expiraLegible.length > 0, trunc(vencidoEnLista?.expiraLegible));
+    chk('[10.3] un VENCIDO no ofrece mecanismo de canje', vencidoEnLista?.verificacion === null);
+    const filaVencida = await prisma.premioOtorgado.findUnique({ where: { id: pVencidoPend.id }, select: { estado: true } });
+    chk('[10.3] el GET NO escribio en la DB: la fila sigue PENDIENTE', filaVencida?.estado === 'PENDIENTE', `estado=${filaVencida?.estado}`);
+    const rAcepVenc = await req('POST', `/api/premios/${pVencidoPend.token}/aceptar`);
+    chk('[10.3] y aceptarlo sigue siendo imposible (el estado esta computado, no inventado)',
+      rAcepVenc.data?.ok === false && rAcepVenc.data?.motivo === 'vencido', trunc(rAcepVenc.data && { ok: rAcepVenc.data.ok, motivo: rAcepVenc.data.motivo }));
+
+    console.log('\n[10.4] ACEPTADO/CANJEADO traen el mecanismo de canje (link del staff + WhatsApp)');
+    const pAceptadoReal = await mkPremio(cliente.id, {
+      tipo: 'PUNTOS', cantidad: 50, texto: `50 puntos aceptado ${RUN}`, token: `test-mios-aceptado-${RUN}`,
+      estado: 'ACEPTADO', aceptadoEn: new Date(),
+    });
+    premios.push(pAceptadoReal.id);
+    const lista2 = await req('GET', '/api/visitas/mi-tarjeta', { token: tokenCli });
+    const aceptadoEnLista = (lista2.data?.premios ?? []).find((p) => p.token === pAceptadoReal.token);
+    chk('[10.4] el ACEPTADO trae `verificacion.url` (link del staff, absoluto y con el token)',
+      !!aceptadoEnLista?.verificacion?.url
+      && aceptadoEnLista.verificacion.url.startsWith('https://')
+      && aceptadoEnLista.verificacion.url.includes('/validar-premio?ref=')
+      && aceptadoEnLista.verificacion.url.includes(pAceptadoReal.token),
+      trunc(aceptadoEnLista?.verificacion?.url));
+    chk('[10.4] el ACEPTADO trae el WhatsApp al numero de atencion del local',
+      typeof aceptadoEnLista?.verificacion?.whatsapp === 'string' && aceptadoEnLista.verificacion.whatsapp.startsWith('https://wa.me/'),
+      trunc(aceptadoEnLista?.verificacion?.whatsapp));
+    chk('[10.4] el mensaje de WhatsApp incluye el link de verificacion',
+      typeof aceptadoEnLista?.verificacion?.mensaje === 'string'
+      && aceptadoEnLista.verificacion.mensaje.includes(aceptadoEnLista.verificacion.url),
+      trunc(aceptadoEnLista?.verificacion?.mensaje));
+    const canjeadoEnLista = (lista2.data?.premios ?? []).find((p) => p.token === pCanjeado.token);
+    chk('[10.4] el CANJEADO tambien trae su verificacion (comprobante del historial) y su fecha',
+      !!canjeadoEnLista?.verificacion?.url && !!canjeadoEnLista?.canjeadoEn, trunc(canjeadoEnLista && { estado: canjeadoEnLista.estado, canjeadoEn: canjeadoEnLista.canjeadoEn }));
+
+    console.log('\n[10.5] EL CASO GRAVE: el LIBRE aceptado (modal cerrada) se recupera desde el listado');
+    // Se acepta por token —exactamente el llamado del boton "Aceptar" de la tarjeta— y NO se lee la
+    // respuesta: lo unico que queda es el listado, como si el cliente hubiera cerrado la modal o
+    // descartado el push.
+    const rAcepLibre = await req('POST', `/api/premios/${pLibreNuevo.token}/aceptar`);
+    chk('[10.5] el LIBRE se acepta (200) y NO mueve saldo',
+      (rAcepLibre.status === 200 || rAcepLibre.status === 201) && rAcepLibre.data?.acreditado?.sellos === 0 && rAcepLibre.data?.acreditado?.puntos === 0,
+      trunc(rAcepLibre.data?.acreditado));
+    const lista3 = await req('GET', '/api/visitas/mi-tarjeta', { token: tokenCli });
+    const libreRecuperado = (lista3.data?.premios ?? []).find((p) => p.token === pLibreNuevo.token);
+    chk('[10.5] el LIBRE aparece ACEPTADO en la tarjeta', libreRecuperado?.estado === 'ACEPTADO', trunc(libreRecuperado?.estado));
+    chk('[10.5] su LINK DE CANJE se recupera del listado (esto es el fix del premio perdido)',
+      !!libreRecuperado?.verificacion?.url && libreRecuperado.verificacion.url.includes(pLibreNuevo.token),
+      trunc(libreRecuperado?.verificacion?.url));
+    chk('[10.5] y el WhatsApp para avisarle al local tambien',
+      typeof libreRecuperado?.verificacion?.whatsapp === 'string' && libreRecuperado.verificacion.whatsapp.startsWith('https://wa.me/'),
+      trunc(libreRecuperado?.verificacion?.whatsapp));
+    // El link recuperado tiene que ser el MISMO que usa el staff para canjear de verdad.
+    const verifStaff = await req('GET', `/api/premios/${pLibreNuevo.token}/verificacion`);
+    chk('[10.5] el link recuperado apunta al premio ACEPTADO y canjeable por el staff',
+      verifStaff.data?.canjeable === true && verifStaff.data?.estado === 'ACEPTADO',
+      trunc(verifStaff.data && { estado: verifStaff.data.estado, canjeable: verifStaff.data.canjeable }));
+    const rCanjeLibre = await req('POST', `/api/premios/${pLibreNuevo.token}/canjear`, { token: staffToken });
+    chk('[10.5] el local lo marca CANJEADO con ese link (el premio deja de estar perdido)',
+      rCanjeLibre.data?.estado === 'CANJEADO', trunc(rCanjeLibre.data && { estado: rCanjeLibre.data.estado, ok: rCanjeLibre.data.ok }));
   } finally {
     console.log('\n[9] LIMPIEZA');
     await prisma.premioOtorgado.deleteMany({ where: { id: { in: premios } } }).catch(() => undefined);

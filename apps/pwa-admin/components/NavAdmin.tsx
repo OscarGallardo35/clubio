@@ -20,6 +20,7 @@ import { rutaDe } from '@/lib/tenant';
 export const SECCIONES = [
   { ruta: '/dashboard', etiqueta: 'Dashboard', listo: true },
   { ruta: '/carta', etiqueta: 'Carta', listo: true },
+  { ruta: '/clientes', etiqueta: 'Clientes', listo: true },
   { ruta: '/personal', etiqueta: 'Personal', listo: true },
   { ruta: '/sucursales', etiqueta: 'Sucursales', listo: true },
   { ruta: '/configuracion', etiqueta: 'Configuracion', listo: true },

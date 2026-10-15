@@ -52,7 +52,7 @@ const nextConfig = {
     // OJO: `/login` NO esta en la lista a proposito. El healthcheck de Railway pega ahi y rechaza un
     // 3xx; por eso `/login` sirve una pagina propia que devuelve 200 (selector de local, o al
     // negocio del token si ya hay sesion) (ver `app/login/page.tsx` y el middleware).
-    const SIN_TENANT = ['dashboard', 'carta', 'personal', 'sucursales', 'configuracion', 'qr'];
+    const SIN_TENANT = ['dashboard', 'carta', 'clientes', 'personal', 'sucursales', 'configuracion', 'qr'];
     return [
       // La raiz va al dashboard del default (307: es un default que puede cambiar).
       { source: '/', destination: `/${D}/dashboard`, permanent: false },

@@ -36,6 +36,16 @@ const INTERVALO_POLLING_MS = 5000
 const ESPERA_WS_MS = 3000
 const MAX_INTENTOS_WS = 3
 
+/**
+ * Clave de `sessionStorage` con la que se recuerda que la modal festiva del pedido LISTO ya se
+ * mostro para ESE link. Va por pestana (no `localStorage`): si el cliente abre el pedido en otro
+ * dispositivo/pestana, la quiere volver a ver.
+ */
+const CLAVE_LISTO_VISTO = (linkToken: string) => `clubio:pedido-listo-visto:${linkToken}`
+
+/** Mensaje del boton "Avisar al local": es para el mostrador, no el del checkout. */
+const MENSAJE_AVISO_MOSTRADOR = 'Hola! Mi pedido ya esta listo, paso a retirarlo.'
+
 /** Los 8 estados validos (unica fuente: las etiquetas del checkout). */
 const ESTADOS_VALIDOS = new Set<string>(Object.keys(ETIQUETAS))
 
@@ -88,6 +98,17 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
   const [confirmandoCancelacion, setConfirmandoCancelacion] = React.useState(false)
   const [cancelando, setCancelando] = React.useState(false)
   const [errorCancelacion, setErrorCancelacion] = React.useState<string | null>(null)
+  /**
+   * Modal festiva del pedido LISTO.
+   *
+   * Se dispara POR ESTADO, no por query string: el service worker solo ENFOGA la ventana si
+   * coincide el PATHNAME e IGNORA el query (`sw-push.js`), asi que un `?listo=1` no llegaria
+   * cuando la app ya esta abierta en esta misma pagina — que es justo el caso mas comun (el
+   * cliente sigue el pedido y deja la pantalla abierta). Por estado funciona en los DOS caminos:
+   * si la ventana ya estaba aca, el polling de 5 s ve el LISTO; si estaba en otra ruta, el SW
+   * navega a esta pagina y el primer GET ya lo trae. Por eso NO hizo falta una ruta nueva.
+   */
+  const [celebrarListo, setCelebrarListo] = React.useState(false)
 
   const pedidoRef = React.useRef<PedidoPublico | null>(null)
   pedidoRef.current = pedido
@@ -143,6 +164,24 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
     const t = setInterval(() => void refetch(), INTERVALO_POLLING_MS)
     return () => clearInterval(t)
   }, [refetch, pedido?.estado, fallo])
+
+  /**
+   * La modal festiva del LISTO, UNA vez por pedido y por pestana.
+   *
+   * El guard va en `sessionStorage` para que no reaparezca en cada refetch ni cada vez que el
+   * cliente entra a la pagina dentro de la misma sesion de pestana; al cerrarla se marca como
+   * vista. `sessionStorage` puede no existir (modo privado estricto): en ese caso `try/catch` deja
+   * pasar la excepcion y la modal se muestra una vez por montaje, que es aceptable.
+   */
+  React.useEffect(() => {
+    if (!linkToken || pedido?.estado !== 'LISTO') return
+    try {
+      if (sessionStorage.getItem(CLAVE_LISTO_VISTO(linkToken))) return
+    } catch {
+      /* sin sessionStorage: se muestra igual */
+    }
+    setCelebrarListo(true)
+  }, [linkToken, pedido?.estado])
 
   // 2) WS como adelanto, solo si hay sesion de cliente.
   //
@@ -277,6 +316,19 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
       setCancelando(false)
     }
   }
+
+  /** Cierra la celebracion del LISTO y la marca como vista en esta pestana. */
+  const cerrarCelebracion = () => {
+    try {
+      sessionStorage.setItem(CLAVE_LISTO_VISTO(linkToken), '1')
+    } catch {
+      /* sin sessionStorage: se acepta que vuelva a aparecer al remontar */
+    }
+    setCelebrarListo(false)
+  }
+
+  /** Aviso al mostrador (el numero del local, no el del checkout): "ya voy a retirarlo". */
+  const avisoMostrador = urlWhatsAppStaff(numeroAtendiente, MENSAJE_AVISO_MOSTRADOR)
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5 p-4 pb-24">
@@ -442,6 +494,46 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
           >
             Volver
           </Button>
+        </div>
+      </BottomSheet>
+
+      {/* Modal FESTIVA del pedido LISTO. Es el unico estado que la pide (los demas se leen en el
+          timeline) y no bloquea: se cierra con el boton o con el swipe y deja la pagina tal cual. */}
+      <BottomSheet
+        abierto={celebrarListo}
+        onCerrar={cerrarCelebracion}
+        titulo="¡Tu pedido esta listo!"
+        altura="auto"
+      >
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div
+            aria-hidden
+            className="flex size-20 items-center justify-center rounded-full bg-primary/10 text-4xl"
+          >
+            🎉
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="text-xl font-bold">¡Ya podes retirarlo!</p>
+            <p className="text-sm text-muted-foreground">
+              {pedido.nombreCliente ? `${pedido.nombreCliente}, ` : ''}
+              {pedido.tipo === 'DELIVERY'
+                ? 'tu pedido salio para el envio.'
+                : 'el local termino tu pedido.'}
+            </p>
+          </div>
+          <Button className="min-h-12 w-full" onClick={cerrarCelebracion}>
+            Ver mi pedido
+          </Button>
+          {avisoMostrador ? (
+            <a
+              href={avisoMostrador}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({ variant: 'outline', className: 'min-h-12 w-full' })}
+            >
+              Avisar al local que voy
+            </a>
+          ) : null}
         </div>
       </BottomSheet>
     </div>

@@ -1,11 +1,19 @@
 import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PremioOtorgado } from '@prisma/client';
+import { PremioOtorgado, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
+import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { PushService } from './push.service';
 import { DisparosService } from './disparos.service';
 import { vencimientoLegible } from './premio.types';
+import type { SaldoPar } from '@repo/types';
+
+/** Par antes/despues del saldo del cliente que la modal del premio muestra para verificar el cambio. */
+export interface SaldoPremio {
+  antes: SaldoPar;
+  despues: SaldoPar;
+}
 
 /**
  * Ciclo de vida de un premio que el cliente ACEPTA desde la notificacion.
@@ -35,6 +43,7 @@ export class PremiosService {
     private readonly resolver: SucursalResolverService,
     private readonly auditoria: AuditoriaService,
     private readonly disparos: DisparosService,
+    private readonly saldo: SaldoNotificador,
   ) {}
 
   // ==========================================================================
@@ -114,15 +123,20 @@ export class PremiosService {
     // ACREDITACION (una sola vez: el claim ya garantiza el ganador). Se reusa la MISMA
     // logica del club via `DisparosService.aplicarRegalo`.
     let aplicado = { sellos: 0, puntos: 0 };
+    // Par antes/despues REAL de esta aceptacion: lo usan la respuesta y la modal.
+    let saldoPar: SaldoPremio | null = null;
+    const sucursalId = await this.sucursalDe(premio);
     if (premio.tipo !== 'LIBRE' && premio.cantidad > 0) {
       try {
         const cfg = await this.disparos.contexto(premio.negocioId);
-        const sucursalId =
-          premio.sucursalId ??
-          ((await this.resolver.resolverSucursal(premio.negocioId, { clienteId: premio.clienteId }))
-            .id as string);
-        const regalo = premio.tipo === 'SELLOS' ? { sellos: premio.cantidad } : { puntos: premio.cantidad };
-        aplicado = await this.disparos.aplicarRegalo(premio.clienteId, sucursalId, regalo, cfg);
+        const res = await this.disparos.aplicarRegalo(
+          premio.negocioId, premio.clienteId, sucursalId, this.regaloDe(premio), cfg,
+          'premio_aceptado', premio.id,
+        );
+        aplicado = { sellos: res.sellos, puntos: res.puntos };
+        // El par sale de las filas que `aplicarRegalo` acaba de escribir (misma fuente que la
+        // acreditacion): no se recalcula a mano ni se re-consulta el saldo.
+        saldoPar = { antes: res.saldoAntes, despues: res.saldoDespues };
         await this.auditoria.registrar({
           negocioId: premio.negocioId,
           accion: 'premio.aceptado',
@@ -135,6 +149,7 @@ export class PremiosService {
             sellos: aplicado.sellos,
             puntos: aplicado.puntos,
             sucursalId,
+            saldo: saldoPar,
           },
         });
       } catch (e) {
@@ -150,9 +165,30 @@ export class PremiosService {
       });
     }
 
+    // Un premio LIBRE (o una acreditacion que fallo) no mueve el saldo: el par es el saldo del
+    // momento, con antes == despues. Asi la modal del LIBRE tampoco miente.
+    if (!saldoPar) {
+      const actual = await this.saldo
+        .parActual(premio.negocioId, premio.clienteId, sucursalId)
+        .catch(() => ({ sellos: 0, puntos: 0 }));
+      saldoPar = { antes: actual, despues: actual };
+    }
+
+    // Persistir el par: el GET publico lo devuelve al RECARGAR la pagina (el saldo actual ya no
+    // sirve para reconstruirlo). Best-effort: si falla, la aceptacion ya esta hecha y el GET cae
+    // al saldo actual con antes == despues.
+    await this.prisma.premioOtorgado
+      .update({ where: { token }, data: { saldoJson: saldoPar as unknown as Prisma.InputJsonValue } })
+      .catch((e) =>
+        this.logger.warn(`No se pudo persistir el saldo del premio ${premio.id}: ${(e as Error).message}`),
+      );
+
     const aceptado = await this.exigir(token);
+    const det = await this.detalle(aceptado);
     return {
-      ...(await this.detalle(aceptado)),
+      ...det,
+      // El par de ESTA aceptacion manda sobre el que leyo `detalle` (que puede ser el actual).
+      saldo: saldoPar,
       ok: true,
       motivo: null,
       yaAceptado: false,
@@ -289,7 +325,60 @@ export class PremiosService {
       },
       premioTexto: cfg?.premioTexto ?? null,
       modoFidelizacion: cfg?.modoFidelizacion ?? 'SOLO_VISITAS',
+      /**
+       * Par antes/despues del saldo: es lo que la modal usa para VERIFICAR el cambio. Sale de la
+       * MISMA fuente que la acreditacion (ver `saldoDe`), nunca de un recalculo a mano.
+       */
+      saldo: await this.saldoDe(premio, cfg?.modoFidelizacion),
     };
+  }
+
+  /**
+   * Par antes/despues del saldo del cliente para la modal.
+   *
+   *  - Premio ACEPTADO/CANJEADO con el par persistido: el MISMO que quedo registrado al aceptar
+   *    (`saldoJson`). Es el caso del cliente que RECARGA la pagina: el saldo actual ya no sirve
+   *    para reconstruirlo.
+   *  - Premio PENDIENTE: el saldo actual y la PROYECCION de lo que acreditara (misma regla que
+   *    `DisparosService.calcularRegalo`), asi la modal puede anticipar "vas a quedar en X".
+   *  - Cualquier otro (VENCIDO, o aceptado antes de que existiera `saldoJson`): el saldo actual
+   *    con antes == despues. No se inventa un historico que no esta.
+   */
+  private async saldoDe(premio: PremioOtorgado, modoFidelizacion?: string | null): Promise<SaldoPremio> {
+    const guardado = leerSaldoJson(premio.saldoJson);
+    if (guardado && premio.estado !== 'PENDIENTE') return guardado;
+
+    const sucursalId = await this.sucursalDe(premio);
+    const actual = await this.saldo
+      .parActual(premio.negocioId, premio.clienteId, sucursalId)
+      .catch(() => ({ sellos: 0, puntos: 0 }));
+
+    if (premio.estado !== 'PENDIENTE') return { antes: actual, despues: actual };
+
+    const modo = modoFidelizacion ?? (await this.disparos.contexto(premio.negocioId)).modo;
+    const suma = this.disparos.calcularRegalo(this.regaloDe(premio), modo);
+    return {
+      antes: actual,
+      despues: { sellos: actual.sellos + suma.sellos, puntos: actual.puntos + suma.puntos },
+    };
+  }
+
+  /** Sucursal del premio: la que quedo registrada o, si es legacy, la que resuelve el club. */
+  private async sucursalDe(premio: PremioOtorgado): Promise<string> {
+    if (premio.sucursalId) return premio.sucursalId;
+    const resuelta = await this.resolver
+      .resolverSucursal(premio.negocioId, { clienteId: premio.clienteId })
+      .catch(() => null);
+    return (resuelta?.id as string | undefined) ?? '';
+  }
+
+  /**
+   * Descriptor del premio -> regalo. UNA sola definicion: la usan la acreditacion real
+   * (`aceptar`) y la proyeccion que muestra la modal (`saldoDe`). LIBRE no mueve saldo.
+   */
+  private regaloDe(premio: PremioOtorgado): { sellos?: number; puntos?: number } {
+    if (premio.tipo === 'LIBRE' || premio.cantidad <= 0) return {};
+    return premio.tipo === 'SELLOS' ? { sellos: premio.cantidad } : { puntos: premio.cantidad };
   }
 
   /**
@@ -337,4 +426,26 @@ export class PremiosService {
 /** Primer nombre: corta en el primer espacio. Un solo nombre se devuelve entero. */
 function primerNombre(nombre: string): string {
   return (nombre ?? '').trim().split(/\s+/)[0] ?? '';
+}
+
+/**
+ * Lee el par antes/despues persistido en `PremioOtorgado.saldoJson`.
+ *
+ * Devuelve null si el premio es de antes de esa columna o si el JSON no tiene la forma esperada:
+ * el consumidor cae al saldo actual (antes == despues) en vez de mostrar un historico inventado.
+ */
+function leerSaldoJson(valor: unknown): SaldoPremio | null {
+  if (!valor || typeof valor !== 'object') return null;
+  const v = valor as { antes?: unknown; despues?: unknown };
+  const par = (x: unknown): SaldoPar | null => {
+    if (!x || typeof x !== 'object') return null;
+    const p = x as { sellos?: unknown; puntos?: unknown };
+    const sellos = Number(p.sellos);
+    const puntos = Number(p.puntos);
+    if (!Number.isFinite(sellos) || !Number.isFinite(puntos)) return null;
+    return { sellos, puntos };
+  };
+  const antes = par(v.antes);
+  const despues = par(v.despues);
+  return antes && despues ? { antes, despues } : null;
 }

@@ -1276,6 +1276,13 @@ model PremioOtorgado {
   campanaId     String?
   /// Sucursal del canje (la que resuelve el club / la del evento).
   sucursalId    String?
+  /// Saldo del cliente que dejo la ACEPTACION: `{ antes: {sellos,puntos}, despues: {sellos,puntos} }`.
+  /// Lo escribe `PremiosService.aceptar` con el par REAL que acredito `aplicarRegalo` (o el saldo
+  /// del momento en un premio LIBRE, con antes == despues). Existe para que el GET publico pueda
+  /// devolver el MISMO par al recargar la pagina: el saldo actual ya no sirve para reconstruirlo
+  /// (despues de aceptar pueden venir mas visitas/premios). Null en los premios otorgados antes
+  /// de esta columna.
+  saldoJson     Json?
   creadoEn      DateTime     @default(now())
   actualizadoEn DateTime     @updatedAt
 

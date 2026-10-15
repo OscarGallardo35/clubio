@@ -221,7 +221,7 @@ export class ClientesService {
     const cliente = existente
       ? await this.prisma.cliente.update({
           where: { id: existente.id },
-          data: { nombre: dto.nombre, email: dto.email ?? null, notasInternas: dto.notasInternas ?? null, eliminadoEn: null, aceptaNotificaciones: dto.aceptaNotificaciones ?? false, ...perfil },
+          data: { nombre: dto.nombre, email: dto.email ?? null, notasInternas: dto.notasInternas ?? null, eliminadoEn: null, aceptaNotificaciones: dto.aceptaNotificaciones ?? true, ...perfil },
         })
       : await this.prisma.cliente.create({
           data: {

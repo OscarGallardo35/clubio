@@ -69,11 +69,18 @@ async function main() {
   const negocioId = negocio.id;
 
   // Token de DUENO/ENCARGADO (para /clientes) y de DUENO (para /configuracion).
+  // OJO: `JwtDuenoStrategy` exige rol DUENO, asi que el token de `/configuracion` va con la fila
+  // DUENO y no con la primera que aparezca (un ENCARGADO da 401 "no pertenece a un dueno").
   const empleado = await prisma.empleado.findFirst({
     where: { negocioId, activo: true, eliminadoEn: null, rol: { in: ['DUENO', 'ENCARGADO'] } },
     select: { id: true, rol: true, sucursalId: true },
   });
+  const dueno = await prisma.empleado.findFirst({
+    where: { negocioId, activo: true, eliminadoEn: null, rol: 'DUENO' },
+    select: { id: true, sucursalId: true },
+  });
   if (!empleado) throw new Error('Sin empleado DUENO/ENCARGADO');
+  if (!dueno) throw new Error('Sin empleado DUENO');
   const secretEmp = process.env.JWT_EMPLEADO_SECRET;
   const secretDueno = process.env.JWT_DUENO_SECRET;
   const secretCli = process.env.JWT_CLIENTE_SECRET;
@@ -85,7 +92,7 @@ async function main() {
     secretEmp, { expiresIn: '1h' },
   );
   const tokenDueno = jwt.sign(
-    { sub: empleado.id, tipo: 'dueno', negocioId, negocioSlug: SLUG, rol: 'DUENO', sucursalId: null },
+    { sub: dueno.id, tipo: 'dueno', negocioId, negocioSlug: SLUG, rol: 'DUENO', sucursalId: dueno.sucursalId },
     secretDueno, { expiresIn: '1h' },
   );
 

@@ -58,4 +58,28 @@ export class PushScheduler {
       this.logger.error(`reintentarGoogle fallo: ${(e as Error).message}`);
     }
   }
+
+  /**
+   * Cada dia a las 05:00: marca VENCIDO los premios PENDIENTE cuyo `expiraEn` ya paso.
+   *
+   * Hasta ahora `VENCIDO` solo se persistia cuando el cliente intentaba ACEPTAR el premio
+   * (`PremiosService.aceptar`), asi que la DB acumulaba filas PENDIENTE ya vencidas que solo se
+   * veian como vencidas por el COMPUTO del listado (`PremiosService.mios`). Este job alinea la DB
+   * con esa realidad: es una limpieza, no un requisito del listado (el computo sigue siendo la
+   * fuente de verdad para el cliente: `expiraEn < now`, sin depender de que el cron haya corrido).
+   *
+   * No toca saldo ni los ACEPTADO/CANJEADO: un premio vencido nunca acredito nada.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_5AM, { name: 'premios-vencidos' })
+  async marcarPremiosVencidos() {
+    try {
+      const r = await this.prisma.premioOtorgado.updateMany({
+        where: { estado: 'PENDIENTE', expiraEn: { lt: new Date() } },
+        data: { estado: 'VENCIDO' },
+      });
+      if (r.count) this.logger.log(`Premios vencidos marcados: ${r.count}`);
+    } catch (e) {
+      this.logger.error(`marcarPremiosVencidos fallo: ${(e as Error).message}`);
+    }
+  }
 }

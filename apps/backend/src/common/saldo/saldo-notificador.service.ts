@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Server } from 'socket.io';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
-import { VisitasGateway } from '../../visitas/visitas.gateway';
 import type { SaldoCambiadoPayload, SaldoPar } from '@repo/types';
 
 /** Nombre del evento WS. UNA sola constante: la usan el emisor y (por doc) el listener. */
@@ -114,6 +113,14 @@ export class SaldoNotificador {
     };
 
     try {
+      // Import PEREZOSO a proposito. `saldo-notificador.service` y `visitas.gateway` se importan
+      // mutuamente (el gateway inyecta este notificador). Con un import ESTATICO, al decorar el
+      // gateway la metadata `design:paramtypes` todavia no tiene el valor exportado por este
+      // modulo (el require circular devuelve las exportaciones a medias) y el backend NO ARRANCA:
+      // "Nest can't resolve dependencies of the VisitasGateway (WsJwtGuard, PrismaService, ?)"
+      // (metadata[2] = undefined). Aca, en cambio, el modulo ya termino de cargarse cuando se
+      // llama al metodo, y sigue habiendo UNA sola definicion del nombre de la sala.
+      const { VisitasGateway } = await import('../../visitas/visitas.gateway');
       this.server?.to(VisitasGateway.salaCliente(clienteId)).emit(EVENTO_SALDO_CAMBIADO, payload);
     } catch (e) {
       this.logger.warn(`No se pudo emitir ${EVENTO_SALDO_CAMBIADO}: ${(e as Error).message}`);

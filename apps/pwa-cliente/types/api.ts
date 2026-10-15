@@ -288,6 +288,47 @@ export interface MiTarjetaRespuesta extends Omit<EstadoVisitaRespuesta, 'estado'
    * duplicado y la pagina responderia "enlace no valido".
    */
   urlVerificacion?: string | null
+  /**
+   * Premios GANADOS por el cliente (bloque "Tus premios ganados"). Scoped por JWT en el backend.
+   * Opcional: una respuesta vieja cacheada no lo trae y la seccion simplemente no se dibuja.
+   *
+   * OJO: esto NO es el premio del CLUB (el de la meta de sellos/puntos, que sale de
+   * `premiosDesbloqueados` en la pantalla). Son dos conceptos distintos y la UI los rotula distinto.
+   */
+  premios?: PremioGanado[]
+  /** Total real de premios del cliente. El array viene CAPADO: si `premiosTotal > premios.length`
+   *  hay mas en el historial. */
+  premiosTotal?: number
+}
+
+/**
+ * Un premio GANADO (un `PremioOtorgado`), tal como lo devuelve `premios[]` de
+ * `GET /api/visitas/mi-tarjeta`.
+ *
+ * `estado` viene COMPUTADO por el backend: si la fila esta PENDIENTE pero `expiraEn` ya paso, llega
+ * VENCIDO igual (el backend es el unico que puede saberlo: nadie persiste el vencimiento).
+ */
+export interface PremioGanado {
+  token: string
+  tipo: TipoPremio
+  cantidad: number
+  texto: string
+  expiraEn: string | null
+  expiraLegible: string | null
+  aceptadoEn: string | null
+  canjeadoEn: string | null
+  creadoEn: string
+  disparoNombre: string | null
+  campanaNombre: string | null
+  estado: EstadoPremio
+  /**
+   * Mecanismo de canje: link del staff (`staff.../validar-premio?ref=<token>`) + WhatsApp al numero
+   * de atencion del local. Presente en ACEPTADO y CANJEADO, `null` en PENDIENTE/VENCIDO.
+   *
+   * ES LO QUE ARREGLA EL PREMIO PERDIDO: un premio ACEPTADO (sobre todo un LIBRE, que no mueve
+   * saldo) se recupera de aca aunque el cliente haya cerrado la modal de aceptar.
+   */
+  verificacion: PremioVerificacion | null
 }
 
 /**

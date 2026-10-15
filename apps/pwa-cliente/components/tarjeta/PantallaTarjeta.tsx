@@ -25,6 +25,7 @@ import { useSucursalActiva } from '@/hooks/useSucursalActiva'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
 import { CardNotificaciones } from '@/components/notificaciones/CardNotificaciones'
 import { PerfilamientoGate } from '@/components/perfil/PerfilamientoGate'
+import { MisPremios } from '@/components/tarjeta/MisPremios'
 import { COLOR_PRIMARIO_DEFECTO, COLOR_SECUNDARIO_DEFECTO, RUTAS } from '@/lib/constants'
 import { vistaDeTarjeta } from '@/lib/tarjeta'
 import { numeroAtencionEfectivo } from '@/lib/numero-atencion'
@@ -121,7 +122,22 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
     // 343px, asi que se baja a `px-2` (en 375 da ~359px, entra con margen). La pantalla
     // historica (sin theme) mantiene `px-4` y su ancho intacto.
     <div className={`mx-auto flex w-full max-w-md flex-col gap-5 py-6 ${theme ? 'px-2' : 'px-4'}`}>
-      {/* PREMIO PRIMERO. Este bloque es la vista a la que lleva la push de premio: en un celular
+      {/* PREMIOS GANADOS PRIMERO: es la respuesta a "¿que gane?" del cliente, y va ARRIBA del
+          saldo y del premio del CLUB. Vive en la MISMA respuesta de la tarjeta (`premios[]`), asi
+          que no suma requests. Incluye la accion por estado: aceptar un PENDIENTE, volver a mostrar
+          el codigo de un ACEPTADO (el fix del premio perdido), historial de CANJEADO y aviso de
+          VENCIDO. Si una respuesta vieja cacheada no trae `premios`, la seccion no se dibuja. */}
+      <MisPremios
+        premios={tarjeta.premios ?? []}
+        total={tarjeta.premiosTotal}
+        onRefrescar={refetch}
+      />
+
+      {/* PREMIO DEL CLUB (por llegar a la meta de sellos/puntos). NO es un premio GANADO: es el que
+          le corresponde al completar la tarjeta. Se rotula distinto a proposito: la confusion entre
+          los dos ("Tenes un premio" de aca vs. el premio ganado que no aparecia en ningun lado) es
+          justo lo que reporto el cliente. La logica del premio del club NO cambia.
+          Este bloque es la vista a la que lleva la push de premio: en un celular
           (375px) la tarjeta + el boton demo + la barra de puntos dejaban el premio y el boton de
           WhatsApp con top ~832px, POR DEBAJO del primer viewport (~812px), asi que al abrir la
           notificacion el cliente no encontraba ni el premio ni la accion. Aca va arriba de la
@@ -132,7 +148,10 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
           role="status"
           className="rounded-2xl bg-emerald-500/20 p-4 text-center ring-1 ring-emerald-400/50"
         >
-          <p className="text-lg font-bold text-white drop-shadow">
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-white/75 drop-shadow">
+            Tu premio del club
+          </p>
+          <p className="mt-0.5 text-lg font-bold text-white drop-shadow">
             {premiosDesbloqueados.length > 1 ? 'Tenes dos premios' : 'Tenes un premio'}
           </p>
           {premiosDesbloqueados.map((premio) => (

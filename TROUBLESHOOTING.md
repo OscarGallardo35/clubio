@@ -3461,3 +3461,57 @@ Las tres capas del fix (cualquiera corta el sintoma; juntas cubren los bordes):
 
 `reanudado` distingue este caso de una solicitud nueva: el evento `SOLICITADA` acepta
 `reanudado?: boolean` (default `false`), y solo la reanudacion lo pone en `true`.
+
+---
+
+## Premios — listado, vencimiento y canje (cliente)
+
+### REGLA: el vencimiento de un premio NO se lee de la base, se computa
+
+El estado `VENCIDO` de un `PremioOtorgado` **solo se persiste cuando alguien intenta aceptarlo**
+(`PremiosService.aceptar`) o cuando corre el cron diario de limpieza. O sea que en la base puede haber
+filas `PENDIENTE` con `expiraEn` ya pasado: el estado guardado **miente**.
+
+Regla: **todo listado de premios calcula el vencimiento por `expiraEn < now`, nunca por
+`estado === 'VENCIDO'`**. El computo es la fuente de verdad; el cron es solo limpieza.
+
+Por que importa: mostrar un premio vencido como "aceptable" no falla visiblemente — el cliente lo toca y
+recibe un error. Es de los bugs que no se notan hasta que alguien se queja.
+
+Como se implemento: `PremiosService.estadoComputado()` devuelve `VENCIDO` si la fila esta `PENDIENTE`
+con `expiraEn < now`; el `GET` **no escribe**. Ademas `PushScheduler.marcarPremiosVencidos` (diario
+05:00) ordena la base. Evidencia: harness `test:premios-push`, caso del `PENDIENTE` con `expiraEn`
+pasado → `estado=VENCIDO` en el listado **y `PENDIENTE` en la DB**.
+
+### REGLA: un premio aceptado tiene que poder recuperarse DESDE la app, no solo en la modal
+
+Un premio `LIBRE` (ej. "un postre gratis") **no mueve saldo**: su unico valor es canjearlo en el local,
+y eso necesita el link de verificacion / token. Si ese link vive **solo** dentro de la modal del push
+(`/<slug>/premio/<token>`) y no hay ninguna lista en la app, **cerrar la modal pierde el premio**: el
+local no lo puede marcar canjeado.
+
+Regla: **todo premio otorgado tiene que ser visible y accionable desde la tarjeta** (seccion "Tus
+premios ganados"), con su accion por estado: pendiente → aceptar; aceptado → "Mostrar en el local"
+(link + WhatsApp, recuperables siempre); canjeado → historial; vencido → aviso sin accion.
+
+Nota de nombres: la tarjeta tiene **dos conceptos de premio** y confundirlos es facil — "Tu premio del
+club" (por llegar a la meta de sellos/puntos, `premioTexto`) y "Tus premios ganados"
+(`PremioOtorgado`). Los rotulos tienen que ser distintos o el usuario busca en el lugar equivocado.
+
+### REGLA: verificar la PWA del cliente en un navegador headless (receta de la cookie)
+
+Para verificar la PWA del cliente sin tocar el navegador del usuario: firmar un JWT HS256 con
+`JWT_CLIENTE_SECRET` (claim `tipo:'cliente'`) e inyectarlo con `Network.setCookie`, **con
+`sameSite:'None'` + `secure` sobre `.clubio.lat`**. Sin `sameSite` la cookie no viaja y la app queda en
+"Todavia no tenes tarjeta" — parece un bug de la app y no lo es.
+
+Ojo: las overrides de `Emulation.setDeviceMetricsOverride` son **por sesion de CDP**: una sesion nueva
+mide 500x717 aunque el target siga abierto. Medir siempre en la misma sesion en que se seteo.
+
+### REGLA: `test:premios-push` puede abortar en el primer bloque — reintentar antes de investigar
+
+El harness crea un pedido y hace `PATCH /api/pedidos/:id/estado`; esa transaccion interactiva de Prisma
+tiene **timeout de 5 s** y con Neon lento falla con `PrismaClientKnownRequestError: Transaction already
+closed`. No es un fallo del premio ni del cambio en curso: **reintentar antes de investigar**.
+
+Evidencia: deployment `710c8b7f` (18:55:53Z) + corrida siguiente 75 OK / 0 FALLA sin tocar nada.

@@ -283,8 +283,10 @@ export class PremiosService {
    * (`expiraEn < now` -> VENCIDO) para no mostrar como "pendiente" algo que ya no se puede aceptar.
    * Un GET no escribe: la fila queda como estaba.
    *
-   * ORDEN: por relevancia (PENDIENTE, que es lo unico accionable -> ACEPTADO, que hay que mostrar
-   * en el local -> CANJEADO -> VENCIDO) y, dentro de cada grupo, el mas nuevo primero.
+   * ORDEN: por relevancia. Primero lo que el cliente YA puede canjear (ACEPTADO: es el que trae su
+   * link para mostrar en el local y el que el cliente viene a buscar), despues lo accionable
+   * (PENDIENTE: le falta aceptarlo) y al final el historial (CANJEADO -> VENCIDO). Dentro de cada
+   * grupo, el mas nuevo primero.
    * TOPE: `LIMITE_PREMIOS` (el diagnostico avisa que la acumulacion no tenia tope). Los activos se
    * leen APARTE para que un PENDIENTE viejo no quede afuera por un tope de "los N mas nuevos".
    */
@@ -509,12 +511,13 @@ export class PremiosService {
 const LIMITE_PREMIOS = 20;
 
 /**
- * Orden por RELEVANCIA del listado: lo unico accionable primero (PENDIENTE), despues lo que hay que
- * mostrar en el local (ACEPTADO), y al final el historial. Dentro de cada grupo, el mas nuevo primero.
+ * Orden por RELEVANCIA del listado: primero lo que el cliente YA puede canjear (ACEPTADO, que trae su
+ * link para mostrarlo en el local), despues lo accionable (PENDIENTE: le falta aceptarlo) y al final
+ * el historial (CANJEADO -> VENCIDO). Dentro de cada grupo, el mas nuevo primero.
  */
 const PESO_ESTADO: Record<EstadoPremio, number> = {
-  PENDIENTE: 0,
-  ACEPTADO: 1,
+  ACEPTADO: 0,
+  PENDIENTE: 1,
   CANJEADO: 2,
   VENCIDO: 3,
 };

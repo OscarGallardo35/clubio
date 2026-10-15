@@ -398,15 +398,22 @@ async function main() {
       mis?.find((p) => p.token === pLibreNuevo.token)?.estado === 'PENDIENTE'
       && mis?.find((p) => p.token === pLibreNuevo.token)?.verificacion === null);
 
-    // ORDEN por relevancia: lo accionable primero (PENDIENTE -> ACEPTADO -> CANJEADO -> VENCIDO).
+    // ORDEN por relevancia: primero lo que el cliente YA puede canjear (ACEPTADO, que es el que trae
+    // su link para mostrar en el local), despues lo accionable (PENDIENTE: falta aceptarlo) y al
+    // final el historial (CANJEADO -> VENCIDO).
     const pos = (t) => (mis ?? []).findIndex((p) => p.token === t);
     const estados = (mis ?? []).map((p) => p.estado);
+    const primerAceptado = estados.indexOf('ACEPTADO');
+    const primerPendiente = estados.indexOf('PENDIENTE');
+    const primerCanjeado = estados.indexOf('CANJEADO');
     const primerVencido = estados.indexOf('VENCIDO');
-    chk('[10.1] el orden pone lo PENDIENTE primero, el historial despues y TODO lo vencido al final',
-      estados[0] === 'PENDIENTE' && primerVencido > 0 && estados.slice(primerVencido).every((e) => e === 'VENCIDO'),
+    chk('[10.1] el orden pone lo ACEPTADO primero, despues lo PENDIENTE y el historial al final con TODO lo vencido ultimo',
+      primerAceptado === 0 && primerPendiente > primerAceptado && primerCanjeado > primerPendiente
+      && primerVencido > primerCanjeado && estados.slice(primerVencido).every((e) => e === 'VENCIDO'),
       estados.join(' > '));
-    chk('[10.1] entre los no accionables, CANJEADO va ANTES que VENCIDO',
-      pos(pCanjeado.token) < pos(pVencidoPend.token), `canjeado=${pos(pCanjeado.token)} vencido=${pos(pVencidoPend.token)}`);
+    chk('[10.1] el PENDIENTE va ANTES del historial y el CANJEADO ANTES que el VENCIDO',
+      pos(pPend.token) < pos(pCanjeado.token) && pos(pCanjeado.token) < pos(pVencidoPend.token),
+      `pendiente=${pos(pPend.token)} canjeado=${pos(pCanjeado.token)} vencido=${pos(pVencidoPend.token)}`);
 
     console.log('\n[10.2] AISLAMIENTO: otro cliente NO ve estos premios');
     const listaAjeno = await req('GET', '/api/visitas/mi-tarjeta', { token: jwtCliente(cliente2.id) });

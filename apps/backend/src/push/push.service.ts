@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import * as webpush from 'web-push';
-import { Prisma } from '@prisma/client';
+import { GeneroCliente, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { LimitesService } from '../planes/limites.service';
@@ -15,6 +15,7 @@ import type { EnviarPlantillaDto, SegmentoEnvio } from './dto/enviar-plantilla.d
 import type { HistorialEnviosDto } from './dto/historial-envios.dto';
 import { expiraDe, generarTokenPremio } from './premio.types';
 import type { DescriptorPremio } from './premio.types';
+import { edadALaFecha, fechaARDe } from '../common/utils/cumpleanos.util';
 
 export const COLA_PUSH = 'push-send';
 
@@ -30,6 +31,7 @@ export const VARIABLES_PLANTILLA = [
   'meta',
   'faltantes',
   'numero',
+  'edad',
 ] as const;
 
 export interface VariablesPlantilla {
@@ -40,6 +42,8 @@ export interface VariablesPlantilla {
   meta?: number | string;
   faltantes?: number | string;
   numero?: number | string;
+  /** Edad cumplida del cliente (perfilado progresivo). Sin `fechaNacimiento` no hay valor. */
+  edad?: number | string;
 }
 
 /**
@@ -133,6 +137,8 @@ export interface ClientePublico {
   id: string;
   nombre: string;
   sellosActuales: number;
+  /** Perfilado progresivo: lo usa `{{edad}}` al renderizar la campana. */
+  fechaNacimiento?: Date | null;
 }
 
 /** Un cliente que la base del segmento incluia pero una exclusion recorto. */
@@ -1089,9 +1095,11 @@ export class PushService {
     const cliente = await this.prisma.cliente.findFirst({
       where: { negocioId, eliminadoEn: null },
       orderBy: { creadoEn: 'asc' },
-      select: { nombre: true, sellosActuales: true },
+      select: { nombre: true, sellosActuales: true, fechaNacimiento: true },
     });
     const actuales = cliente?.sellosActuales ?? Math.max(1, Math.floor(meta / 2));
+    // `{{edad}}` con un valor de ejemplo: la real del primer cliente si tiene el dato, si no 30.
+    const edad = edadALaFecha(cliente?.fechaNacimiento ?? null, fechaARDe()) ?? 30;
     return {
       nombre: cliente?.nombre ?? 'Cliente de ejemplo',
       negocio: nombreNegocio,
@@ -1100,6 +1108,7 @@ export class PushService {
       meta,
       faltantes: Math.max(0, meta - actuales),
       numero: '1042',
+      edad,
     } satisfies VariablesPlantilla;
   }
 
@@ -1181,6 +1190,15 @@ export class PushService {
   ): Promise<PublicoResuelto> {
     const ctx = await this.contextoPlantilla(negocioId);
     const segmento = (filtros.segmento ?? 'TODOS') as SegmentoEnvio;
+    const excluirIds = new Set((filtros.excluirClienteIds ?? []).filter(Boolean));
+    const excluirSeg = new Set(filtros.excluirSegmentos ?? []);
+
+    // CUMPLEANOS_MES necesita un set de ids (Prisma no filtra por mes de una fecha): se
+    // calcula UNA vez y sirve tanto para la base como para la exclusion.
+    const setCumpleMes =
+      segmento === 'CUMPLEANOS_MES' || excluirSeg.has('CUMPLEANOS_MES')
+        ? new Set(await this.clientesQueCumplenMes(negocioId, fechaARDe().m))
+        : null;
 
     const base: Prisma.NotificacionPushWhereInput = {
       negocioId,
@@ -1195,20 +1213,41 @@ export class PushService {
         eliminadoEn: null,
         OR: [{ ultimaVisita: { lt: corte } }, { ultimaVisita: null }],
       };
+    } else if (segmento === 'MUJERES') {
+      // `genero: 'FEMENINO'` en el WHERE EXCLUYE solo: quien NO declaro el dato (genero
+      // NULL) y quien respondio PREFIERO_NO_DECIR / otra etiqueta no matchean.
+      base.cliente = { eliminadoEn: null, genero: 'FEMENINO' };
+    } else if (segmento === 'CUMPLEANOS_MES') {
+      base.cliente = { eliminadoEn: null, id: { in: [...(setCumpleMes ?? [])] } };
     }
 
     const subs = await this.prisma.notificacionPush.findMany({
       where: base,
       select: {
         clienteId: true,
-        cliente: { select: { nombre: true, sellosActuales: true, ultimaVisita: true } },
+        cliente: {
+          select: {
+            nombre: true,
+            sellosActuales: true,
+            ultimaVisita: true,
+            genero: true,
+            fechaNacimiento: true,
+          },
+        },
       },
     });
 
     // Dedupe por cliente: un cliente puede tener varios dispositivos suscritos.
     const porCliente = new Map<
       string,
-      { id: string; nombre: string; sellosActuales: number; ultimaVisita: Date | null }
+      {
+        id: string;
+        nombre: string;
+        sellosActuales: number;
+        ultimaVisita: Date | null;
+        genero: GeneroCliente | null;
+        fechaNacimiento: Date | null;
+      }
     >();
     for (const s of subs) {
       if (porCliente.has(s.clienteId)) continue;
@@ -1217,11 +1256,11 @@ export class PushService {
         nombre: s.cliente.nombre,
         sellosActuales: s.cliente.sellosActuales,
         ultimaVisita: s.cliente.ultimaVisita,
+        genero: s.cliente.genero,
+        fechaNacimiento: s.cliente.fechaNacimiento,
       });
     }
 
-    const excluirIds = new Set((filtros.excluirClienteIds ?? []).filter(Boolean));
-    const excluirSeg = new Set(filtros.excluirSegmentos ?? []);
     const corte30 = Date.now() - 30 * 86_400_000;
 
     const alcanzables: ClientePublico[] = [];
@@ -1234,9 +1273,19 @@ export class PushService {
         motivo = 'excluido (ya tiene el premio)';
       } else if (excluirSeg.has('INACTIVO_30') && (!c.ultimaVisita || c.ultimaVisita.getTime() < corte30)) {
         motivo = 'excluido (inactivo +30 dias)';
+      } else if (excluirSeg.has('MUJERES') && c.genero === 'FEMENINO') {
+        motivo = 'excluido (mujeres)';
+      } else if (excluirSeg.has('CUMPLEANOS_MES') && (setCumpleMes?.has(c.id) ?? false)) {
+        motivo = 'excluido (cumpleanios del mes)';
       }
       if (motivo) excluidosDetalle.push({ id: c.id, nombre: c.nombre, motivo });
-      else alcanzables.push({ id: c.id, nombre: c.nombre, sellosActuales: c.sellosActuales });
+      else
+        alcanzables.push({
+          id: c.id,
+          nombre: c.nombre,
+          sellosActuales: c.sellosActuales,
+          fechaNacimiento: c.fechaNacimiento,
+        });
     }
 
     const clientesNegocio = await this.prisma.cliente.count({
@@ -1255,6 +1304,25 @@ export class PushService {
       },
       excluidosDetalle,
     };
+  }
+
+  /**
+   * IDs de los clientes del negocio que cumplen anios ESTE mes (mes de HOY en ARGENTINA).
+   *
+   * Prisma no puede filtrar por el mes de una fecha, asi que va por RAW. OJO con la zona
+   * horaria: `fechaNacimiento` es un DIA DE CALENDARIO guardado a las 00:00 UTC (ver
+   * `parseFechaNacimientoPerfil`), asi que `EXTRACT(MONTH FROM ...)` lee el mes correcto SIN
+   * conversion. Ajustar con el offset AR (-3h) corromperia los cumpleanos del dia 1: un
+   * 01/06 00:00 UTC pasaria a ser 31/05. Por eso NO se toca el timestamp.
+   */
+  private async clientesQueCumplenMes(negocioId: string, mes: number): Promise<string[]> {
+    const filas = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      'SELECT "id" FROM "Cliente" WHERE "negocioId" = $1 AND "eliminadoEn" IS NULL ' +
+        'AND "fechaNacimiento" IS NOT NULL AND EXTRACT(MONTH FROM "fechaNacimiento") = $2',
+      negocioId,
+      mes,
+    );
+    return filas.map((f) => f.id);
   }
 
   /**
@@ -1352,6 +1420,7 @@ export class PushService {
 
     const jobs = await Promise.all(
       destinatarios.map((c) => {
+        const edad = edadALaFecha(c.fechaNacimiento ?? null, fechaARDe());
         const vars: VariablesPlantilla = {
           nombre: c.nombre,
           negocio: ctx.nombreNegocio,
@@ -1360,6 +1429,7 @@ export class PushService {
           meta: ctx.meta,
           faltantes: Math.max(0, ctx.meta - c.sellosActuales),
           numero: '',
+          ...(edad === null ? {} : { edad }),
         };
         return this.cola.add(
           'enviar',

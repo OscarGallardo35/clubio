@@ -79,6 +79,9 @@ enum TipoDisparo {
   INACTIVIDAD
   BIENVENIDA
   MANUAL
+  /// Saludo de cumpleanos: se dispara `diasAntes` dias antes del (mes, dia) de
+  /// `Cliente.fechaNacimiento`. Config: { diasAntes?:0..7, hora?:'HH:MM' }.
+  CUMPLEANOS
 }
 
 // Canal de una campaña de marketing

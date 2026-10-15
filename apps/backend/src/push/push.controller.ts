@@ -233,6 +233,20 @@ export class PushController {
     return this.disparos.probar(emp.negocioId, id, dto.clienteId, emp.id);
   }
 
+  /**
+   * Tick FORZADO del motor de CUMPLEANOS (no espera el scheduler de 15 minutos). Sigue el
+   * mismo camino idempotente que corre el job (`evaluarCumpleanios`), asi que repetirlo NO
+   * duplica el saludo (candado `CUMPLEANOS:<clienteId>:<anioAR>`). Existe por el mismo
+   * motivo que `campanas/tick`: el harness verifica contra PROD sin encolar a Redis.
+   */
+  @UseGuards(StaffGuard, TenantGuard, RolesGuard, PlanGuard)
+  @Roles(RolEmpleado.DUENO, RolEmpleado.ENCARGADO)
+  @RequiereFeature('push')
+  @Post('disparos/cumpleanos/tick')
+  tickCumpleanos(@CurrentEmpleado() emp: EmpleadoAuth) {
+    return this.disparos.evaluarCumpleanios(new Date(), emp.negocioId);
+  }
+
   // ---- campañas programables (fecha/hora + publico con exclusiones) ----
 
   /**

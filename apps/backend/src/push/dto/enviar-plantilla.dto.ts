@@ -1,7 +1,14 @@
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /** Segmentos de envio por plantilla. */
-export const SEGMENTOS_ENVIO = ['TODOS', 'PREMIO_DESBLOQUEADO', 'INACTIVO_30'] as const;
+export const SEGMENTOS_ENVIO = [
+  'TODOS',
+  'PREMIO_DESBLOQUEADO',
+  'INACTIVO_30',
+  // Perfilado progresivo (fase 2): mujeres (genero FEMENINO declarado) y cumpleanios del mes.
+  'MUJERES',
+  'CUMPLEANOS_MES',
+] as const;
 export type SegmentoEnvio = (typeof SEGMENTOS_ENVIO)[number];
 
 /**

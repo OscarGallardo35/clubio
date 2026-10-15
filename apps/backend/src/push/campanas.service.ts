@@ -16,6 +16,7 @@ import {
 } from './disparos.service';
 import type { PushJob, PublicoResuelto } from './push.service';
 import { leerPremio } from './premio.types';
+import { edadALaFecha, fechaARDe } from '../common/utils/cumpleanos.util';
 import type { CrearCampanaDto } from './dto/crear-campana.dto';
 import type { ActualizarCampanaDto } from './dto/actualizar-campana.dto';
 import type { PreviewCampanaDto } from './dto/preview-campana.dto';
@@ -516,6 +517,7 @@ export class CampanasPushService {
     const premiosIds: string[] = [];
     try {
       for (const d of nuevos) {
+        const edad = edadALaFecha(d.fechaNacimiento ?? null, fechaARDe());
         const vars = {
           nombre: d.nombre,
           negocio: ctx.nombreNegocio,
@@ -524,6 +526,7 @@ export class CampanasPushService {
           meta: ctx.meta,
           faltantes: Math.max(0, ctx.meta - d.sellosActuales),
           numero: '',
+          ...(edad === null ? {} : { edad }),
         };
         const jobId = `cp-${c.campanaId}-${d.id}`;
         let urlCliente = urlBase ? this.push.renderizar(urlBase, vars) : undefined;

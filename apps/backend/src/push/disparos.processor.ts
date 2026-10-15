@@ -57,6 +57,15 @@ export class DisparosProcessor extends WorkerHost {
         { pattern: '0 10 * * *', tz: TZ_AR },
         { name: 'inactividad', opts: { removeOnComplete: 50, removeOnFail: 100 } },
       );
+      // CUMPLEANOS: cada DIA_TICK_MIN minutos para respetar `config.hora` (el saludo sale
+      // dentro de su ventana de 15 min; sin `hora`, el primer tick del dia lo manda). El
+      // candado "una vez por anio" (clave CUMPLEANOS:<clienteId>:<anioAR>) hace que, aunque
+      // el job corra muchas veces al dia, el cliente reciba UN solo saludo por cumpleanos.
+      await this.cola.upsertJobScheduler(
+        'disparos-cumpleanos',
+        { pattern: `*/${DIA_TICK_MIN} * * * *`, tz: TZ_AR },
+        { name: 'cumpleanos', opts: { removeOnComplete: 50, removeOnFail: 100 } },
+      );
       // CAMPAÑAS PROGRAMABLES: cada minuto se re-escanea `programadoPara <= now AND
       // estado = PROGRAMADA`. El dispatch es idempotente (reclama la fila antes de
       // encolar), asi que repetir el tick no reenvia nada.
@@ -66,7 +75,7 @@ export class DisparosProcessor extends WorkerHost {
         { name: JOB_CAMPANAS, opts: { removeOnComplete: 50, removeOnFail: 100 } },
       );
       this.logger.log(
-        `Schedulers de disparos registrados: dia cada ${DIA_TICK_MIN} min, inactividad diaria 10:00 AR, campañas cada 1 min`,
+        `Schedulers de disparos registrados: dia cada ${DIA_TICK_MIN} min, inactividad diaria 10:00 AR, cumpleanos cada ${DIA_TICK_MIN} min, campañas cada 1 min`,
       );
     } catch (e) {
       this.logger.error(`No se pudieron registrar los schedulers de disparos: ${(e as Error).message}`);
@@ -86,6 +95,7 @@ export class DisparosProcessor extends WorkerHost {
   async process(job: Job) {
     if (job.name === 'dia') return this.disparos.evaluarDia();
     if (job.name === 'inactividad') return this.disparos.evaluarInactividad();
+    if (job.name === 'cumpleanos') return this.disparos.evaluarCumpleanios();
     if (job.name === JOB_CAMPANAS) return this.campanas.evaluarProgramadas();
     return { ignorado: job.name };
   }

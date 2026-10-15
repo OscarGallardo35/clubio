@@ -9,6 +9,7 @@ import { IsBoolean, IsEnum, IsObject, IsOptional, IsString, MaxLength, MinLength
  *   SELLOS      { cuando:'CADA_SELLO'|'FALTAN_N', n:1 }
  *   DIA         { dia:'FRIDAY'|'2026-10-15', hora:'18:00' }
  *   INACTIVIDAD { dias:30 }
+ *   CUMPLEANOS  { diasAntes?:0..7, hora?:'HH:MM' }  // saludo `diasAntes` dias antes del (mes, dia)
  *   BIENVENIDA  {}
  *   MANUAL      {}
  */

@@ -11,6 +11,13 @@ import type { CrearDisparoDto } from './dto/crear-disparo.dto';
 import type { ActualizarDisparoDto } from './dto/actualizar-disparo.dto';
 import type { HistorialDisparosDto } from './dto/historial-disparos.dto';
 import { leerPremio } from './premio.types';
+import {
+  anioObjetivo,
+  clampDiasAntes,
+  cumpleElDiaObjetivo,
+  edadALaFecha,
+  fechaARDe,
+} from '../common/utils/cumpleanos.util';
 
 /** Cola de los jobs de tiempo (DIA / INACTIVIDAD). */
 export const COLA_DISPAROS = 'push-disparos';
@@ -104,6 +111,11 @@ interface ClienteMin {
   id: string;
   nombre: string;
   sellosActuales: number;
+  /**
+   * Dato del perfilado progresivo. Solo lo trae `destinatarios()` (el disparo de
+   * CUMPLEANOS lo necesita; `{{edad}}` sale de aca). En los demas caminos va `undefined`.
+   */
+  fechaNacimiento?: Date | null;
 }
 
 interface ContextoClub {
@@ -629,6 +641,88 @@ export class DisparosService {
   }
 
   // ==========================================================================
+  // MOTOR - CUMPLEANOS (job de BullMQ, cada DIA_TICK_MIN minutos)
+  // ==========================================================================
+
+  /**
+   * Saluda a los clientes que cumplen anios en los proximos `diasAntes` dias (0 = hoy),
+   * mirando el (mes, dia) de `fechaNacimiento` en hora ARGENTINA.
+   *
+   * Candado "una vez por anio": la clave es `CUMPLEANOS:<clienteId>:<anioAR>`, donde
+   * `<anioAR>` es el anio del OBJETIVO (`hoy + diasAntes`). NO lleva la fecha, si no el
+   * mismo cumpleanos se repetiria los otros 364 dias. El `@@unique([disparoId, clave])`
+   * de `DisparoPushLog` es el candado: un segundo tick del dia devuelve `duplicado`.
+   *
+   * Cruce de anio: se compara por fecha NORMALIZADA (hoy + N dias), no por strings MM-DD,
+   * asi un cumpleanos del 1/1 se saluda el 29/12 del anio anterior (ver `cumpleanos.util`).
+   * 29/02 en anio NO bisiesto: se saluda el 28/02 (documentado en la util).
+   *
+   * El cliente SIN `fechaNacimiento` nunca entra.
+   *
+   * `negocioId` (opcional) acota la corrida a UN negocio: lo usa el tick forzado por API
+   * (`POST /push/disparos/cumpleanos/tick`). Sin el, evalua todos los negocios activos
+   * (es lo que corre el scheduler).
+   */
+  async evaluarCumpleanios(base: Date = new Date(), negocioId?: string) {
+    const ahora = ahoraArgentina(base);
+    const hoy = fechaARDe(base);
+    const disparos = (await this.prisma.disparoPush.findMany({
+      where: { tipo: 'CUMPLEANOS', activa: true, ...(negocioId ? { negocioId } : {}) },
+      include: { plantilla: true, negocio: { select: { activo: true } } },
+    })) as (DisparoConPlantilla & { negocio: { activo: boolean } })[];
+
+    let enviados = 0;
+    let duplicados = 0;
+    let sinFecha = 0;
+    for (const d of disparos) {
+      if (!d.negocio.activo) continue;
+      const conf = (d.config ?? {}) as { diasAntes?: number; hora?: string };
+      const diasAntes = clampDiasAntes(conf.diasAntes);
+
+      // `hora` es OPCIONAL. Con hora, el saludo sale dentro de su ventana de DIA_TICK_MIN
+      // (mismo criterio que DIA); sin hora, el primer tick del dia ya lo manda.
+      const horaTexto = String(conf.hora ?? '').trim();
+      if (horaTexto) {
+        const horaMin = horaAMinutos(horaTexto);
+        if (horaMin === null) {
+          this.logger.warn(`Disparo CUMPLEANOS ${d.id} con hora invalida ('${horaTexto}')`);
+          continue;
+        }
+        if (ahora.minutos < horaMin || ahora.minutos >= horaMin + DIA_TICK_MIN) continue;
+      }
+
+      const anio = anioObjetivo(hoy, diasAntes);
+      const cfg = await this.contexto(d.negocioId);
+      const clientes = await this.destinatarios(d.negocioId);
+      for (const c of clientes) {
+        if (!c.fechaNacimiento) {
+          sinFecha++;
+          continue;
+        }
+        if (!cumpleElDiaObjetivo(c.fechaNacimiento, hoy, diasAntes)) continue;
+        const r = await this.ejecutarUno(d, {
+          cliente: c,
+          cfg,
+          clave: `CUMPLEANOS:${c.id}:${anio}`,
+          pedidoId: null,
+          sucursalId: null, // se resuelve por cliente dentro de ejecutarUno
+          origen: 'CUMPLEANOS',
+        });
+        const res = r as { enviado?: boolean; omitido?: string };
+        if (res.enviado) enviados++;
+        else if (res.omitido === 'duplicado') duplicados++;
+      }
+    }
+    return {
+      tick: { fecha: ahora.fecha, minutos: ahora.minutos },
+      disparos: disparos.length,
+      enviados,
+      duplicados,
+      sinFecha,
+    };
+  }
+
+  // ==========================================================================
   // INTERNOS
   // ==========================================================================
 
@@ -948,6 +1042,11 @@ export class DisparosService {
     cliente: ClienteMin,
     extra: Partial<VariablesPlantilla>,
   ): VariablesPlantilla {
+    // `{{edad}}` sale de la fecha de nacimiento (perfilado progresivo). Sin dato, la
+    // variable se borra del texto (mismo criterio que las demas sin valor).
+    const edad = cliente.fechaNacimiento
+      ? edadALaFecha(cliente.fechaNacimiento, fechaARDe())
+      : null;
     return {
       nombre: cliente.nombre,
       negocio: cfg.nombre,
@@ -955,6 +1054,7 @@ export class DisparosService {
       actuales: cliente.sellosActuales,
       meta: cfg.meta,
       faltantes: Math.max(0, cfg.meta - cliente.sellosActuales),
+      ...(edad === null ? {} : { edad }),
       ...extra,
     };
   }
@@ -996,7 +1096,7 @@ export class DisparosService {
           ...(corte ? { OR: [{ ultimaVisita: { lt: corte } }, { ultimaVisita: null }] } : {}),
         },
       },
-      select: { clienteId: true, cliente: { select: { id: true, nombre: true, sellosActuales: true } } },
+      select: { clienteId: true, cliente: { select: { id: true, nombre: true, sellosActuales: true, fechaNacimiento: true } } },
     });
     const mapa = new Map<string, ClienteMin>();
     for (const s of subs) {
@@ -1005,6 +1105,7 @@ export class DisparosService {
         id: s.cliente.id,
         nombre: s.cliente.nombre,
         sellosActuales: s.cliente.sellosActuales,
+        fechaNacimiento: s.cliente.fechaNacimiento,
       });
     }
     return [...mapa.values()];

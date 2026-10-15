@@ -122,17 +122,6 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
     // 343px, asi que se baja a `px-2` (en 375 da ~359px, entra con margen). La pantalla
     // historica (sin theme) mantiene `px-4` y su ancho intacto.
     <div className={`mx-auto flex w-full max-w-md flex-col gap-5 py-6 ${theme ? 'px-2' : 'px-4'}`}>
-      {/* PREMIOS GANADOS PRIMERO: es la respuesta a "¿que gane?" del cliente, y va ARRIBA del
-          saldo y del premio del CLUB. Vive en la MISMA respuesta de la tarjeta (`premios[]`), asi
-          que no suma requests. Incluye la accion por estado: aceptar un PENDIENTE, volver a mostrar
-          el codigo de un ACEPTADO (el fix del premio perdido), historial de CANJEADO y aviso de
-          VENCIDO. Si una respuesta vieja cacheada no trae `premios`, la seccion no se dibuja. */}
-      <MisPremios
-        premios={tarjeta.premios ?? []}
-        total={tarjeta.premiosTotal}
-        onRefrescar={refetch}
-      />
-
       {/* PREMIO DEL CLUB (por llegar a la meta de sellos/puntos). NO es un premio GANADO: es el que
           le corresponde al completar la tarjeta. Se rotula distinto a proposito: la confusion entre
           los dos ("Tenes un premio" de aca vs. el premio ganado que no aparecia en ningun lado) es
@@ -262,6 +251,22 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
       {v.sucursalNombre ? (
         <p className="text-center text-xs text-white/70">Tarjeta de {v.sucursalNombre}</p>
       ) : null}
+
+      {/* PREMIOS GANADOS AL FINAL: es lo ULTIMO de la tarjeta (el pedido del usuario fue "pasar los
+          premios pendientes y validos al FINAL de la tarjeta": antes abria la pantalla, arriba del
+          saldo y del premio del CLUB). Vive en la MISMA respuesta de la tarjeta (`premios[]`), asi
+          que no suma requests. Incluye la accion por estado: aceptar un PENDIENTE, volver a mostrar
+          el codigo de un ACEPTADO (el fix del premio perdido), historial de CANJEADO y aviso de
+          VENCIDO. Si una respuesta vieja cacheada no trae `premios`, la seccion no se dibuja.
+          El ORDEN de la lista (ACEPTADO -> PENDIENTE -> CANJEADO -> VENCIDO) lo decide el backend
+          (`PremiosService.mios`): aca se dibuja tal como llega, sin reordenar en el cliente.
+          Lo que sigue abajo (el aviso de push, el link a Mis datos y el gate del perfilado) es
+          footer/aviso de la pantalla, no contenido de la tarjeta. */}
+      <MisPremios
+        premios={tarjeta.premios ?? []}
+        total={tarjeta.premiosTotal}
+        onRefrescar={refetch}
+      />
 
       {/* Solo si el plan del local incluye push (si no, el backend responde 403 al suscribir). */}
       {tieneFeature('push') ? <CardNotificaciones /> : null}

@@ -213,6 +213,9 @@ const MODOS_FIDELIZACION: ModoFidelizacion[] = ['SOLO_VISITAS', 'SOLO_PUNTOS', '
 const TIPOS_PEDIDO: TipoPedido[] = ['MESA', 'TAKEAWAY', 'DELIVERY'];
 const MODOS_PAGO: ModoPago[] = ['EFECTIVO', 'TRANSFERENCIA', 'MERCADO_PAGO', 'TARJETA'];
 const MODOS_ASIGNACION: ModoAsignacionPedidos[] = ['BROADCAST', 'POR_ROL', 'SOLO_ENCARGADO'];
+/** Visitas desde las que se le piden los datos al cliente. El default lo fija el backend (3). */
+const VISITAS_PERFIL = [2, 3, 4];
+const VISITA_PERFIL_DEFECTO = 3;
 
 const ETIQUETA_FIDELIZACION: Record<ModoFidelizacion, string> = {
   SOLO_VISITAS: 'Solo visitas (sellos)',
@@ -406,8 +409,24 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
   const [asignacion, setAsignacion] = React.useState<ModoAsignacionPedidos>(cfg.modoAsignacionPedidos);
   const [horariosAtencion, setHorariosAtencion] = React.useState<HorarioSemana | null>(cfg.horariosAtencion ?? null);
   const [horariosDelivery, setHorariosDelivery] = React.useState<HorarioSemana | null>(cfg.horariosDelivery ?? null);
+  // Perfilado progresivo: a partir de que visita se le piden los datos al cliente.
+  const [perfil, setPerfil] = React.useState(() => String(cfg.perfilDesdeVisita ?? VISITA_PERFIL_DEFECTO));
   const [guardando, setGuardando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  /**
+   * `PATCH /configuracion` corre con `forbidNonWhitelisted`: un campo que el DTO todavia no conoce
+   * responde 400 y tira abajo el guardado ENTERO del tab. `perfilDesdeVisita` lo agrega el backend
+   * en la misma version que esta pantalla, asi que solo se manda si el GET ya lo devuelve.
+   */
+  const perfilDisponible = typeof cfg.perfilDesdeVisita === 'number';
+  const opcionesPerfil = React.useMemo(
+    () =>
+      Array.from(new Set([...VISITAS_PERFIL, Number(perfil)]))
+        .filter((n) => Number.isInteger(n) && n > 0)
+        .sort((a, b) => a - b),
+    [perfil],
+  );
 
   const valido = premio.trim().length > 0 && tipos.length > 0;
 
@@ -426,6 +445,7 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
         modoAsignacionPedidos: asignacion,
         horariosAtencion,
         horariosDelivery,
+        ...(perfilDisponible ? { perfilDesdeVisita: Number(perfil) } : {}),
       });
       toast.success('Local guardado');
       await onGuardado();
@@ -502,6 +522,34 @@ function FormLocal({ cfg, onGuardado }: { cfg: ConfiguracionAdmin; onGuardado: (
         {tipos.length === 0 ? (
           <p role="alert" className="text-xs text-destructive">
             Tiene que quedar al menos una forma de pedido.
+          </p>
+        ) : null}
+      </div>
+
+      {/* Perfilado progresivo: el umbral del que dependen la PWA del cliente y la pantalla de
+          Clientes (que marca a quien le falta el cumpleanos y el genero). */}
+      <div className="space-y-2">
+        <Label htmlFor="perfilDesdeVisita">A partir de que visita pedir los datos del cliente</Label>
+        <Select value={perfil} onValueChange={setPerfil} disabled={!perfilDisponible}>
+          <SelectTrigger id="perfilDesdeVisita" className="sm:max-w-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {opcionesPerfil.map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                Visita {n}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          A partir de esta visita le pedimos el cumpleanos (y mas adelante el genero). Si no cargas
+          nada, el local queda como esta.
+        </p>
+        {!perfilDisponible ? (
+          <p role="status" className="text-xs text-amber-700">
+            Todavia no se puede guardar: falta la actualizacion del servidor. Mientras tanto el
+            local sigue pidiendo los datos en la visita {VISITA_PERFIL_DEFECTO}.
           </p>
         ) : null}
       </div>

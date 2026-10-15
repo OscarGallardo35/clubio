@@ -359,6 +359,11 @@ export interface ConfiguracionAdmin {
   /** Grillas semanales de horarios (null = sin horarios = siempre abierto). */
   horariosAtencion: HorarioSemana | null
   horariosDelivery: HorarioSemana | null
+  /**
+   * A partir de que visita se le piden los datos del cliente (cumpleanos, genero).
+   * Default del backend: 3. Puede NO venir mientras el backend de esta fase no deploye.
+   */
+  perfilDesdeVisita?: number | null
 }
 
 /** Campos que acepta `PATCH /configuracion` (subconjunto del DTO; los Decimal van como number). */
@@ -394,6 +399,12 @@ export interface ActualizarConfiguracionBody {
   /** `null` = borrar los horarios (volver a "siempre abierto"). */
   horariosAtencion?: HorarioSemana | null | undefined
   horariosDelivery?: HorarioSemana | null | undefined
+  /**
+   * Umbral del perfilado progresivo (2, 3 o 4). El backend lo agrega al DTO en esta fase: como el
+   * `ValidationPipe` corre con `forbidNonWhitelisted`, mandarlo ANTES de ese deploy daria 400, asi
+   * que la pantalla solo lo manda cuando el GET ya lo devuelve (ver `FormLocal`).
+   */
+  perfilDesdeVisita?: number | undefined
 }
 
 /** `GET /negocios/qr-info`: los 2 QRs fijos del negocio (menu y club). */
@@ -811,20 +822,80 @@ export interface HistorialEnviosRespuesta {
   campanas: ResumenCampanaEnvios[]
 }
 
-/** Cliente del listado `GET /clientes` (proyeccion reducida: alcanza para elegir uno). */
+/** Literales del enum `EtiquetaCliente` de Prisma (no los del pedido: es `NUEVO`, no `NEW`). */
+export type EtiquetaCliente = 'NUEVO' | 'REGULAR' | 'VIP' | 'INACTIVO'
+
+/**
+ * Cliente del listado `GET /clientes`.
+ *
+ * El endpoint es el MISMO que usa el selector de "probar disparo", asi que los campos que agrego
+ * la pantalla de Clientes van como OPCIONALES: el backend devuelve mas cosas cuando lo consulta un
+ * privilegiado (DUENO/ENCARGADO) y menos cuando lo consulta el staff. Un campo que no viaja se
+ * trata como `null`/`undefined`; nunca se inventa.
+ */
 export interface ClienteResumen {
   id: string
   nombre: string
   telefono?: string | null
+  email?: string | null
   sellosActuales?: number
   puntosActuales?: number
+  /** Visitas acumuladas (solo en la vista de admin). */
+  totalVisitas?: number
+  ultimaVisita?: string | null
+  etiqueta?: EtiquetaCliente
+  premiosCanjeados?: number
+  notasInternas?: string | null
+  /** ISO o null. El `<input type="date">` solo necesita los primeros 10 caracteres. */
+  fechaNacimiento?: string | null
+  aceptaNotificaciones?: boolean
+  /** Agregado por la Fase del perfilado progresivo: puede NO venir mientras el backend no deploye. */
+  genero?: GeneroCliente | null
+  creadoEn?: string
 }
+
+/**
+ * Literales del enum `GeneroCliente` del schema (los del CONTRATO congelado con el backend).
+ * `null`/ausente = sin dato: la UI NO lo trata como una opcion mas de la lista.
+ */
+export type GeneroCliente =
+  | 'FEMENINO'
+  | 'MASCULINO'
+  | 'NO_BINARIO'
+  | 'OTRO'
+  | 'PREFIERO_NO_DECIR'
 
 export interface ClientesRespuesta {
   data: ClienteResumen[]
   total: number
   page?: number
   pageSize?: number
+}
+
+/** El alta manual (`POST /clientes`) y la edicion (`PATCH /clientes/:id`) comparten estos campos. */
+export interface CrearClienteManualBody {
+  nombre: string
+  /** Se normaliza a E.164 en el backend. */
+  telefono: string
+  email?: string | undefined
+  aceptaNotificaciones?: boolean | undefined
+  notasInternas?: string | undefined
+  fechaNacimiento?: string | null | undefined
+  genero?: GeneroCliente | null | undefined
+}
+
+/**
+ * `PATCH /clientes/:id` (solo DUENO/ENCARGADO). Un campo ausente NO se toca; `fechaNacimiento` y
+ * `genero` aceptan `null` para BORRAR el dato.
+ */
+export interface ActualizarClienteBody {
+  nombre?: string | undefined
+  email?: string | undefined
+  etiqueta?: EtiquetaCliente | undefined
+  aceptaNotificaciones?: boolean | undefined
+  notasInternas?: string | undefined
+  fechaNacimiento?: string | null | undefined
+  genero?: GeneroCliente | null | undefined
 }
 
 // ------------------------------------------------------- Push (campañas programables) --

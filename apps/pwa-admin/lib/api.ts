@@ -2,6 +2,7 @@ import { ApiClient, endpoints } from '@repo/api-client';
 import type {
   ActualizarConfiguracionBody,
   ActualizarCampanaBody,
+  ActualizarClienteBody,
   ActualizarDisparoBody,
   ActualizarEmpleadoBody,
   ActualizarItemCartaBody,
@@ -10,10 +11,12 @@ import type {
   CampanaPush,
   CartaAdminRespuesta,
   CatalogoPlantillas,
+  ClienteResumen,
   ClientesRespuesta,
   ConfiguracionAdmin,
   ConfiguracionSucursalBody,
   CrearCampanaBody,
+  CrearClienteManualBody,
   CrearDisparoBody,
   CrearEmpleadoBody,
   CrearItemCartaBody,
@@ -415,15 +418,35 @@ export const campanasApi = {
 };
 
 /**
- * Clientes del negocio (`/clientes`): se usa solo para elegir a quien probarle un disparo.
+ * Clientes del negocio (`/clientes`).
+ *
  * El backend filtra por rol (el dueno ve todo) y devuelve `{ data, total, page, pageSize }`.
+ * Alcance de cada verbo, leido del controller:
+ * - `GET` (listado y detalle): cualquier rol del staff. La vista reducida del staff NO trae email,
+ *   notas ni fecha de nacimiento, asi que esos campos son opcionales en el tipo.
+ * - `POST` (alta manual) y `PATCH`: solo DUENO y ENCARGADO.
+ * - El listado y el `PATCH` exigen la feature `crm` del plan; sin ella el backend responde 403.
  */
 export const clientesApi = {
-  listar: (filtros: { search?: string; page?: number; pageSize?: number } = {}) => {
+  listar: (filtros: { search?: string; page?: number; pageSize?: number; etiqueta?: string } = {}) => {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(filtros))
       if (v !== undefined && v !== '') qs.set(k, String(v));
     const q = qs.toString();
     return api.get<ClientesRespuesta>(`${endpoints.clientes.list}${q ? `?${q}` : ''}`);
   },
+
+  /** Cliente + progreso + tarjetas + historial paginado (vista de admin). */
+  obtener: (id: string) => api.get<Record<string, unknown>>(endpoints.clientes.get(id)),
+
+  /**
+   * Alta manual. Devuelve la fila completa de `Cliente`; la pantalla igual vuelve a pedir el
+   * listado, asi que solo se consume el `id`.
+   */
+  crear: (body: CrearClienteManualBody) =>
+    api.post<ClienteResumen>(endpoints.clientes.list, body),
+
+  /** Edicion parcial: un campo ausente NO se toca (y `null` borra fecha de nacimiento / genero). */
+  actualizar: (id: string, body: ActualizarClienteBody) =>
+    api.patch<ClienteResumen>(endpoints.clientes.get(id), body),
 };

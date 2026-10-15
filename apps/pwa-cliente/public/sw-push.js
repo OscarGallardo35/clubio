@@ -34,6 +34,11 @@ self.addEventListener('push', (event) => {
     data: { url: datos.url },
     tag: datos.tag || 'clubio',
     renotify: Boolean(datos.tag),
+    // Vibracion: solo Android la respeta (iOS la ignora en silencio), asi que es inocua. NO se
+    // pone `silent`: el SW nunca lo setea a proposito, porque las notificaciones tienen que sonar
+    // con el sonido del sistema, y gracias al `tag` de arriba `renotify` ya es true (cada push
+    // vuelve a alertar en vez de reemplazarse en silencio).
+    vibrate: [200, 100, 200],
   }
 
   event.waitUntil(self.registration.showNotification(datos.titulo, opciones))

@@ -574,6 +574,8 @@ export interface DatosEjemploPlantilla {
   meta: number
   faltantes: number
   numero: string
+  /** Edad de ejemplo (perfilado progresivo): la real del cliente si tiene fecha, si no 30. */
+  edad: number
 }
 
 export interface CrearPlantillaBody {
@@ -588,7 +590,13 @@ export interface CrearPlantillaBody {
 export type ActualizarPlantillaBody = Partial<CrearPlantillaBody>
 
 /** Segmentos de envio por plantilla. */
-export type SegmentoEnvio = 'TODOS' | 'PREMIO_DESBLOQUEADO' | 'INACTIVO_30'
+export type SegmentoEnvio =
+  | 'TODOS'
+  | 'PREMIO_DESBLOQUEADO'
+  | 'INACTIVO_30'
+  // Perfilado progresivo (fase 2): mujeres (genero FEMENINO declarado) y cumpleanios del mes.
+  | 'MUJERES'
+  | 'CUMPLEANOS_MES'
 
 export interface EnviarPlantillaBody {
   plantillaId: string
@@ -613,7 +621,14 @@ export interface ResultadoEnvioPlantilla {
  * Motivo que dispara la notificacion automatica (`/push/disparos`).
  * Los literales son los del backend: cambiarlos aca rompe el `config` que espera el DTO.
  */
-export type TipoDisparo = 'COMPRA' | 'SELLOS' | 'DIA' | 'INACTIVIDAD' | 'BIENVENIDA' | 'MANUAL'
+export type TipoDisparo =
+  | 'COMPRA'
+  | 'SELLOS'
+  | 'DIA'
+  | 'INACTIVIDAD'
+  | 'BIENVENIDA'
+  | 'MANUAL'
+  | 'CUMPLEANOS'
 
 /** Espejo del enum `EstadoPedido` del backend (para el disparo por COMPRA). */
 export type EstadoPedidoDisparo =
@@ -650,12 +665,22 @@ export interface ConfigDisparoInactividad {
   dias: number
 }
 
+/**
+ * `config` cuando el disparo es por CUMPLEANOS: el saludo sale `diasAntes` dias ANTES
+ * del (mes, dia) de `fechaNacimiento`. `hora` es la ventana de envio en hora ARGENTINA.
+ */
+export interface ConfigDisparoCumpleanos {
+  diasAntes: number
+  hora?: string
+}
+
 /** `config` de un disparo segun su tipo (BIENVENIDA y MANUAL no llevan config). */
 export type ConfigDisparo =
   | ConfigDisparoCompra
   | ConfigDisparoSellos
   | ConfigDisparoDia
   | ConfigDisparoInactividad
+  | ConfigDisparoCumpleanos
   | Record<string, never>
 
 /** Saldo que acredita el disparo: sellos y/o puntos (es saldo REAL del cliente). */

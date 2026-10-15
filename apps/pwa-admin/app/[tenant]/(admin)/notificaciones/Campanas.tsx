@@ -64,11 +64,24 @@ const ETIQUETA_SEGMENTO: Record<SegmentoEnvio, string> = {
   TODOS: 'Todos',
   PREMIO_DESBLOQUEADO: 'Con premio desbloqueado',
   INACTIVO_30: 'Inactivos +30 dias',
+  MUJERES: 'Mujeres',
+  CUMPLEANOS_MES: 'Cumplen anios este mes',
 };
 
-const SEGMENTOS: SegmentoEnvio[] = ['TODOS', 'PREMIO_DESBLOQUEADO', 'INACTIVO_30'];
+const SEGMENTOS: SegmentoEnvio[] = [
+  'TODOS',
+  'PREMIO_DESBLOQUEADO',
+  'INACTIVO_30',
+  'MUJERES',
+  'CUMPLEANOS_MES',
+];
 /** Segmentos que se pueden EXCLUIR (el "a todos excepto X"). */
-const SEGMENTOS_EXCLUIBLES: SegmentoEnvio[] = ['PREMIO_DESBLOQUEADO', 'INACTIVO_30'];
+const SEGMENTOS_EXCLUIBLES: SegmentoEnvio[] = [
+  'PREMIO_DESBLOQUEADO',
+  'INACTIVO_30',
+  'MUJERES',
+  'CUMPLEANOS_MES',
+];
 
 const ESTADO_ETIQUETA: Record<EstadoCampanaPush, string> = {
   PROGRAMADA: 'Programada',

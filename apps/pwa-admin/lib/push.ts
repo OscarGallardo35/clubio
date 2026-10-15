@@ -20,6 +20,7 @@ export function renderizarPlantilla(
         meta: String(datos.meta),
         faltantes: String(datos.faltantes),
         numero: datos.numero,
+        edad: String(datos.edad),
       }
     : {}
   return texto.replace(/\{\{\s*([a-zA-Z]+)\s*\}\}/g, (_t, clave: string) => vars[clave] ?? `{{${clave}}}`)

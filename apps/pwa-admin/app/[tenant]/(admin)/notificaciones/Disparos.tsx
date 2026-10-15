@@ -47,7 +47,7 @@ import type {
  *
  * Un disparo manda una plantilla cuando pasa algo: se entrega un pedido (COMPRA), el
  * cliente suma un sello o le faltan N (SELLOS), llega un dia/hora (DIA), lleva N dias
- * sin volver (INACTIVIDAD), se registra (BIENVENIDA) o a mano (MANUAL).
+ * sin volver (INACTIVIDAD), cumple anios (CUMPLEANOS), se registra (BIENVENIDA) o a mano (MANUAL).
  *
  * Dos cosas que la UI no esconde:
  * - Si el disparo tiene `regalo`, ACREDITA SELLOS/PUNTOS REALES al cliente (no es decorativo).
@@ -67,6 +67,7 @@ const TIPOS: { valor: TipoDisparo; etiqueta: string; ayuda: string }[] = [
   { valor: 'SELLOS', etiqueta: 'Por sellos', ayuda: 'Automatico: cada vez que el cliente suma un sello, o cuando le faltan N para el premio.' },
   { valor: 'DIA', etiqueta: 'Por dia', ayuda: 'Automatico: ese dia a esa hora (dia de la semana o fecha puntual).' },
   { valor: 'INACTIVIDAD', etiqueta: 'Por inactividad', ayuda: 'Automatico: si el cliente no viene hace N dias.' },
+  { valor: 'CUMPLEANOS', etiqueta: 'Cumpleanos', ayuda: 'Automatico: saluda a quien cumple anios, el mismo dia o unos dias antes.' },
   { valor: 'BIENVENIDA', etiqueta: 'Bienvenida', ayuda: 'Automatico: al registrarse el cliente.' },
   { valor: 'MANUAL', etiqueta: 'Manual', ayuda: 'NO es automatico: solo se manda cuando apretas Enviar/Probar.' },
 ];
@@ -78,6 +79,7 @@ const ETIQUETA_TIPO: Record<TipoDisparo, string> = {
   INACTIVIDAD: 'Inactividad',
   BIENVENIDA: 'Bienvenida',
   MANUAL: 'Manual',
+  CUMPLEANOS: 'Cumpleanos',
 };
 
 /** MANUAL es el UNICO que no se dispara solo. */
@@ -88,6 +90,7 @@ const ES_MANUAL: Record<TipoDisparo, boolean> = {
   INACTIVIDAD: false,
   BIENVENIDA: false,
   MANUAL: true,
+  CUMPLEANOS: false,
 };
 
 const ESTADOS: { valor: EstadoPedidoDisparo; etiqueta: string }[] = [
@@ -153,6 +156,12 @@ function descripcionConfig(d: DisparoPush): string {
     }
     case 'INACTIVIDAD':
       return `Despues de ${numeroDe(leerConfig(d.config, 'dias'), 30)} dias sin volver`;
+    case 'CUMPLEANOS': {
+      const dias = numeroDe(leerConfig(d.config, 'diasAntes'), 0);
+      const hora = String(leerConfig(d.config, 'hora') ?? '');
+      const cuando = dias === 0 ? 'El dia del cumpleanos' : `${dias} dia(s) antes del cumpleanos`;
+      return hora ? `${cuando} (${hora})` : cuando;
+    }
     case 'BIENVENIDA':
       return 'Al registrarse';
     case 'MANUAL':
@@ -186,6 +195,12 @@ function cuandoSeDispara(d: DisparoPush): string {
     }
     case 'INACTIVIDAD':
       return `Automatico: si no viene hace ${numeroDe(leerConfig(d.config, 'dias'), 30)} dias`;
+    case 'CUMPLEANOS': {
+      const dias = numeroDe(leerConfig(d.config, 'diasAntes'), 0);
+      return dias === 0
+        ? 'Automatico: el dia del cumpleanos del cliente'
+        : `Automatico: ${dias} dia(s) antes del cumpleanos del cliente`;
+    }
     case 'BIENVENIDA':
       return 'Automatico: al registrarse';
     case 'MANUAL':
@@ -514,6 +529,9 @@ function FormularioDisparo({
   const [hora, setHora] = React.useState(String(leerConfig(cfg, 'hora') ?? '18:00'));
   // INACTIVIDAD
   const [dias, setDias] = React.useState(String(numeroDe(leerConfig(cfg, 'dias'), 30)));
+  // CUMPLEANOS
+  const [diasAntes, setDiasAntes] = React.useState(String(numeroDe(leerConfig(cfg, 'diasAntes'), 0)));
+  const [horaCumple, setHoraCumple] = React.useState(String(leerConfig(cfg, 'hora') ?? '09:00'));
 
   // Regalo opcional (acredita saldo real).
   const [sellosRegalo, setSellosRegalo] = React.useState(
@@ -543,6 +561,7 @@ function FormularioDisparo({
 
   const nombreOk = nombre.trim().length >= 2;
   const plantillaOk = plantillaId !== '';
+  const diasAntesOk = /^\d+$/.test(diasAntes.trim()) && Number(diasAntes) <= 7;
   const configOk =
     tipo === 'COMPRA'
       ? enteroPositivo(cadaN)
@@ -552,7 +571,9 @@ function FormularioDisparo({
           ? (diaModo === 'semana' ? diaSemana !== '' : diaFecha.trim() !== '') && hora.trim() !== ''
           : tipo === 'INACTIVIDAD'
             ? enteroPositivo(dias)
-            : true;
+            : tipo === 'CUMPLEANOS'
+              ? diasAntesOk
+              : true;
   const extrasOk =
     opcionalEnteroPositivo(sellosRegalo) &&
     opcionalEnteroPositivo(puntosRegalo) &&
@@ -574,6 +595,10 @@ function FormularioDisparo({
         return { dia: diaModo === 'fecha' ? diaFecha : diaSemana, hora };
       case 'INACTIVIDAD':
         return { dias: Number(dias) };
+      case 'CUMPLEANOS':
+        return horaCumple.trim()
+          ? { diasAntes: Number(diasAntes), hora: horaCumple }
+          : { diasAntes: Number(diasAntes) };
       default:
         return {};
     }
@@ -776,6 +801,38 @@ function FormularioDisparo({
           <p className="text-xs text-muted-foreground">
             Si el cliente no vuelve en estos dias, se le manda la plantilla.
           </p>
+        </div>
+      ) : null}
+
+      {tipo === 'CUMPLEANOS' ? (
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Se saluda a quien cumple anios ese dia, con la fecha de nacimiento que cargo en su PWA
+            (o que cargaste vos). Quien no tiene el dato no recibe nada.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="d-diasantes">Cuantos dias antes</Label>
+              <Input
+                id="d-diasantes"
+                value={diasAntes}
+                onChange={(e) => setDiasAntes(e.target.value.replace(/[^0-9]/g, '').slice(0, 1))}
+                inputMode="numeric"
+                placeholder="0"
+              />
+              <p className="text-xs text-muted-foreground">0 = el mismo dia del cumpleanos. Hasta 7.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="d-hora-cumple">Hora del saludo</Label>
+              <Input
+                id="d-hora-cumple"
+                type="time"
+                value={horaCumple}
+                onChange={(e) => setHoraCumple(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Hora argentina.</p>
+            </div>
+          </div>
         </div>
       ) : null}
 

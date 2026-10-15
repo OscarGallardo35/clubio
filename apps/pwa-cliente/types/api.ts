@@ -58,6 +58,12 @@ export interface ConfiguracionPublica {
   /** Grillas semanales de horarios: { lun: [{desde,hasta}], ... }. Faltante/null = sin horarios. */
   horariosAtencion?: HorarioSemana | null
   horariosDelivery?: HorarioSemana | null
+  /**
+   * Perfilado progresivo: a partir de que visita se le pregunta el cumpleaños al cliente
+   * (default del backend: 3). Opcional: si no viene, la PWA no pregunta nada todavia
+   * (ver lib/perfilamiento-maquina.ts).
+   */
+  perfilDesdeVisita?: number
 }
 
 /** Dias en el orden del editor (lunes primero). Claves del JSON de la grilla. */
@@ -107,6 +113,13 @@ export interface NegocioPublico {
 }
 
 // --- cliente ---
+/**
+ * Genero declarado por el cliente (perfilado progresivo, fase 1). Sale del contrato del backend:
+ * PATCH /auth/cliente/perfil acepta estos valores y GET /auth/cliente/me los devuelve.
+ * `PREFIERO_NO_DECIR` es una RESPUESTA valida, no un "vacio": no se vuelve a preguntar.
+ */
+export type Genero = 'FEMENINO' | 'MASCULINO' | 'NO_BINARIO' | 'OTRO' | 'PREFIERO_NO_DECIR'
+
 export interface ClienteBasico {
   id: string
   nombre: string
@@ -115,6 +128,16 @@ export interface ClienteBasico {
   totalVisitas?: number
   ultimaVisita?: string | null
   aceptaNotificaciones?: boolean
+  /**
+   * Perfilado progresivo (opcionales a proposito: mientras el backend no los exponga llegan
+   * `undefined` y la PWA NO pregunta nada; ver lib/perfilamiento-maquina.ts).
+   */
+  fechaNacimiento?: string | null
+  genero?: Genero | null
+  /** true = el cliente pidio que no le pidan mas datos. Nunca se le vuelve a preguntar. */
+  perfiladoRechazado?: boolean
+  /** ISO en que el cliente cerro/omitio el cartel (cooldown del lado del servidor). */
+  perfiladoOmitidoEn?: string | null
   /**
    * Token del link PUBLICO de verificacion (solo lo devuelve GET /visitas/mi-tarjeta).
    * Opcional: /auth/cliente/me y los fixtures viejos no lo traen.
@@ -333,10 +356,22 @@ export interface PremioPublico {
   premioTexto: string | null
   modoFidelizacion: 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO'
   /**
+   * Par antes/despues del saldo (sellos y puntos efectivos) para VERIFICAR el cambio en la modal.
+   * En un premio PENDIENTE el `despues` es la PROYECCION de lo que acreditara; en uno ya aceptado
+   * es el par que quedo registrado al aceptar. Ausente en respuestas viejas.
+   */
+  saldo?: SaldoParCambio | null
+  /**
    * Mecanismo de canje. `null`/ausente mientras el premio este PENDIENTE; presente con el
    * premio ACEPTADO/CANJEADO (asi la modal lo muestra tambien al recargar la pagina).
    */
   verificacion?: PremioVerificacion | null
+}
+
+/** Par de saldos (sellos + puntos efectivos) antes y despues de aceptar un premio. */
+export interface SaldoParCambio {
+  antes: { sellos: number; puntos: number }
+  despues: { sellos: number; puntos: number }
 }
 
 /** Mecanismo de canje (link de verificacion + WhatsApp al numero de atencion del local). */

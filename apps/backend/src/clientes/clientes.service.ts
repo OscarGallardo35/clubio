@@ -227,7 +227,7 @@ export class ClientesService {
           data: {
             negocioId, nombre: dto.nombre, telefono,
             email: dto.email ?? null, notasInternas: dto.notasInternas ?? null,
-            aceptaNotificaciones: dto.aceptaNotificaciones ?? false,
+            aceptaNotificaciones: dto.aceptaNotificaciones ?? true,
             ...perfil,
           },
         });

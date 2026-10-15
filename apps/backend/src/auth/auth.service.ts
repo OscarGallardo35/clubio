@@ -327,7 +327,7 @@ export class AuthService {
             negocioId: negocio.id,
             nombre: dto.nombre,
             telefono,
-            aceptaNotificaciones: dto.aceptaNotificaciones ?? false,
+            aceptaNotificaciones: dto.aceptaNotificaciones ?? true,
           },
           select: { id: true, nombre: true, telefono: true, sellosActuales: true, totalVisitas: true },
         });

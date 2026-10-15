@@ -450,7 +450,8 @@ function FormularioCliente({
     cliente?.genero ?? SIN_DATO,
   );
   const [etiqueta, setEtiqueta] = React.useState<EtiquetaCliente | ''>(cliente?.etiqueta ?? '');
-  const [acepta, setAcepta] = React.useState(cliente?.aceptaNotificaciones ?? false);
+  // Alta: nace PRENDIDO (`?? true`); edicion: se respeta el valor real del cliente.
+  const [acepta, setAcepta] = React.useState(cliente?.aceptaNotificaciones ?? true);
   const [notas, setNotas] = React.useState(cliente?.notasInternas ?? '');
   const [guardando, setGuardando] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);

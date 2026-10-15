@@ -19,6 +19,21 @@ import { edadALaFecha, fechaARDe } from '../common/utils/cumpleanos.util';
 
 export const COLA_PUSH = 'push-send';
 
+/**
+ * Filtro de cliente para TODO publico de MARKETING (promos, campañas, premios y el saludo
+ * de cumpleanos): vivo + con el switch "acepta notificaciones" PRENDIDO.
+ *
+ * Es la base del preview y del envio (fuente unica en `resolverPublico`), asi que el
+ * "N de M" del admin dice exactamente a quien le va a llegar.
+ *
+ * NO se aplica al push TRANSACCIONAL del pedido (`pedidos.service` -> `enviarACliente`):
+ * el cliente tiene que enterarse del estado de su pedido aunque haya apagado el switch.
+ */
+export const CLIENTE_ACEPTA: Prisma.ClienteWhereInput = {
+  eliminadoEn: null,
+  aceptaNotificaciones: true,
+};
+
 /** Cuantas campañas devuelve el resumen del historial de envios (`GET /push/envios/logs`). */
 export const CAMPANAS_EN_RESUMEN = 20;
 
@@ -157,6 +172,12 @@ export interface DesglosePublico {
   excluidos: number;
   /** Clientes del negocio (no dados de baja) SIN suscripcion push activa. */
   sinSuscripcionActiva: number;
+  /**
+   * Clientes del negocio (no dados de baja) con el switch "acepta notificaciones" APAGADO.
+   * Tienen push, pero se autoexcluyen de TODO envio de marketing (promos, premios,
+   * cumpleanos). No se cuentan como `sinSuscripcionActiva`: si tienen dispositivo.
+   */
+  sinAcepta: number;
   /** K: total de clientes del negocio (no dados de baja). */
   clientesNegocio: number;
 }
@@ -431,8 +452,9 @@ export class PushService {
       // Con `clienteIds` explicitos hay que filtrar por SUSCRIPCION ACTIVA igual que el
       // camino de segmentos: sin esto `destinatarios`/`totalEnviados` contaban gente que
       // no tiene push (el contador mentia) y se creaba un job por cliente sin dispositivo.
+      // Ademas se respeta el switch: una promocion es MARKETING aunque se elija a mano.
       const suscritos = await this.prisma.notificacionPush.findMany({
-        where: { negocioId, activa: true, clienteId: { in: idsPedidos } },
+        where: { negocioId, activa: true, clienteId: { in: idsPedidos }, cliente: CLIENTE_ACEPTA },
         select: { clienteId: true },
         distinct: ['clienteId'],
       });
@@ -442,8 +464,8 @@ export class PushService {
         where: {
           negocioId, activa: true,
           ...(dto.segmento && dto.segmento !== 'TODOS'
-            ? { cliente: { etiqueta: dto.segmento as never, eliminadoEn: null } }
-            : { cliente: { eliminadoEn: null } }),
+            ? { cliente: { ...CLIENTE_ACEPTA, etiqueta: dto.segmento as never } }
+            : { cliente: { ...CLIENTE_ACEPTA } }),
         },
         select: { clienteId: true },
         distinct: ['clienteId'],
@@ -1171,8 +1193,11 @@ export class PushService {
    * el numero que ve el dueno no seria el que se manda.
    *
    * La BASE es SIEMPRE `notificacionPush.activa = true` + `cliente.eliminadoEn =
-   * null` (+ el filtro del segmento elegido). Las EXCLUSIONES SOLO RECORTAN: una
-   * exclusion jamas puede ampliar el publico.
+   * null` + `cliente.aceptaNotificaciones = true` (+ el filtro del segmento elegido).
+   * El ultimo es el switch del admin: apagado, el cliente queda fuera de TODO el
+   * MARKETING (promos, premios y cumpleanos). El push transaccional del pedido NO pasa
+   * por aca (ver `enviarACliente`). Las EXCLUSIONES SOLO RECORTAN: una exclusion jamas
+   * puede ampliar el publico.
    *
    * Por diseno el numero que devuelve es una ESTIMACION: la base se re-resuelve al
    * momento del envio (puede cambiar entre programar y despachar).
@@ -1203,22 +1228,22 @@ export class PushService {
     const base: Prisma.NotificacionPushWhereInput = {
       negocioId,
       activa: true,
-      cliente: { eliminadoEn: null },
+      cliente: { ...CLIENTE_ACEPTA },
     };
     if (segmento === 'PREMIO_DESBLOQUEADO') {
-      base.cliente = { eliminadoEn: null, sellosActuales: { gte: ctx.meta } };
+      base.cliente = { ...CLIENTE_ACEPTA, sellosActuales: { gte: ctx.meta } };
     } else if (segmento === 'INACTIVO_30') {
       const corte = new Date(Date.now() - 30 * 86_400_000);
       base.cliente = {
-        eliminadoEn: null,
+        ...CLIENTE_ACEPTA,
         OR: [{ ultimaVisita: { lt: corte } }, { ultimaVisita: null }],
       };
     } else if (segmento === 'MUJERES') {
       // `genero: 'FEMENINO'` en el WHERE EXCLUYE solo: quien NO declaro el dato (genero
       // NULL) y quien respondio PREFIERO_NO_DECIR / otra etiqueta no matchean.
-      base.cliente = { eliminadoEn: null, genero: 'FEMENINO' };
+      base.cliente = { ...CLIENTE_ACEPTA, genero: 'FEMENINO' };
     } else if (segmento === 'CUMPLEANOS_MES') {
-      base.cliente = { eliminadoEn: null, id: { in: [...(setCumpleMes ?? [])] } };
+      base.cliente = { ...CLIENTE_ACEPTA, id: { in: [...(setCumpleMes ?? [])] } };
     }
 
     const subs = await this.prisma.notificacionPush.findMany({
@@ -1288,9 +1313,10 @@ export class PushService {
         });
     }
 
-    const clientesNegocio = await this.prisma.cliente.count({
-      where: { negocioId, eliminadoEn: null },
-    });
+    const [clientesNegocio, sinAcepta] = await Promise.all([
+      this.prisma.cliente.count({ where: { negocioId, eliminadoEn: null } }),
+      this.prisma.cliente.count({ where: { negocioId, eliminadoEn: null, aceptaNotificaciones: false } }),
+    ]);
     const suscritos = porCliente.size;
 
     return {
@@ -1299,7 +1325,9 @@ export class PushService {
       desglose: {
         suscritos,
         excluidos: excluidosDetalle.length,
-        sinSuscripcionActiva: Math.max(0, clientesNegocio - suscritos),
+        // `sinAcepta` queda FUERA: tienen dispositivo, pero el switch apagado los excluye.
+        sinSuscripcionActiva: Math.max(0, clientesNegocio - suscritos - sinAcepta),
+        sinAcepta,
         clientesNegocio,
       },
       excluidosDetalle,

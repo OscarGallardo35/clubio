@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { getPagination, paginar } from '../common/utils/pagination.util';
-import { PushService, VariablesPlantilla } from './push.service';
+import { PushService, VariablesPlantilla, CLIENTE_ACEPTA } from './push.service';
 import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
 import type { SaldoPar } from '@repo/types';
 import type { CrearDisparoDto } from './dto/crear-disparo.dto';
@@ -1082,9 +1082,14 @@ export class DisparosService {
   }
 
   /**
-   * Clientes destinatarios: con suscripcion push activa, no dados de baja, del
-   * negocio. `corte` (opcional) limita a los inactivos (sin visita desde `corte`,
-   * incluidos los que nunca vinieron) — mismo criterio que el segmento INACTIVO_30.
+   * Clientes destinatarios de un DISPARO (marketing): con suscripcion push activa, no
+   * dados de baja, del negocio, y con el switch "acepta notificaciones" PRENDIDO.
+   *
+   * El switch se respeta ACA y no en `PushService.enviarACliente`, que tambien sirve al
+   * push TRANSACCIONAL del pedido (ese tiene que salir igual).
+   *
+   * `corte` (opcional) limita a los inactivos (sin visita desde `corte`, incluidos los que
+   * nunca vinieron) — mismo criterio que el segmento INACTIVO_30.
    */
   private async destinatarios(negocioId: string, corte?: Date) {
     const subs = await this.prisma.notificacionPush.findMany({
@@ -1092,7 +1097,7 @@ export class DisparosService {
         negocioId,
         activa: true,
         cliente: {
-          eliminadoEn: null,
+          ...CLIENTE_ACEPTA,
           ...(corte ? { OR: [{ ultimaVisita: { lt: corte } }, { ultimaVisita: null }] } : {}),
         },
       },

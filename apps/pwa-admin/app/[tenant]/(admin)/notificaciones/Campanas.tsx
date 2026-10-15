@@ -843,6 +843,9 @@ function FormularioCampana({
             <p className="text-xs tabular-nums text-muted-foreground">
               El local tiene {preview.desglose.clientesNegocio} clientes ·{' '}
               {preview.desglose.sinSuscripcionActiva} sin notificaciones activas
+              {preview.desglose.sinAcepta > 0
+                ? ` · ${preview.desglose.sinAcepta} con notificaciones apagadas`
+                : ''}
               {preview.desglose.excluidos > 0 ? ` · ${preview.desglose.excluidos} excluidos` : ''}
             </p>
           </>

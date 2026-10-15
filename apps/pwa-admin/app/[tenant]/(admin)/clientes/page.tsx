@@ -631,7 +631,8 @@ function FormularioCliente({
         <div className="space-y-0.5">
           <Label htmlFor="c-acepta">Acepta notificaciones</Label>
           <p className="text-xs text-muted-foreground">
-            Si esta apagado, no le llegan los push (ni el de cumpleanos).
+            Si esta apagado, no le llegan las promos, los premios ni el saludo de cumpleanos.
+            Los avisos de su pedido le siguen llegando.
           </p>
         </div>
         <Switch id="c-acepta" checked={acepta} onCheckedChange={setAcepta} />

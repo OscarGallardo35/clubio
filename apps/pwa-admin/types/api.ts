@@ -999,6 +999,8 @@ export interface PreviewCampanaRespuesta {
     suscritos: number
     excluidos: number
     sinSuscripcionActiva: number
+    /** Clientes con el switch "acepta notificaciones" APAGADO (tienen push, pero no reciben marketing). */
+    sinAcepta: number
     /** K: total de clientes del negocio. */
     clientesNegocio: number
   }

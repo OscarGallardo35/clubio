@@ -73,7 +73,12 @@ async function main() {
     where: { negocioId }, select: { modoFidelizacion: true },
   });
   const modo = cfg?.modoFidelizacion ?? 'SOLO_VISITAS';
-  console.log(`\n== Premios push :: ${SLUG} :: run ${RUN} :: ${API} :: modo ${modo} ==`);
+  /** GLOBAL vs POR_SUCURSAL: decide DONDE vive el saldo efectivo que devuelve `saldo.antes/despues`. */
+  const negocioCompleto = await prisma.negocio.findUnique({
+    where: { id: negocioId }, select: { modoClientes: true },
+  });
+  const modoClientes = negocioCompleto?.modoClientes ?? 'GLOBAL';
+  console.log(`\n== Premios push :: ${SLUG} :: run ${RUN} :: ${API} :: modo ${modo} / ${modoClientes} ==`);
 
   const disparos = [];
   const plantillas = [];
@@ -147,23 +152,72 @@ async function main() {
 
     // ==========================================================================
     console.log('\n[2] ACEPTAR por token acredita UNA sola vez');
+
+    /**
+     * Saldo EFECTIVO (sellos+puntos) del cliente, con la MISMA regla del backend
+     * (`SaldoNotificador.parActual`): POR_SUCURSAL manda la tarjeta; GLOBAL, el cliente. Es el
+     * par contra el que se comparan `saldo.antes`/`saldo.despues` de la respuesta.
+     */
+    const leerSaldo = async () => {
+      if (modoClientes === 'POR_SUCURSAL') {
+        const t = await prisma.tarjetaClienteSucursal.findUnique({
+          where: { clienteId_sucursalId: { clienteId: cliente.id, sucursalId: sucursal.id } },
+          select: { sellosActuales: true, puntosActuales: true },
+        });
+        return { sellos: t?.sellosActuales ?? 0, puntos: t?.puntosActuales ?? 0 };
+      }
+      const c = await prisma.cliente.findUnique({
+        where: { id: cliente.id }, select: { sellosActuales: true, puntosActuales: true },
+      });
+      return { sellos: c?.sellosActuales ?? 0, puntos: c?.puntosActuales ?? 0 };
+    };
+
     const gPub = await req('GET', `/api/premios/${premio.token}`);
     chk('GET /premios/:token (publico) responde 200', gPub.status === 200, `status=${gPub.status}`);
     chk('la modal recibe el premio PENDIENTE', gPub.data?.estado === 'PENDIENTE' && gPub.data?.texto === '2 sellos extra', trunc(gPub.data && { estado: gPub.data.estado, texto: gPub.data.texto }));
 
+    const esperadoSellos = modo === 'SOLO_PUNTOS' ? 0 : 2;
+    const saldoPrevio = await leerSaldo();
+    chk('un premio PENDIENTE devuelve una PROYECCION de saldo (antes -> despues)',
+      gPub.data?.saldo?.antes?.sellos === saldoPrevio.sellos
+      && gPub.data?.saldo?.despues?.sellos === saldoPrevio.sellos + esperadoSellos,
+      `${trunc(gPub.data?.saldo)} (premio acredita ${esperadoSellos})`);
+
     const rAcep = await req('POST', `/api/premios/${premio.token}/aceptar`);
     chk('POST /premios/:token/aceptar responde 200', rAcep.status === 200 || rAcep.status === 201, `status=${rAcep.status} ${trunc(rAcep.data)}`);
-    const esperadoSellos = modo === 'SOLO_PUNTOS' ? 0 : 2;
     chk('acredito los sellos del premio (segun el modo del club)', rAcep.data?.acreditado?.sellos === esperadoSellos && rAcep.data?.acreditado?.puntos === 0, trunc(rAcep.data?.acreditado));
     chk('el premio quedo ACEPTADO', rAcep.data?.estado === 'ACEPTADO' && rAcep.data?.yaAceptado === false, trunc(rAcep.data?.estado));
     const urlVer = rAcep.data?.verificacion?.url ?? '';
     chk('devuelve el link de verificacion del staff (absoluto + slug)', /\/que-lomitos\/validar-premio\?ref=/.test(urlVer) && /^https:\/\//.test(urlVer), trunc(urlVer));
     chk('devuelve el boton de WhatsApp al numero de atencion', typeof rAcep.data?.verificacion?.whatsapp === 'string' && rAcep.data.verificacion.whatsapp.startsWith('https://wa.me/'), trunc(rAcep.data?.verificacion?.whatsapp));
 
+    // SALDO ANTES/DESPUES: es lo que la modal muestra para VERIFICAR el cambio.
+    const saldoPosterior = await leerSaldo();
+    const saldoAcep = rAcep.data?.saldo;
+    chk('la respuesta del aceptar trae saldo.antes/saldo.despues',
+      !!saldoAcep?.antes && !!saldoAcep?.despues && typeof saldoAcep.antes.sellos === 'number' && typeof saldoAcep.despues.puntos === 'number',
+      trunc(saldoAcep));
+    chk('saldo.antes es el saldo REAL previo (no un calculo a mano)',
+      saldoAcep?.antes?.sellos === saldoPrevio.sellos && saldoAcep?.antes?.puntos === saldoPrevio.puntos,
+      `antes=${trunc(saldoAcep?.antes)} esperado=${trunc(saldoPrevio)}`);
+    chk('saldo.despues es el saldo REAL que quedo en la base',
+      saldoAcep?.despues?.sellos === saldoPosterior.sellos && saldoAcep?.despues?.puntos === saldoPosterior.puntos,
+      `despues=${trunc(saldoAcep?.despues)} real=${trunc(saldoPosterior)}`);
+    chk('la diferencia del par es EXACTAMENTE lo acreditado',
+      saldoAcep?.despues?.sellos - saldoAcep?.antes?.sellos === esperadoSellos
+      && saldoAcep?.despues?.puntos - saldoAcep?.antes?.puntos === 0,
+      `${saldoAcep?.antes?.sellos}/${saldoAcep?.antes?.puntos} -> ${saldoAcep?.despues?.sellos}/${saldoAcep?.despues?.puntos}`);
+
     const gPub2 = await req('GET', `/api/premios/${premio.token}`);
     chk('el GET publico de un premio ACEPTADO trae el mecanismo de canje (para recargar la pagina)',
       !!gPub2.data?.verificacion?.url && /\/validar-premio\?ref=/.test(gPub2.data.verificacion.url),
       trunc(gPub2.data?.verificacion?.url));
+    chk('al RECARGAR la pagina el GET devuelve el MISMO par registrado (saldoJson)',
+      gPub2.data?.saldo?.antes?.sellos === saldoAcep?.antes?.sellos
+      && gPub2.data?.saldo?.despues?.sellos === saldoAcep?.despues?.sellos
+      && gPub2.data?.saldo?.antes?.puntos === saldoAcep?.antes?.puntos
+      && gPub2.data?.saldo?.despues?.puntos === saldoAcep?.despues?.puntos,
+      trunc(gPub2.data?.saldo));
 
     const s2 = (await prisma.cliente.findUnique({ where: { id: cliente.id }, select: { sellosActuales: true } })).sellosActuales;
     chk('el saldo subio EXACTAMENTE lo acreditado', (s2 - s1) === esperadoSellos, `antes=${s1} despues=${s2} esperado=+${esperadoSellos}`);
@@ -175,6 +229,11 @@ async function main() {
       req('POST', `/api/premios/${premio.token}/aceptar`),
     ]);
     chk('el segundo aceptar responde OK pero yaAceptado', rAcep2.data?.yaAceptado === true && rAcep2.data?.acreditado?.sellos === 0, trunc(rAcep2.data?.motivo));
+    chk('el segundo aceptar NO cambia el `despues` (devuelve el par registrado)',
+      rAcep2.data?.saldo?.despues?.sellos === saldoAcep?.despues?.sellos
+      && rAcep2.data?.saldo?.despues?.puntos === saldoAcep?.despues?.puntos
+      && rAcep3.data?.saldo?.despues?.sellos === saldoAcep?.despues?.sellos,
+      `1ro=${trunc(saldoAcep?.despues)} 2do=${trunc(rAcep2.data?.saldo?.despues)}`);
     const s3 = (await prisma.cliente.findUnique({ where: { id: cliente.id }, select: { sellosActuales: true } })).sellosActuales;
     chk('el saldo NO cambio con los aceptar repetidos', s3 === s2, `${s2} -> ${s3}`);
     const nAceptados = await prisma.eventoAuditoria.count({ where: { negocioId, accion: 'premio.aceptado', clienteId: cliente.id } });
@@ -225,6 +284,11 @@ async function main() {
     const rLibre = await req('POST', `/api/premios/${premioLibre.token}/aceptar`);
     chk('aceptar el LIBRE responde 200', rLibre.status === 200 || rLibre.status === 201, `status=${rLibre.status}`);
     chk('el LIBRE acredita 0 sellos y 0 puntos', rLibre.data?.acreditado?.sellos === 0 && rLibre.data?.acreditado?.puntos === 0, trunc(rLibre.data?.acreditado));
+    chk('un premio LIBRE devuelve antes == despues (no inventa un cambio)',
+      !!rLibre.data?.saldo?.antes
+      && rLibre.data.saldo.antes.sellos === rLibre.data.saldo.despues.sellos
+      && rLibre.data.saldo.antes.puntos === rLibre.data.saldo.despues.puntos,
+      trunc(rLibre.data?.saldo));
     const s5 = (await prisma.cliente.findUnique({ where: { id: cliente.id }, select: { sellosActuales: true, puntosActuales: true } }));
     chk('el saldo no cambio con el LIBRE', s5.sellosActuales === s4.sellosActuales && s5.puntosActuales === s4.puntosActuales, `${s4.sellosActuales}/${s4.puntosActuales} -> ${s5.sellosActuales}/${s5.puntosActuales}`);
 
@@ -280,7 +344,7 @@ async function main() {
     await prisma.tarjetaClienteSucursal.deleteMany({ where: { clienteId: { in: clientes } } }).catch(() => undefined);
     await prisma.cliente.deleteMany({ where: { id: { in: clientes } } }).catch(() => undefined);
     await prisma.eventoAuditoria.deleteMany({
-      where: { negocioId, clienteId: { in: clientes }, accion: { in: ['premio.aceptado', 'premio.canjeado', 'push.disparo_premio', 'push.disparo_regalo'] } },
+      where: { negocioId, clienteId: { in: clientes }, accion: { in: ['premio.aceptado', 'premio.canjeado', 'push.disparo_premio', 'push.disparo_regalo', 'saldo.cambiado'] } },
     }).catch(() => undefined);
     console.log('  limpieza: premios/disparos/plantillas/clientes/pedidos/visitas/auditoria de prueba borrados; sin suscripciones creadas');
   }

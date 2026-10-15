@@ -5,8 +5,8 @@
  *   API_URL=https://api.clubio.lat pnpm --filter backend test:editar-monto
  *
  * Cubre los 6 casos pedidos:
- *   [1] subir el monto        -> acredita el delta de puntos.
- *   [2] bajarlo con saldo     -> resta el delta.
+ *   [1] subir el monto        -> acredita el delta de puntos + avisa `saldo:cambiado` por WS.
+ *   [2] bajarlo con saldo     -> resta el delta (y tambien avisa, con delta negativo).
  *   [3] bajarlo SIN saldo     -> 400 "el cliente ya gasto esos puntos" (no se clampea a 0).
  *   [4] visita inexistente    -> 404.
  *   [5] visita de otro dia    -> 400.
@@ -14,9 +14,15 @@
  *
  * Los dos ultimos casos se preparan desde la DB (fecha al dia anterior / saldo en 0): es la unica
  * forma de llegar a esos estados sin esperar un dia o gastar puntos de verdad.
+ *
+ * El socket del cliente (namespace /visitas, sala `cliente:{id}`) prueba el EVENTO UNICO DE SALDO:
+ * `editarMonto` movia los puntos y la tarjeta abierta no se enteraba (hueco historico).
  */
 const { createHmac, randomUUID } = require('crypto');
 const { PrismaClient } = require('@prisma/client');
+const { io } = require(require.resolve('socket.io-client', {
+  paths: [require('path').join(__dirname, '../../pwa-cliente')],
+}));
 
 const API = process.env.API_URL || 'https://api.clubio.lat';
 const SLUG = process.env.TENANT_SLUG || 'bar-la-esquina';
@@ -57,14 +63,30 @@ function buscarItem(obj, acc = []) {
   return acc;
 }
 
+/** Espera (polling corto) a que `fn()` devuelva algo, o devuelve null al vencer. */
+const esperarEventoSaldo = async (fn, ms) => {
+  const limite = Date.now() + ms;
+  while (Date.now() < limite) {
+    const v = fn();
+    if (v) return v;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return fn() ?? null;
+};
+
 (async () => {
   console.log(`API: ${API}   tenant: ${SLUG}\n`);
   const tel = `+54911${String(Date.now()).slice(-6)}${String(Math.floor(Math.random() * 900) + 100)}`;
   let clienteId = null, visitaId = null, sucursalId = null;
+  /** Socket del CLIENTE en la sala `cliente:{id}`: prueba que el aviso de saldo llega de verdad. */
+  let socket = null;
+  const eventosSaldo = [];
 
   const limpiar = async () => {
     try {
+      if (socket) { socket.disconnect(); socket = null; }
       if (clienteId) {
+        await prisma.eventoAuditoria.deleteMany({ where: { clienteId, accion: 'saldo.cambiado' } });
         await prisma.visita.deleteMany({ where: { clienteId } });
         await prisma.tarjetaClienteSucursal.deleteMany({ where: { clienteId } });
         await prisma.tokenValidacion.deleteMany({ where: { clienteId } });
@@ -119,10 +141,31 @@ function buscarItem(obj, acc = []) {
       : (await prisma.cliente.findUnique({ where: { id: clienteId }, select: { puntosActuales: true } }))?.puntosActuales;
     console.log(`saldo inicial: ${await saldo()}\n`);
 
+    // ---- Socket del CLIENTE: SOLO la sala `cliente:{id}` (la del aviso de saldo) ----
+    // Es la prueba directa del hueco historico: `editarMonto` movia los puntos y la app abierta no
+    // se enteraba. El JWT se firma con el secreto del repo (no hay contrasena de persona).
+    const secCli = process.env.JWT_CLIENTE_SECRET;
+    if (!secCli) { console.log('FALTA JWT_CLIENTE_SECRET: no se puede probar el WS'); process.exit(2); }
+    socket = io(`${API}/visitas`, {
+      transports: ['websocket'],
+      auth: { token: firmar({ sub: clienteId, negocioId: negocio.id, negocioSlug: SLUG, tipo: 'cliente', jti: randomUUID() }, secCli) },
+      reconnection: false,
+    });
+    socket.on('saldo:cambiado', (p) => eventosSaldo.push({ t: Date.now(), p }));
+    const handshake = await new Promise((resolve) => {
+      const to = setTimeout(() => resolve(null), 8000);
+      socket.on('conectado', (d) => { clearTimeout(to); resolve(d); });
+      socket.on('connect_error', (e) => { clearTimeout(to); resolve({ error: e.message }); });
+    });
+    chk('el socket del cliente conecta a /visitas', !!handshake && !handshake.error && Array.isArray(handshake.salas), trunc(handshake));
+    chk('el socket quedo en la sala cliente:{id} (la del aviso de saldo)',
+      !!handshake?.salas?.includes(`cliente:${clienteId}`), trunc(handshake?.salas));
+
     const patch = (id, monto, token = staffToken) => req('PATCH', `/api/visitas/${id}/monto`, { token, body: { montoConsumido: monto } });
 
     // ------------------------------------------------------- [1] subir el monto
     console.log('[1] subir el monto a 10000');
+    const t0 = Date.now();
     let r = await patch(visitaId, 10000);
     chk('PATCH -> 2xx', r.status >= 200 && r.status < 300, `status=${r.status} ${trunc(r.data)}`);
     visita = await prisma.visita.findUnique({ where: { id: visitaId }, select: { montoConsumido: true, puntosOtorgados: true } });
@@ -130,10 +173,38 @@ function buscarItem(obj, acc = []) {
     chk('los puntos se recalcularon', visita?.puntosOtorgados === calcular(10000), `puntos=${visita?.puntosOtorgados} esperado=${calcular(10000)}`);
     chk('el saldo del cliente subio ese delta', (await saldo()) === calcular(10000), `saldo=${await saldo()}`);
 
+    // EVENTO UNICO DE SALDO: `editarMonto` tiene que avisar por WS (el hueco historico).
+    const ev = await esperarEventoSaldo(
+      () => eventosSaldo.find((e) => e.p?.motivo === 'visita_monto_editado') ?? null,
+      8000,
+    );
+    chk('llega `saldo:cambiado` al corregir el monto (<8s)', !!ev, ev ? `+${ev.t - t0}ms` : 'NADA');
+    chk('el evento dice que fue `visita_monto_editado`', ev?.p?.motivo === 'visita_monto_editado', trunc(ev?.p?.motivo));
+    chk('el evento trae ref = la visita corregida', ev?.p?.ref === visitaId, trunc(ev?.p?.ref));
+    chk('el evento trae el par saldo.antes/saldo.despues', !!ev?.p?.saldo?.antes && !!ev?.p?.saldo?.despues, trunc(ev?.p?.saldo));
+    chk('antes = saldo previo (0 puntos) y despues = el del monto nuevo',
+      ev?.p?.saldo?.antes?.puntos === 0 && ev?.p?.saldo?.despues?.puntos === calcular(10000),
+      `${ev?.p?.saldo?.antes?.puntos} -> ${ev?.p?.saldo?.despues?.puntos}`);
+    chk('el evento trae el delta de puntos', ev?.p?.puntos === calcular(10000), trunc(ev?.p?.puntos));
+    chk('los sellos no se tocan en una correccion de monto', (ev?.p?.sellos ?? null) === 0, trunc(ev?.p?.sellos));
+    chk('la respuesta del PATCH trae el MISMO par (una sola fuente de calculo)',
+      r.data?.saldo?.despues?.puntos === ev?.p?.saldo?.despues?.puntos
+      && r.data?.saldo?.antes?.puntos === ev?.p?.saldo?.antes?.puntos,
+      trunc(r.data?.saldo));
+    const nAud = await prisma.eventoAuditoria.count({ where: { negocioId: negocio.id, clienteId, accion: 'saldo.cambiado' } });
+    chk('quedo la auditoria `saldo.cambiado`', nAud >= 1, `n=${nAud}`);
+
     // ------------------------------------------------------ [2] bajarlo con saldo
     console.log('\n[2] bajar el monto a 5000 (con saldo)');
+    const nEventosAntes = eventosSaldo.length;
     r = await patch(visitaId, 5000);
     chk('PATCH -> 2xx', r.status >= 200 && r.status < 300, `status=${r.status}`);
+    const evBaja = await esperarEventoSaldo(
+      () => (eventosSaldo.length > nEventosAntes ? eventosSaldo[eventosSaldo.length - 1] : null),
+      8000,
+    );
+    chk('bajar el monto tambien avisa (delta NEGATIVO)', evBaja?.p?.puntos === calcular(5000) - calcular(10000),
+      `puntos=${trunc(evBaja?.p?.puntos)} esperado=${calcular(5000) - calcular(10000)}`);
     visita = await prisma.visita.findUnique({ where: { id: visitaId }, select: { montoConsumido: true, puntosOtorgados: true } });
     chk('monto y puntos bajaron', Number(visita?.montoConsumido) === 5000 && visita?.puntosOtorgados === calcular(5000),
       `monto=${Number(visita?.montoConsumido)} puntos=${visita?.puntosOtorgados}`);

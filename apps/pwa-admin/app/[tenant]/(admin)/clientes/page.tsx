@@ -373,10 +373,22 @@ function BadgeEtiqueta({ etiqueta }: { etiqueta: EtiquetaCliente | undefined }) 
   );
 }
 
-/** Punto de "dato cargado / falta": el estado tambien va en texto (no solo en el color). */
+/**
+ * Punto de "dato cargado / falta": el estado va en texto para lectores de pantalla.
+ *
+ * OJO con la implementacion: NO se usa `sr-only` aca. `sr-only` es `position:absolute` sin
+ * `top/left`, asi que el span queda en su posicion ESTATICA — adentro de una celda de la tabla,
+ * a ~619px en un viewport de 375px — y Chromium lo cuenta en el `scrollWidth` de `<html>`:
+ * `scrollWidth - clientWidth = 244` en una pantalla que no desborda nada. El estado accesible
+ * viaja por `aria-label` + `role="img"` (el patron de un indicador visual), no por un nodo oculto.
+ */
 function PuntoDato({ cargado, etiqueta }: { cargado: boolean; etiqueta: string }) {
+  const estado = cargado ? 'cargado' : 'falta';
   return (
     <span
+      role="img"
+      title={`${etiqueta}: ${estado}`}
+      aria-label={`${etiqueta}: ${estado}`}
       className={
         cargado
           ? 'inline-flex items-center gap-1.5 text-emerald-700'
@@ -391,10 +403,7 @@ function PuntoDato({ cargado, etiqueta }: { cargado: boolean; etiqueta: string }
             : 'h-2 w-2 shrink-0 rounded-full border border-muted-foreground/50'
         }
       />
-      <span className="text-xs">
-        {etiqueta}
-        <span className="sr-only">{cargado ? ': cargado' : ': falta'}</span>
-      </span>
+      <span className="text-xs">{etiqueta}</span>
     </span>
   );
 }

@@ -6,7 +6,8 @@ import { AccionesVisita } from '@/components/AccionesVisita';
 import { CorregirMontoDialog } from '@/components/CorregirMontoDialog';
 import { useVisitasSocket } from '@/hooks/useVisitasSocket';
 import { useEstadoLocal } from '@/hooks/useEstadoLocal';
-import { configuracionApi, visitasApi } from '@/lib/api';
+import { useConfiguracionEfectiva } from '@/hooks/useConfiguracionEfectiva';
+import { visitasApi } from '@/lib/api';
 import { normalizarError } from '@/lib/errores';
 import { formatearRestante, mergearPendiente, sinVencidos } from '@/lib/pendientes';
 import type { ConfiguracionEfectivaStaff, VisitaAprobada, VisitaPendiente } from '@/types/api';
@@ -34,28 +35,13 @@ export default function VisitasPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [cargadoEn, setCargadoEn] = React.useState(() => Date.now());
   const [tick, setTick] = React.useState(0);
-  const [config, setConfig] = React.useState<ConfiguracionEfectivaStaff | null>(null);
+  // La config del club decide si la fila pide el monto del consumo y como se calcula el preview
+  // (y, en el link del WhatsApp, si se muestra el canje del premio). Una sola fuente para las dos
+  // pantallas: ver `useConfiguracionEfectiva`.
+  const config = useConfiguracionEfectiva();
   // Fase 3b: lo que YO aprobe hoy (con monto y puntos), para poder corregir el consumo.
   const [aprobadas, setAprobadas] = React.useState<VisitaAprobada[] | null>(null);
   const [aCorregir, setACorregir] = React.useState<VisitaAprobada | null>(null);
-
-  // La config del club decide si la fila pide el monto del consumo y como se calcula el preview.
-  // Se pide UNA vez por pantalla (no por fila). Si falla, la fila degrada a "solo sello": es mejor
-  // aprobar sin monto que no poder aprobar.
-  React.useEffect(() => {
-    let vivo = true;
-    void (async () => {
-      try {
-        const c = await configuracionApi.efectiva();
-        if (vivo) setConfig(c);
-      } catch {
-        // sin config se aprueba igual (1 sello)
-      }
-    })();
-    return () => {
-      vivo = false;
-    };
-  }, []);
 
   const refetch = React.useCallback(async () => {
     try {

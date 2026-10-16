@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useTenant } from '@/hooks/useTenant';
+import { useConfiguracionEfectiva } from '@/hooks/useConfiguracionEfectiva';
 import { rutaDe } from '@/lib/tenant';
 import Link from 'next/link';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Skeleton, buttonVariants } from '@repo/ui';
@@ -21,6 +22,9 @@ type Estado = 'cargando' | 'ok' | 'sin-token' | 'no-sirve' | 'otra-sucursal' | '
  */
 export function PantallaValidar({ tokenRef }: { tokenRef: string }) {
   const tenant = useTenant();
+  // Config real del club: sin esto `AccionesVisita` cae a sus defaults (meta de sellos 10) y el
+  // boton de canje del premio no aparece con la meta real del club (ej. 8 en nonona-lomos).
+  const config = useConfiguracionEfectiva();
 
   const [estado, setEstado] = React.useState<Estado>(tokenRef ? 'cargando' : 'sin-token');
   const [visita, setVisita] = React.useState<VisitaValidable | null>(null);
@@ -141,6 +145,7 @@ export function PantallaValidar({ tokenRef }: { tokenRef: string }) {
 
       <AccionesVisita
         token={tokenRef}
+        config={config}
         onAprobada={() => setResultado('aprobada')}
         onRechazada={() => setResultado('rechazada')}
       />

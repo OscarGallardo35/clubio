@@ -25,6 +25,7 @@
     "test:hibrido": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-hibrido.cjs",
     "test:google": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-google.cjs",
     "test:visita-pedido": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-visita-pedido.cjs",
+    "test:latencia": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-latencia-visitas.cjs",
     "test:disparos-push": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-disparos-push.cjs",
     "test:cumpleanos": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-cumpleanos.cjs",
     "test:acepta-notificaciones": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-acepta-notificaciones-gate.cjs",

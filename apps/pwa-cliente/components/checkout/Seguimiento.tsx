@@ -115,10 +115,10 @@ export function Seguimiento({ linkToken, slugNegocio }: SeguimientoProps) {
 
   const refetch = React.useCallback(async () => {
     try {
-      // El tenant se fija ACA, con el slug que ya viene en la URL, y no se espera al
-      // `api.setTenant` del BrandingProvider: los efectos corren de hijo a padre, asi que en una
-      // carga en frio esta request sale ANTES y el backend contesta 404 "falta el tenant". Es
-      // idempotente (setTenant solo guarda el slug en el cliente).
+      // El tenant del header `X-Tenant-Slug` ya lo resuelve SINCRONICAMENTE el ApiClient desde la URL
+      // (lib/api.ts), asi que en `/[tenant]/pedido/...` la request ya sale con el header correcto
+      // desde la primera vuelta. Este `setTenant` queda como respaldo (idempotente: solo guarda el
+      // slug en el cliente) por si alguna vez se llega aca por una ruta sin tenant en la URL.
       api.setTenant(slugNegocio)
       const r = await pedidosApi.publico(linkToken)
       setPedido(r)

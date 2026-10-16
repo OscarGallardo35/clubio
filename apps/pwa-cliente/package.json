@@ -11,6 +11,7 @@
     "format": "prettier --write \"app/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "check:maquina": "node scripts/check-visita-maquina.mts",
+    "check:tenant": "node scripts/check-tenant.mts",
     "check:sondeo": "node scripts/check-sondeo.mts",
     "check:perfilamiento": "node scripts/check-perfilamiento.mts",
     "check:flujo": "node scripts/check-flujo-ws.mts",

@@ -1,5 +1,6 @@
 import type { SugerenciaUpsell } from './carrito-maquina'
 import { ApiClient, endpoints } from '@repo/api-client'
+import { resolverTenantSincrono } from './tenant'
 import type { ClienteBasico, ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiTarjetaRespuesta, Paginado, VisitaHistorial, NegocioPublico, RecuperarClienteRespuesta, RegistroClienteRespuesta, SolicitarVisitaBody, SolicitarVisitaRespuesta, CrearPedidoBody, PedidoCreadoRespuesta, PedidoPublico, VerificacionRespuesta, PremioPublico, PremioAceptarRespuesta, Genero } from '@/types/api'
 
 /**
@@ -7,11 +8,23 @@ import type { ClienteBasico, ClienteMe, CartaPublica, EstadoVisitaRespuesta, MiT
  *
  * - `credentials: 'include'` ya viene en @repo/api-client: la sesion del cliente
  *   es una cookie HttpOnly, no un token en localStorage.
- * - El tenant se fija con `api.setTenant(slug)` cuando el branding se resuelve
- *   (lo hace BrandingProvider), asi que aca no hay dependencia de los stores.
+ * - El tenant (`X-Tenant-Slug`) se resuelve SINCRONICAMENTE desde la URL en cada
+ *   request: `resolverTenantSincrono(pathname, hostname)`. NO se espera a ningun
+ *   efecto — antes lo fijaba `api.setTenant(slug)` dentro de un useEffect del
+ *   BrandingProvider y, como los efectos corren de hijo a padre, la PRIMERA request
+ *   de cada carga en frio salia SIN el header: el TenantGuard respondia con el
+ *   tenant del token y la app mostraba un instante datos de otro local (el bug del
+ *   parpadeo). El `setTenant` del provider sigue existiendo como respaldo para las
+ *   rutas de la RAIZ sin tenant en la URL (`/tarjeta`, `/historial`, `/offline`):
+ *   ahi la resolucion sincronica devuelve `null` y el ApiClient cae a el.
  */
 export const api = new ApiClient({
   baseUrl: (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000').replace(/\/$/, ''),
+  // Sin `window` (build/SSR) no hay URL del navegador: `null`, como hoy.
+  getTenant: () =>
+    typeof window === 'undefined'
+      ? null
+      : resolverTenantSincrono(window.location.pathname, window.location.hostname),
 })
 
 export const WS_URL = (process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:3000').replace(/\/$/, '')

@@ -111,7 +111,13 @@ export function BrandingProvider({ children, negocioInicial, modo, tenant }: Bra
     if (slug && negocio?.slug !== slug) void cargar(slug)
   }, [negocioInicial, tenant, pathname, negocio, fijarInicial, cargar])
 
-  // El cliente se resuelve por cookie: el tenant lo tiene que mandar el header.
+  // RESPALDO del header `X-Tenant-Slug`: el ApiClient ya lo resuelve de forma SINCRONICA desde la URL
+  // en cada request (ver lib/api.ts), asi que esto solo importa en las rutas de la RAIZ donde no hay
+  // tenant en la URL (`/tarjeta`, `/historial`, `/seleccionar-sucursal`, `/offline`): ahi la
+  // resolucion sincronica da null y el ApiClient cae al tenant fijado aca.
+  // NO es el camino principal a proposito: los efectos de React corren de HIJO a PADRE, asi que
+  // fijarlo solo aca dejaba la PRIMERA request de cada carga en frio sin header; el TenantGuard la
+  // respondia con el tenant del token y la app mostraba un instante datos de otro local.
   React.useEffect(() => {
     const slug = negocio?.slug ?? tenant ?? tenantDelPath(pathname)
     if (slug) api.setTenant(slug)

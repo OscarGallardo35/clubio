@@ -10,9 +10,9 @@
  */
 import {
   RESPALDO_TARJETA_MS,
+  esperaHastaElRespaldo,
   SONDEO_INICIAL_MS,
   SONDEO_TARDIO_MS,
-  TICK_RESPALDO_TARJETA_MS,
   TOPE_SONDEO_MS,
   VENTANA_INICIAL_MS,
   debeRefrescarRespaldo,
@@ -84,40 +84,54 @@ igual('a los 40 s ya hay 13 sondeos en total (12 rapidos + 1 tranquilo)', sondeo
 
 console.log('\n--- respaldo de la tarjeta ---')
 
-igual('el tick despierta a la mitad del intervalo', TICK_RESPALDO_TARJETA_MS, RESPALDO_TARJETA_MS / 2)
-chk('el tick no pega al backend (es menor que el intervalo)', TICK_RESPALDO_TARJETA_MS < RESPALDO_TARJETA_MS)
 chk('el intervalo es de 8 a 10 s', RESPALDO_TARJETA_MS >= 8000 && RESPALDO_TARJETA_MS <= 10_000)
 
-/** Simula N ms de vida del componente: el tick despierta y solo consulta si toca. */
-function simularRespaldoTarjeta(duracionMs: number, visible: boolean, primerRefrescoMs: number) {
-  let ultimoRefresco = primerRefrescoMs
+/**
+ * Simula el respaldo del hook: un timer re-programado a un intervalo desde el ULTIMO refresco.
+ * `extraRefrescos` son refrescos del WS que caen entre medio (reprograman el respaldo).
+ */
+function simularRespaldoTarjeta(duracionMs: number, visible: boolean, extraRefrescos: number[] = [], primerRefrescoMs = 0) {
+  let ultimo = primerRefrescoMs
   const consultas: number[] = []
-  for (let ahora = TICK_RESPALDO_TARJETA_MS; ahora <= duracionMs; ahora += TICK_RESPALDO_TARJETA_MS) {
-    if (!debeRefrescarRespaldo(ahora, ultimoRefresco, visible)) continue
-    consultas.push(ahora)
-    ultimoRefresco = ahora
+  const extras = [...extraRefrescos]
+  let t = ultimo + RESPALDO_TARJETA_MS
+  while (t <= duracionMs) {
+    // Un refresco del WS que cae antes del tick reprograma el respaldo desde ESE momento.
+    while (extras.length && extras[0] <= t) {
+      ultimo = extras.shift()
+      t = ultimo + RESPALDO_TARJETA_MS
+    }
+    if (t > duracionMs) break
+    if (debeRefrescarRespaldo(t, ultimo, visible)) {
+      consultas.push(t)
+      ultimo = t
+      t = ultimo + RESPALDO_TARJETA_MS
+    } else if (!visible) {
+      t += RESPALDO_TARJETA_MS // oculta: se reintenta sin red
+    } else {
+      t += esperaHastaElRespaldo(t, ultimo)
+    }
   }
   return consultas
 }
 
-const tarjetaVisible = simularRespaldoTarjeta(60_000, true, 0)
+const tarjetaVisible = simularRespaldoTarjeta(60_000, true)
 igual('con la pestana visible salen 6 consultas en 60 s', tarjetaVisible.length, 6)
-igual('y son cada 10 s, no cada 5 s', tarjetaVisible.slice(1).map((t, i) => t - tarjetaVisible[i]!), [
-  RESPALDO_TARJETA_MS,
-  RESPALDO_TARJETA_MS,
-  RESPALDO_TARJETA_MS,
-  RESPALDO_TARJETA_MS,
-  RESPALDO_TARJETA_MS,
-])
-const tarjetaOculta = simularRespaldoTarjeta(60_000, false, 0)
-igual('con la pestana OCULTA no sale ninguna consulta', tarjetaOculta.length, 0)
+igual('y son cada 10 s CLAVADOS (no la cadencia 10/15 s del tick con guarda)',
+  [...new Set(tarjetaVisible.slice(1).map((t, i) => t - tarjetaVisible[i]!))], [RESPALDO_TARJETA_MS])
+igual('con la pestana OCULTA no sale ninguna consulta', simularRespaldoTarjeta(120_000, false).length, 0)
 
-// El WS acaba de traer el cambio (t=47,5 s): el proximo respaldo tiene que ESPERAR un intervalo
-// completo, no duplicar el trabajo.
-const sinDuplicar = debeRefrescarRespaldo(50_000, 47_500, true)
-chk('un refresco del WS corre el proximo sondeo un intervalo', !sinDuplicar)
-chk('y el sondeo vuelve a salir pasado el intervalo', debeRefrescarRespaldo(57_500, 47_500, true))
+// Un evento del WS en t=4,75 s: el respaldo NO se duplica con un GET inmediato y se corre 10 s
+// desde ESE refresco (no se empuja al doble).
+const conWs = simularRespaldoTarjeta(60_000, true, [4750])
+igual('un refresco del WS corre el respaldo 10 s', conWs[0], 4750 + RESPALDO_TARJETA_MS)
+igual('y la cadencia sigue siendo de 10 s', [...new Set(conWs.slice(1).map((t, i) => t - conWs[i]!))], [RESPALDO_TARJETA_MS])
+
 chk('un WS reciente NO refuerza el sondeo con la pestana oculta', !debeRefrescarRespaldo(120_000, 0, false))
+igual('el retraso por un WS reciente es lo que FALTA, no un intervalo entero',
+  esperaHastaElRespaldo(15_500, 15_000), RESPALDO_TARJETA_MS - 500)
+igual('y nunca baja de 500 ms (no martilla el backend)',
+  esperaHastaElRespaldo(15_000 + 3 * RESPALDO_TARJETA_MS, 15_000), 500)
 
 console.log(`\n  TOTAL: ${ok} OK, ${fallas.length} FALLA`)
 if (fallas.length) {

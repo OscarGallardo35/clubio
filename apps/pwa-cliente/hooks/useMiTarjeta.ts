@@ -19,7 +19,7 @@ import { visitasApi } from '@/lib/api'
 import { normalizarError } from '@/lib/checkout-maquina'
 import { esTenantMismatch } from '@/lib/tenant'
 import { crearSocketVisitas } from '@/lib/socket'
-import { TICK_RESPALDO_TARJETA_MS, debeRefrescarRespaldo } from '@/lib/sondeo'
+import { RESPALDO_TARJETA_MS, debeRefrescarRespaldo, esperaHastaElRespaldo } from '@/lib/sondeo'
 import { useClienteStore } from '@/stores/clienteStore'
 import type { MiTarjetaRespuesta } from '@/types/api'
 
@@ -64,12 +64,15 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
   /**
    * Ultima vez que se DISPARO un refetch (por WS, al volver a la app o por el respaldo).
    *
-   * Es la marca que usa el sondeo de respaldo para NO duplicar trabajo: si el WS acaba de
-   * traer el cambio, el proximo GET del respaldo espera un intervalo entero.
+   * Es la marca que usa el respaldo para NO duplicar trabajo: si el WS acaba de traer el cambio,
+   * el proximo GET del respaldo espera un intervalo entero desde ESE refresco.
    */
   const ultimoRefresco = React.useRef(Date.now())
+  /** Re-agenda el respaldo. Lo asigna el efecto de abajo; `refrescar` lo usa para reprogramar. */
+  const reprogramarRespaldo = React.useRef<() => void>(() => {})
   const refrescar = React.useCallback(() => {
     ultimoRefresco.current = Date.now()
+    reprogramarRespaldo.current()
     void refetch()
   }, [refetch])
 
@@ -129,30 +132,58 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
   /**
    * Respaldo: revalidar la tarjeta aunque el WebSocket este DORMIDO.
    *
-   * El hueco que cierra: el WS solo empuja mientras hay socket vivo. Si la PWA quedo en
-   * segundo plano, el celular durmio o se agotaron los intentos de reconexion (`reconnectionAttempts:
-   * 5`), los eventos `saldo:cambiado` / `visita:aprobada` no llegan y la tarjeta se quedaba con
-   * datos VIEJOS indefinidamente: el cliente veia su saldo sin actualizar hasta mandar la app al
-   * fondo y volver (que es lo que disparaba el `visibilitychange` de arriba). Eso se siente roto,
-   * no lento.
+   * El hueco que cierra: el WS solo empuja mientras hay socket vivo. Si la PWA quedo en segundo
+   * plano, el celular durmio o se agotaron los intentos de reconexion (`reconnectionAttempts: 5`),
+   * los eventos `saldo:cambiado` / `visita:aprobada` no llegan y la tarjeta se quedaba con datos
+   * VIEJOS indefinidamente: el cliente veia su saldo sin actualizar hasta mandar la app al fondo y
+   * volver (que es lo que disparaba el `visibilitychange` de arriba). Eso se siente roto, no lento.
    *
-   * Como: se DESPIERTA cada `TICK_RESPALDO_TARJETA_MS` (5 s, sin red) y consulta solo si pasaron
-   * `RESPALDO_TARJETA_MS` (10 s) desde el ULTIMO refresco (sea del WS o del propio respaldo) y la
-   * pestana esta visible. Las tres condiciones importan:
-   *  - visible: el cliente no esta mirando y el navegador throttlea los timers igual;
-   *  - el intervalo desde el ultimo refresco: un evento del WS no se duplica con un GET;
-   *  - el timer (y no un `setInterval` de 10 s con fetch adentro): mantiene la cadencia pegada al
-   *    ultimo refresco real en vez de acumular desfasaje.
-   * El `clearInterval` del cleanup lo cancela al desmontar.
+   * Como: UN timer que se reprograma a `RESPALDO_TARJETA_MS` desde el ULTIMO refresco — el del WS
+   * incluido, porque `refrescar` tambien reprograma. Al tocar el timer:
+   *  - pestana VISIBLE y paso el intervalo → refetch (y el refetch reprograma);
+   *  - pestana OCULTA → no se consulta nada, solo se vuelve a agendar (el navegador throttlea los
+   *    timers de fondo igual);
+   *  - un refresco del WS cayo recien → se agenda lo que FALTA del intervalo, no un intervalo
+   *    entero (si no, ese cambio empujaria el respaldo al doble: el bug de la cadencia 10/15 s).
+   *
+   * Por que un timer y no un `setInterval` de 5 s con guarda: con `intervalo/2` de tick y una
+   * guarda de `>= intervalo`, cualquier deriva de milisegundos decide entre consultar y saltar, y
+   * la cadencia real oscilaba entre 10 s y 15 s. Un timer re-programado da 10 s clavados.
+   * El cleanup lo cancela al desmontar (y suelta la reprogramacion).
    */
   React.useEffect(() => {
     if (!habilitado) return undefined
-    const tick = setInterval(() => {
+    let vivo = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const programar = (espera = RESPALDO_TARJETA_MS) => {
+      if (!vivo) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(alTocar, espera)
+    }
+
+    function alTocar() {
+      if (!vivo) return
+      const ahora = Date.now()
       const visible = document.visibilityState === 'visible'
-      if (!debeRefrescarRespaldo(Date.now(), ultimoRefresco.current, visible)) return
-      refrescar()
-    }, TICK_RESPALDO_TARJETA_MS)
-    return () => clearInterval(tick)
+      if (debeRefrescarRespaldo(ahora, ultimoRefresco.current, visible)) {
+        // `refrescar` reprograma el proximo respaldo a un intervalo completo.
+        refrescar()
+        return
+      }
+      // Oculta: se reintenta en un intervalo (sin red). Visible pero con un refresco del WS recien
+      // llegado: se espera solo lo que falta.
+      programar(visible ? esperaHastaElRespaldo(ahora, ultimoRefresco.current) : RESPALDO_TARJETA_MS)
+    }
+
+    reprogramarRespaldo.current = programar
+    programar()
+
+    return () => {
+      vivo = false
+      reprogramarRespaldo.current = () => {}
+      if (timer) clearTimeout(timer)
+    }
   }, [habilitado, refrescar])
 
   return { tarjeta, cargando, error, tenantMismatch, refetch }

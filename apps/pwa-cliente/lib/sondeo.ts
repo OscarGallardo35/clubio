@@ -28,15 +28,6 @@
 export const RESPALDO_TARJETA_MS = 10_000
 
 /**
- * Cada cuanto DESPIERTA el timer del respaldo. No es cada cuanto se pega al backend.
- *
- * Se despierta a la mitad del intervalo para poder respetar `RESPALDO_TARJETA_MS` desde el
- * ULTIMO refresco real (el del WS incluido): asi un evento que acaba de llegar por WS no se
- * duplica con un sondeo inmediato — que es exactamente lo que pide "no pisar el WS".
- */
-export const TICK_RESPALDO_TARJETA_MS = RESPALDO_TARJETA_MS / 2
-
-/**
  * Decide si toca pegarle al backend ahora.
  *
  * Con la pestana OCULTA nunca se sondea (el cliente no esta mirando y en el fondo el
@@ -50,6 +41,20 @@ export function debeRefrescarRespaldo(
 ): boolean {
   if (!visible) return false
   return ahora - ultimoRefresco >= intervalo
+}
+
+/**
+ * Cuanto falta para que el respaldo tenga sentido, contado desde el ultimo refresco.
+ *
+ * Lo usa el hook cuando el timer se adelanto (un evento del WS acaba de refrescar): se reprograma
+ * lo que FALTA, no un intervalo entero, para no empujar el respaldo al doble.
+ */
+export function esperaHastaElRespaldo(
+  ahora: number,
+  ultimoRefresco: number,
+  intervalo: number = RESPALDO_TARJETA_MS,
+): number {
+  return Math.max(500, intervalo - (ahora - ultimoRefresco))
 }
 
 /* ------------------------------------------------------------------ *

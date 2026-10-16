@@ -16,6 +16,19 @@ export interface SaldoPremio {
 }
 
 /**
+ * Contexto del mecanismo de canje, leido UNA vez por request: el negocio (nombre + slug) y el numero
+ * de atencion EFECTIVO del club y de cada sucursal involucrada. Evita las 3-4 consultas por premio
+ * del listado de la tarjeta.
+ */
+interface ContextoCanje {
+  nombre: string | null;
+  slug: string | null;
+  numeroDelClub: string | null;
+  /** Numero efectivo por sucursal (la clave es el `sucursalId`). */
+  numeros: Map<string, string | null>;
+}
+
+/**
  * Ciclo de vida de un premio que el cliente ACEPTA desde la notificacion.
  *
  *   otorgar (disparo/campaña) -> PENDIENTE
@@ -321,27 +334,43 @@ export class PremiosService {
     // negocio + numero de atencion) y no tiene sentido pagarlas por premios que no se muestran.
     // Solo en ACEPTADO (para poder mostrarlo en el local) y CANJEADO (comprobante del historial):
     // un PENDIENTE todavia no tiene nada que verificar y uno VENCIDO ya no se puede canjear.
-    const premios = await Promise.all(
-      filas.map(async ({ fila, estado }) => ({
-        token: fila.token,
-        tipo: fila.tipo,
-        cantidad: fila.cantidad,
-        texto: fila.texto,
-        expiraEn: fila.expiraEn ? fila.expiraEn.toISOString() : null,
-        expiraLegible: vencimientoLegible(fila.expiraEn),
-        aceptadoEn: fila.aceptadoEn ? fila.aceptadoEn.toISOString() : null,
-        canjeadoEn: fila.canjeadoEn ? fila.canjeadoEn.toISOString() : null,
-        creadoEn: fila.creadoEn.toISOString(),
-        disparoNombre: fila.disparoNombre ?? null,
-        campanaNombre: fila.campanaNombre ?? null,
-        /** Computado (ver arriba): NO es el `estado` crudo de la fila. */
-        estado,
-        verificacion:
-          estado === 'ACEPTADO' || estado === 'CANJEADO' ? await this.linkCanje(fila) : null,
-      })),
+    //
+    // BATCHEADO: el contexto (negocio + numero de atencion de cada sucursal involucrada) se arma
+    // UNA vez para TODOS los premios mostrados. Antes cada uno disparaba sus propias 3-4 consultas
+    // (`slugDelNegocio` + `negocio.findUnique` + `resolverNumeroAtendiente`, que son 2): con 10
+    // premios en la tarjeta eso eran 30-40 consultas por request.
+    const conCanje = filas.filter(
+      ({ estado }) => estado === 'ACEPTADO' || estado === 'CANJEADO',
     );
+    const ctxCanje = conCanje.length
+      ? await this.contextoCanje(negocioId, conCanje.map(({ fila }) => fila.sucursalId))
+      : null;
 
-    return { total, mostrados: premios.length, premios };
+    const premios = filas.map(async ({ fila, estado }) => ({
+      token: fila.token,
+      tipo: fila.tipo,
+      cantidad: fila.cantidad,
+      texto: fila.texto,
+      expiraEn: fila.expiraEn ? fila.expiraEn.toISOString() : null,
+      expiraLegible: vencimientoLegible(fila.expiraEn),
+      aceptadoEn: fila.aceptadoEn ? fila.aceptadoEn.toISOString() : null,
+      canjeadoEn: fila.canjeadoEn ? fila.canjeadoEn.toISOString() : null,
+      creadoEn: fila.creadoEn.toISOString(),
+      disparoNombre: fila.disparoNombre ?? null,
+      campanaNombre: fila.campanaNombre ?? null,
+      /** Computado (ver arriba): NO es el `estado` crudo de la fila. */
+      estado,
+      verificacion:
+        ctxCanje && (estado === 'ACEPTADO' || estado === 'CANJEADO')
+          ? await this.linkCanje(fila, ctxCanje)
+          : null,
+    }));
+
+    // `map` con `await` (no `Promise.all`): los premios con canje comparten el MISMO contexto ya
+    // leido, asi que no hay consultas que paralelizar — solo armado de strings.
+    const premiosResueltos = await Promise.all(premios);
+
+    return { total, mostrados: premiosResueltos.length, premios: premiosResueltos };
   }
 
   // ==========================================================================
@@ -465,26 +494,57 @@ export class PremiosService {
    * Mecanismo de canje = el MISMO flujo de verificacion que ya existe: un link ABSOLUTO
    * generado por el SERVIDOR (STAFF_APP_URL + slug) + el boton de WhatsApp que lo manda
    * al numero de atencion del local. NUNCA `window.location.origin`.
+   *
+   * `ctxCanje`: contexto YA leido (lo arma el listado una vez para todos los premios). Sin el se
+   * resuelve aca (los caminos de UN solo premio: aceptar/verificar/canjear).
    */
-  private async linkCanje(premio: PremioOtorgado) {
-    const url = await this.push.urlVerificacionPremio(premio.negocioId, premio.token);
-    const negocio = await this.prisma.negocio.findUnique({
-      where: { id: premio.negocioId },
-      select: { nombre: true },
-    });
-    const numero = await this.resolver
-      .resolverNumeroAtendiente(premio.negocioId, premio.sucursalId ?? undefined)
-      .catch(() => null);
-
-    const nombreLocal = negocio?.nombre ? ` en ${negocio.nombre}` : '';
+  private async linkCanje(premio: PremioOtorgado, ctxCanje?: ContextoCanje) {
+    const ctx = ctxCanje ?? await this.contextoCanje(premio.negocioId, [premio.sucursalId]);
+    const url = await this.push.urlVerificacionPremio(premio.negocioId, premio.token, ctx.slug);
+    const nombreLocal = ctx.nombre ? ` en ${ctx.nombre}` : '';
     const mensaje =
       `Hola! Gane "${premio.texto}"${nombreLocal} y quiero canjearlo. ` +
       `Te muestro el premio para verificarlo: ${url}`;
+    const numero = ctx.numeros.get(premio.sucursalId ?? '') ?? ctx.numeroDelClub;
     const whatsapp = numero
       ? `https://wa.me/${numero.replace(/\D/g, '')}?text=${encodeURIComponent(mensaje)}`
       : null;
 
     return { url, whatsapp, numero, mensaje, texto: premio.texto };
+  }
+
+  /**
+   * Contexto del canje para VARIOS premios a la vez: el negocio (1 consulta) y el numero de atencion
+   * EFECTIVO de cada sucursal DISTINTA involucrada (2 consultas por sucursal, resueltas por
+   * `SucursalResolverService` — la unica fuente de la regla club-vs-sucursal).
+   *
+   * Con esto, una tarjeta con 10 premios ACEPTADO/CANJEADO pasa de 30-40 consultas a 3-5.
+   */
+  private async contextoCanje(
+    negocioId: string,
+    sucursales: (string | null)[],
+  ): Promise<ContextoCanje> {
+    const distintas = [...new Set(sucursales.filter((s): s is string => !!s))];
+    const [negocio, numeroDelClub, ...porSucursal] = await Promise.all([
+      this.prisma.negocio.findUnique({
+        where: { id: negocioId },
+        select: { nombre: true, slug: true },
+      }),
+      this.resolver.resolverNumeroAtendiente(negocioId).catch(() => null),
+      ...distintas.map((s) =>
+        this.resolver.resolverNumeroAtendiente(negocioId, s).catch(() => null),
+      ),
+    ]);
+
+    const numeros = new Map<string, string | null>();
+    distintas.forEach((sucursalId, i) => numeros.set(sucursalId, porSucursal[i] ?? null));
+
+    return {
+      nombre: negocio?.nombre ?? null,
+      slug: negocio?.slug ?? null,
+      numeroDelClub: numeroDelClub ?? null,
+      numeros,
+    };
   }
 
   /** Suma 1 al contador de canjes, con la regla GLOBAL vs POR_SUCURSAL del club. */

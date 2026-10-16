@@ -324,8 +324,10 @@ export class PushService {
    * (`/<slug>/validar-premio?ref=<token>`). Es el mismo patron que `urlValidacion`
    * de visitas: el staff abre el link que le llega por WhatsApp y marca el canje.
    */
-  async urlVerificacionPremio(negocioId: string, token: string): Promise<string> {
-    const slug = await this.slugDelNegocio(negocioId);
+  async urlVerificacionPremio(negocioId: string, token: string, slugCargado?: string | null): Promise<string> {
+    // `slugCargado`: cuando el llamador ya leyo el negocio (listado de premios), evita una consulta
+    // POR PREMIO. Sin el, se lee aca (una sola definicion de la URL y del fallback).
+    const slug = slugCargado !== undefined ? slugCargado : await this.slugDelNegocio(negocioId);
     const base = this.baseStaff();
     return slug
       ? `${base}/${slug}/validar-premio?ref=${token}`

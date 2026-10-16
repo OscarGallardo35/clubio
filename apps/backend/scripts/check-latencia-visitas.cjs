@@ -68,11 +68,14 @@ async function medir(nombre, fn, corridas = CORRIDAS) {
   }
   const orden = [...ms].sort((a, b) => a - b);
   const mediana = orden[Math.floor(orden.length / 2)];
+  // El MINIMO es el mejor estimador del costo real cuando el ruido de la red solo SUMA: se reporta
+  // junto con la mediana porque la primera corrida suele pagar el camino frio (pool/edge).
+  const minimo = orden[0];
   console.log(
-    `  ${nombre.padEnd(46)} ${ms.map((m) => `${m}ms`).join('  ')}   mediana=${mediana}ms  status=${ultimo.status}`,
+    `  ${nombre.padEnd(46)} ${ms.map((m) => `${m}ms`).join('  ')}   min=${minimo}ms mediana=${mediana}ms  status=${ultimo.status}`,
   );
   if (ultimo.status >= 400) console.log(`       !! respuesta: ${String(JSON.stringify(ultimo.data)).slice(0, 300)}`);
-  return { nombre, ms, mediana, status: ultimo.status };
+  return { nombre, ms, min: minimo, mediana, status: ultimo.status };
 }
 
 (async () => {

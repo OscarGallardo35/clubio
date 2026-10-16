@@ -140,17 +140,21 @@ export class VisitasService {
 
   /**
    * Config del club + contexto de fidelizacion, resueltos JUNTOS y FUERA de cualquier transaccion
-   * (config desde el cache; `modoClientes` es la unica consulta, y va en paralelo).
+   * (config desde el cache; `modoClientes` es la unica consulta, y va en paralelo). `modoClientes`
+   * se pasa cuando el llamador ya lo leyo, para no volver a consultarlo.
    */
   private async configYContexto(
     negocioId: string,
     sucursalId?: string | null,
+    modoClientes?: string | null,
   ): Promise<{ config: ConfigClub | null; cfg: ContextoFidelizacion }> {
     const [config, negocio] = await Promise.all([
       this.configClub(negocioId, sucursalId),
-      this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
+      modoClientes === undefined
+        ? this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } })
+        : Promise.resolve(null),
     ]);
-    return { config, cfg: contextoFidelizacion(config, negocio?.modoClientes) };
+    return { config, cfg: contextoFidelizacion(config, modoClientes ?? negocio?.modoClientes) };
   }
 
   /** Empleado (lo que necesitan los chequeos de sucursal) leido UNA vez por request. */
@@ -402,10 +406,24 @@ export class VisitasService {
 
   /** POST /visitas/aprobar/:token (staff). */
   async aprobar(negocioId: string, token: string, empleado: EmpleadoCtx, dto: AprobarVisitaDto) {
-    // El token (con su cliente y sucursal) y el empleado son independientes: un round-trip.
-    const [fila, empleadoDb] = await Promise.all([
-      this.cargarToken(negocioId, token),
+    // El token, el empleado, el negocio y (si viene) el pedido son CUATRO lecturas independientes:
+    // un solo round-trip. Nada de esto se toca adentro de la transaccion.
+    const [fila, empleadoDb, negocio, pedido] = await Promise.all([
+      // `conSucursal = false`: aca solo se usa `sucursalId` (una consulta menos).
+      this.cargarToken(negocioId, token, false),
       this.cargarEmpleado(empleado.id),
+      this.prisma.negocio.findUnique({
+        where: { id: negocioId }, select: { modoClientes: true },
+      }),
+      dto.pedidoId
+        ? this.prisma.pedido.findFirst({
+            where: { id: dto.pedidoId, negocioId },
+            select: {
+              id: true, total: true, clienteId: true, telefono: true,
+              visita: { select: { id: true } },
+            },
+          })
+        : Promise.resolve(null),
     ]);
     this.exigirAccesoCon(empleadoDb, fila.sucursalId);
 
@@ -419,23 +437,6 @@ export class VisitasService {
     // Fase 1: si el staff eligio un pedido del menu, el monto sale del PEDIDO (no del DTO) y queda
     // el vinculo 1-1 (`Visita.pedidoId`). Validaciones: mismo negocio, sin otra visita, y del mismo
     // cliente (o del mismo telefono si el pedido es de invitado).
-    // El pedido y la config del club son independientes: un round-trip. La config sale del CACHE
-    // (antes: una lectura a la base aca + OTRA adentro de la transaccion, por `fidelizacion.acreditar`).
-    const [pedido, configYa] = await Promise.all([
-      dto.pedidoId
-        ? this.prisma.pedido.findFirst({
-            where: { id: dto.pedidoId, negocioId },
-            select: {
-              id: true, total: true, clienteId: true, telefono: true,
-              visita: { select: { id: true } },
-            },
-          })
-        : Promise.resolve(null),
-      // El contexto se resuelve UNA vez y se pasa: adentro de la transaccion no se toca la config.
-      this.configYContexto(negocioId, sucursalId),
-    ]);
-    const { config, cfg } = configYa;
-
     let pedidoVinculado: { id: string; total: Prisma.Decimal } | null = null;
     if (dto.pedidoId) {
       if (!pedido) throw new NotFoundException('Ese pedido no existe en este negocio');
@@ -450,6 +451,11 @@ export class VisitasService {
     }
     /** Monto efectivo: el del pedido si hay vinculo, si no el que tipeo el staff (puede ser null). */
     const monto = pedidoVinculado ? Number(pedidoVinculado.total) : dto.montoConsumido ?? null;
+
+    // Config del club + contexto: el contexto se resuelve UNA vez y se pasa; adentro de la
+    // transaccion no se toca la config (antes: una lectura a la base aca + OTRA adentro, por
+    // `fidelizacion.acreditar`).
+    const { config, cfg } = await this.configYContexto(negocioId, sucursalId, negocio?.modoClientes);
 
     // Estaba HARDCODEADO en true: el dueño apaga las resenas y la PWA igual las
     // mostraba. Ahora manda la configuracion del club.
@@ -666,7 +672,7 @@ export class VisitasService {
 
   /** POST /visitas/rechazar/:token (staff). */
   async rechazar(negocioId: string, token: string, empleado: EmpleadoCtx, dto: RechazarVisitaDto) {
-    const fila = await this.cargarToken(negocioId, token);
+    const fila = await this.cargarToken(negocioId, token, false);
     await this.exigirAccesoSucursal(empleado.id, fila.sucursalId);
 
     if (fila.usado) throw new BadRequestException('Este token ya fue usado');
@@ -1147,7 +1153,11 @@ export class VisitasService {
     return paginar(data, total, page, pageSize);
   }
 
-  private async cargarToken(negocioId: string, token: string) {
+  /**
+   * Token de visita con su cliente (y su sucursal, si `conSucursal`). El include de la sucursal se
+   * puede omitir en los caminos que solo necesitan `sucursalId`: es una consulta menos por request.
+   */
+  private async cargarToken(negocioId: string, token: string, conSucursal = true) {
     const fila = await this.prisma.tokenValidacion.findFirst({
       where: { negocioId, token },
       include: {
@@ -1157,7 +1167,9 @@ export class VisitasService {
             totalVisitas: true, etiqueta: true, ultimaVisita: true,
           },
         },
-        sucursal: { select: { id: true, nombre: true, slug: true, esPrincipal: true } },
+        ...(conSucursal
+          ? { sucursal: { select: { id: true, nombre: true, slug: true, esPrincipal: true } } }
+          : {}),
       },
     });
     if (!fila) throw new NotFoundException('Token de visita no encontrado');

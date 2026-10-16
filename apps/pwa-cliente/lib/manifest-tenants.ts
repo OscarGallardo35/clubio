@@ -49,6 +49,12 @@ const ICONOS_POR_TENANT: Record<string, IconosTenant> = {
     maskable: '/icons/que-lomitos-icon-maskable-512.png',
     apple: '/icons/que-lomitos-apple-touch-icon.png',
   },
+  'nonona-lomos': {
+    icon192: '/icons/nonona-lomos-icon-192.png',
+    icon512: '/icons/nonona-lomos-icon-512.png',
+    maskable: '/icons/nonona-lomos-icon-maskable-512.png',
+    apple: '/icons/nonona-lomos-apple-touch-icon.png',
+  },
 }
 
 /** Iconos del tenant (o los genericos de Clubio si el local no tiene propios). */

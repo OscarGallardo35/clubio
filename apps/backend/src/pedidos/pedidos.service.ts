@@ -7,14 +7,15 @@ import { JwtService } from '@nestjs/jwt';
 import { EstadoPedido, Prisma, TipoVisita } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
-import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
+import { FidelizacionService, contextoFidelizacion } from '../fidelizacion/fidelizacion.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
+import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
 import { HorariosService } from '../horarios/horarios.service';
 import { proximaAperturaTexto, type EstadoHorario } from '../horarios/helpers/horario-negocio';
 import { PushService } from '../push/push.service';
 import { DisparosService } from '../push/disparos.service';
-import type { ResultadoAcreditacion } from '../fidelizacion/fidelizacion.service';
+import type { ContextoFidelizacion, ResultadoAcreditacion } from '../fidelizacion/fidelizacion.service';
 import { AsignacionPedidosService } from '../turnos/asignacion-pedidos.service';
 import { LimitesService } from '../planes/limites.service';
 import { normalizarTelefonoE164 } from '../common/utils/phone.util';
@@ -39,6 +40,15 @@ const MAX_REINTENTOS_LINK = 3;
 const AUTO_CANCELAR_HORAS = 6;
 const MOTIVO_AUTO_CANCELADO = 'Auto-cancelado por inactividad';
 
+/**
+ * Timeouts explicitos de la transaccion INTERACTIVA de `cambiarEstado` (regla del repo para Neon).
+ * El default de 5s es el que producia `Transaction already closed ... 5000 ms` en produccion: no es
+ * un parche para mas consultas, es margen para un round-trip degradado (la config y el cliente ya se
+ * leen ANTES de abrir la transaccion).
+ */
+const TX_TIMEOUT_MS = 10_000;
+const TX_MAX_WAIT_MS = 5_000;
+
 @Injectable()
 export class PedidosService {
   private readonly logger = new Logger('Pedidos');
@@ -56,7 +66,27 @@ export class PedidosService {
     private readonly asignacion: AsignacionPedidosService,
     private readonly limites: LimitesService,
     private readonly fidelizacion: FidelizacionService,
+    private readonly saldo: SaldoNotificador,
   ) {}
+
+  /**
+   * Contexto de fidelizacion (modo, tasa de puntos, premios, GLOBAL/POR_SUCURSAL) resuelto ANTES de
+   * abrir la transaccion y con la config CACHEADA del club. `fidelizacion.acreditar` lo recibia
+   * resolviendolo adentro de la transaccion con el cliente global: dos round-trips que no
+   * participaban de ella y que empujaban la transaccion contra el timeout de 5s.
+   */
+  private async ctxFidelizacion(
+    negocioId: string,
+    sucursalId?: string | null,
+  ): Promise<ContextoFidelizacion> {
+    const [config, negocio] = await Promise.all([
+      this.configuracion
+        .configEfectivaCacheada(negocioId, sucursalId ?? undefined)
+        .catch(() => null),
+      this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
+    ]);
+    return contextoFidelizacion(config, negocio?.modoClientes);
+  }
 
   /**
    * Refinamiento 4 + Fase 0: POST /pedidos es publico, pero si viene un JWT de cliente
@@ -613,6 +643,20 @@ export class PedidosService {
     }
 
     const ahora = new Date();
+
+    // Config del club y `totalVisitas` del cliente: los dos ANTES de abrir la transaccion (la config
+    // sale del cache y el total previo es lo que necesita la etiqueta, que antes obligaba a un
+    // `findFirst` extra adentro). Con `tx.*` solo queda el trabajo que SI tiene que ser atomico.
+    const [cfg, clienteAntes] = await Promise.all([
+      this.ctxFidelizacion(negocioId, pedido.sucursalId),
+      pedido.clienteId
+        ? this.prisma.cliente.findUnique({
+            where: { id: pedido.clienteId },
+            select: { totalVisitas: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
     const { actualizado, acreditado } = await this.prisma.$transaction(async (tx) => {
       const ped = await tx.pedido.update({
         where: { id: pedidoId },
@@ -658,18 +702,32 @@ export class PedidosService {
             pedidoId: ped.id,
             origen: 'PEDIDO',
             notas: null,
+            // Lo que ya se leyo afuera: la etiqueta se calcula sin un round-trip adentro.
+            totalVisitasAntes: clienteAntes?.totalVisitas ?? null,
+            cfg,
           });
         }
       }
 
       return { actualizado: ped, acreditado };
-    });
+    },
+    // El trabajo externo (config y cliente) ya salio de aca: el timeout explicito es la red de
+    // seguridad, no un parche para mas consultas.
+    { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS });
 
-    await this.auditoria.registrar({
-      negocioId, accion: `pedido.${dto.estado.toLowerCase()}`, empleadoId: ctx.empleadoId,
-      detalle: { pedidoId, desde: pedido.estado, hacia: dto.estado, motivo: dto.motivo ?? null },
-      ip: ctx.ip,
-    });
+    // Auditoria y aviso de saldo: DESPUES del commit. El aviso (`saldo:cambiado` + auditoria
+    // `saldo.cambiado`) vivia DENTRO de la transaccion por `fidelizacion.acreditar`: si la
+    // transaccion hacia rollback, el cliente recibia el aviso de un saldo que nunca cambio.
+    await Promise.all([
+      this.auditoria.registrar({
+        negocioId, accion: `pedido.${dto.estado.toLowerCase()}`, empleadoId: ctx.empleadoId,
+        detalle: { pedidoId, desde: pedido.estado, hacia: dto.estado, motivo: dto.motivo ?? null },
+        ip: ctx.ip,
+      }),
+      acreditado && actualizado.clienteId
+        ? this.saldo.avisar(negocioId, actualizado.clienteId, acreditado.avisoSaldo)
+        : Promise.resolve(undefined),
+    ]);
 
     this.gateway.emitirEstado(pedidoId, actualizado.clienteId, {
       pedidoId,

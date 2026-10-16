@@ -7,12 +7,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { AuditoriaService } from '../common/auditoria/auditoria.service';
 import { SucursalResolverService } from '../sucursales/sucursal-resolver.service';
+import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { SegmentosService } from '../clientes/segmentos.service';
 import { enmascararTelefono } from '../common/utils/phone.util';
 import { getPagination, paginar } from '../common/utils/pagination.util';
 import { VisitasGateway } from './visitas.gateway';
 import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
-import { FidelizacionService } from '../fidelizacion/fidelizacion.service';
+import {
+  FidelizacionService, contextoFidelizacion,
+} from '../fidelizacion/fidelizacion.service';
+import type {
+  ConfigClub, ContextoFidelizacion,
+} from '../fidelizacion/fidelizacion.service';
 import { DisparosService } from '../push/disparos.service';
 import { PremiosService } from '../push/premios.service';
 import { HorariosService } from '../horarios/horarios.service';
@@ -34,6 +40,43 @@ export interface ClienteCtx {
 }
 
 const TTL_TOKEN_MS = 5 * 60 * 1000; // 5 min
+
+/**
+ * Timeouts explicitos de las transacciones INTERACTIVAS (regla del repo para Neon): el default de
+ * Prisma es 5s y una transaccion que hace trabajo de mas (o espera a un servicio con la conexion
+ * global) muere con `Transaction already closed`. Con el trabajo externo afuera, lo que queda son
+ * 3-5 queries; el margen es para un round-trip degradado, no para mas consultas.
+ */
+const TX_TIMEOUT_MS = 10_000;
+const TX_MAX_WAIT_MS = 5_000;
+
+/**
+ * Cliente con lo que necesitan los calculos de saldo: se pasa YA LEIDO para no repetir la consulta
+ * (la tarjeta lo lee al principio y `saldosEfectivos` lo volvia a leer).
+ */
+interface ClienteSaldo {
+  sellosActuales: number;
+  puntosActuales: number;
+  totalVisitas: number;
+}
+
+/** Tarjeta de UNA sucursal (el par de contadores que manda con `modoClientes = POR_SUCURSAL`). */
+interface TarjetaSaldo {
+  sellosActuales: number;
+  puntosActuales: number;
+  totalVisitas: number;
+}
+
+/**
+ * Lo que necesita el armado de saldos, ya leido. Cualquier campo que llegue `undefined` se resuelve
+ * con una consulta (compatibilidad con los llamadores que no pre-cargan nada).
+ */
+interface SaldosPrevios {
+  negocio?: { modoClientes: string } | null;
+  config?: ConfigClub | null;
+  cliente?: ClienteSaldo | null;
+  tarjeta?: TarjetaSaldo | null;
+}
 
 /**
  * Fase 1: ventana para ofrecer pedidos del menu como monto de una visita.
@@ -72,10 +115,64 @@ export class VisitasService {
     private readonly disparos: DisparosService,
     private readonly horarios: HorariosService,
     private readonly saldo: SaldoNotificador,
+    // Config del club CACHEADA (memoria + Redis, TTL 5 min). Los caminos calientes (solicitar,
+    // aprobar, tarjeta) leian `configuracionClub` 1-3 veces por request; con esto la mayoria de las
+    // requests no pega ninguna vuelta a la base por la configuracion.
+    private readonly configuracion: ConfiguracionService,
     // PREMIOS GANADOS: los lista `GET /visitas/mi-tarjeta` (misma llamada de la tarjeta, sin
     // requests extra). Los premios del club (por meta de sellos/puntos) NO pasan por aca.
     private readonly premios: PremiosService,
   ) {}
+
+  /**
+   * Config del club EFECTIVA (global + override de sucursal) desde el cache, o `null` si el negocio
+   * no tiene configuracion. `null` = defaults del club, que es lo que hacian las lecturas directas
+   * cuando la fila faltaba.
+   */
+  private async configClub(negocioId: string, sucursalId?: string | null): Promise<ConfigClub | null> {
+    try {
+      const cfg = await this.configuracion.configEfectivaCacheada(negocioId, sucursalId ?? undefined);
+      return cfg as unknown as ConfigClub;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Config del club + contexto de fidelizacion, resueltos JUNTOS y FUERA de cualquier transaccion
+   * (config desde el cache; `modoClientes` es la unica consulta, y va en paralelo).
+   */
+  private async configYContexto(
+    negocioId: string,
+    sucursalId?: string | null,
+  ): Promise<{ config: ConfigClub | null; cfg: ContextoFidelizacion }> {
+    const [config, negocio] = await Promise.all([
+      this.configClub(negocioId, sucursalId),
+      this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
+    ]);
+    return { config, cfg: contextoFidelizacion(config, negocio?.modoClientes) };
+  }
+
+  /** Empleado (lo que necesitan los chequeos de sucursal) leido UNA vez por request. */
+  private async cargarEmpleado(empleadoId: string) {
+    const empleado = await this.prisma.empleado.findFirst({
+      where: { id: empleadoId },
+      select: { sucursalId: true, accesoMultiSucursal: true },
+    });
+    if (!empleado) throw new ForbiddenException('Empleado no valido');
+    return empleado;
+  }
+
+  /** Chequeo con el empleado YA leido (misma regla que `exigirAccesoSucursal`). */
+  private exigirAccesoCon(
+    empleado: { sucursalId: string | null; accesoMultiSucursal: boolean },
+    sucursalTokenId: string | null,
+  ) {
+    if (!sucursalTokenId) return; // token legacy sin sucursal
+    if (empleado.sucursalId === sucursalTokenId) return;
+    if (empleado.accesoMultiSucursal) return;
+    throw new ForbiddenException('No tenes acceso a la sucursal de esta visita');
+  }
 
   /**
    * AVISO (NO bloqueo) de horario para las visitas del club. Un cliente sentado a las
@@ -101,38 +198,32 @@ export class VisitasService {
    */
   private async exigirAccesoSucursal(empleadoId: string, sucursalTokenId: string | null) {
     if (!sucursalTokenId) return; // token legacy sin sucursal
-
-    const empleado = await this.prisma.empleado.findFirst({
-      where: { id: empleadoId },
-      select: { sucursalId: true, accesoMultiSucursal: true },
-    });
-    if (!empleado) throw new ForbiddenException('Empleado no valido');
-
-    if (empleado.sucursalId === sucursalTokenId) return;
-    if (empleado.accesoMultiSucursal) return;
-
-    throw new ForbiddenException('No tenes acceso a la sucursal de esta visita');
+    this.exigirAccesoCon(await this.cargarEmpleado(empleadoId), sucursalTokenId);
   }
 
   /** POST /visitas/solicitar (cliente). Resuelve la sucursal y crea el token de 5 min. */
   async solicitar(negocioId: string, clienteCtx: ClienteCtx, dto: SolicitarVisitaDto) {
-    const cliente = await this.prisma.cliente.findFirst({
-      where: { id: clienteCtx.id, negocioId, eliminadoEn: null },
-      select: { id: true, nombre: true, telefono: true, sellosActuales: true, ultimaVisita: true },
-    });
+    // Cliente y sucursal son INDEPENDIENTES: se piden juntos (un round-trip en vez de dos).
+    // La sucursal se resuelve con SucursalResolverService (cache en memoria del proceso): el cliente
+    // no tiene claim sucursalId -> cae a la sucursal principal.
+    const [cliente, sucursal] = await Promise.all([
+      this.prisma.cliente.findFirst({
+        where: { id: clienteCtx.id, negocioId, eliminadoEn: null },
+        select: { id: true, nombre: true, telefono: true, sellosActuales: true, ultimaVisita: true },
+      }),
+      this.resolver.resolverSucursal(negocioId, {
+        sucursalId: dto.sucursalId ?? null,
+        sucursalSlug: dto.sucursalSlug ?? null,
+      }),
+    ]);
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    // La sucursal del token se resuelve con SucursalResolverService.
-    // El cliente no tiene claim sucursalId -> cae a la sucursal principal.
-    const sucursal = await this.resolver.resolverSucursal(negocioId, {
-      sucursalId: dto.sucursalId ?? null,
-      sucursalSlug: dto.sucursalSlug ?? null,
-    });
+    const sucursalId = sucursal.id as string;
 
-    const config = await this.prisma.configuracionClub.findUnique({
-      where: { negocioId },
-      select: { horasMinimasEntreVisitas: true, limiteVisitasPorDia: true },
-    });
+    // Config del club CACHEADA (memoria/Redis): esta request la leia directo de la base en CADA
+    // llamada. El limite diario y las horas minimas pueden tener override por sucursal, que es
+    // justamente la EFECTIVA de aca.
+    const config = await this.configClub(negocioId, sucursalId);
 
     // Horas minimas entre visitas
     const horas = config?.horasMinimasEntreVisitas ?? 0;
@@ -146,48 +237,57 @@ export class VisitasService {
       }
     }
 
-    // Limite diario
+    // Limite diario + token activo + negocio: TRES lecturas independientes en UN round-trip.
+    // (El filtro por `sucursalId` del token activo es imprescindible: sin el, una solicitud a Norte
+    // reutilizaba el token activo de Centro, la respuesta informaba "Norte" y el token apuntaba a
+    // Centro — bug detectado en el e2e.)
     const limite = config?.limiteVisitasPorDia ?? 0;
-    if (limite > 0) {
-      const desde = new Date();
-      desde.setHours(0, 0, 0, 0);
-      const hoy = await this.prisma.visita.count({ where: { negocioId, clienteId: cliente.id, aprobadoEn: { gte: desde } } });
-      if (hoy >= limite) throw new BadRequestException('Alcanzaste el limite de visitas por dia');
+    const desde = new Date();
+    desde.setHours(0, 0, 0, 0);
+    const [hoy, activo, negocio] = await Promise.all([
+      limite > 0
+        ? this.prisma.visita.count({ where: { negocioId, clienteId: cliente.id, aprobadoEn: { gte: desde } } })
+        : Promise.resolve(0),
+      this.prisma.tokenValidacion.findFirst({
+        where: {
+          negocioId, clienteId: cliente.id, sucursalId,
+          usado: false, expiraEn: { gt: new Date() },
+        },
+        orderBy: { creadoEn: 'desc' },
+      }),
+      this.prisma.negocio.findUnique({
+        where: { id: negocioId },
+        select: { nombre: true, slug: true },
+      }),
+    ]);
+
+    if (limite > 0 && hoy >= limite) {
+      throw new BadRequestException('Alcanzaste el limite de visitas por dia');
     }
 
-    // Si ya hay un token activo PARA ESA SUCURSAL, se reutiliza (evita que un
-    // doble tap genere dos). El filtro por sucursalId es imprescindible: sin el,
-    // una solicitud a Norte reutilizaba el token activo de Centro, la respuesta
-    // informaba "Norte" y el token apuntaba a Centro (bug detectado en el e2e).
-    const activo = await this.prisma.tokenValidacion.findFirst({
-      where: {
-        negocioId, clienteId: cliente.id, sucursalId: sucursal.id as string,
-        usado: false, expiraEn: { gt: new Date() },
-      },
-      orderBy: { creadoEn: 'desc' },
-    });
     const token = activo ?? await this.prisma.tokenValidacion.create({
       data: {
         negocioId,
         clienteId: cliente.id,
-        sucursalId: sucursal.id as string, // Opción A: el token sabe donde se pidio
+        sucursalId, // Opción A: el token sabe donde se pidio
         token: randomUUID(),
         expiraEn: new Date(Date.now() + TTL_TOKEN_MS),
       },
     });
 
-    if (!activo) {
-      await this.auditoria.registrar({
-        negocioId, accion: 'visita.solicitada', clienteId: cliente.id,
-        detalle: { tokenId: token.id, sucursalId: sucursal.id },
-      });
-    }
+    // Auditoria y aviso de horario: independientes entre si y posteriores al alta del token.
+    const [, avisoHorario] = await Promise.all([
+      activo
+        ? Promise.resolve(undefined)
+        : this.auditoria.registrar({
+            negocioId, accion: 'visita.solicitada', clienteId: cliente.id,
+            detalle: { tokenId: token.id, sucursalId },
+          }),
+      // AVISO (no bloqueo): el cliente puede pedir la visita aunque el local este cerrado.
+      this.avisoHorario(negocioId, sucursalId),
+    ]);
 
     const telefonoEnmascarado = enmascararTelefono(cliente.telefono);
-    const negocio = await this.prisma.negocio.findUnique({
-      where: { id: negocioId },
-      select: { nombre: true, slug: true },
-    });
     // El link de validacion va en el mensaje: el staff lo abre desde el WhatsApp y cae directo en la
     // pantalla de aprobacion, con el token ya puesto. Lleva el SLUG del negocio: la PWA Staff es
     // multi-tenant y sin el, el middleware manda al tenant por defecto (la visita de otro local
@@ -197,13 +297,10 @@ export class VisitasService {
       `Hola, soy ${cliente.nombre}. Quiero sumar mi visita en ${negocio?.nombre ?? 'el local'}. ` +
       `Ref: ${token.token}. Validar aqui: ${urlValidacion}`;
 
-    // AVISO (no bloqueo): el cliente puede pedir la visita aunque el local este cerrado.
-    const avisoHorario = await this.avisoHorario(negocioId, sucursal.id as string);
-
     // WebSocket: solo a la sucursal destino + a los dueños
     this.gateway.emitirSolicitada({
       negocioId,
-      sucursalId: sucursal.id as string,
+      sucursalId,
       token: token.token,
       expiraEn: token.expiraEn,
       origen: dto.origen,
@@ -305,24 +402,42 @@ export class VisitasService {
 
   /** POST /visitas/aprobar/:token (staff). */
   async aprobar(negocioId: string, token: string, empleado: EmpleadoCtx, dto: AprobarVisitaDto) {
-    const fila = await this.cargarToken(negocioId, token);
-    await this.exigirAccesoSucursal(empleado.id, fila.sucursalId);
+    // El token (con su cliente y sucursal) y el empleado son independientes: un round-trip.
+    const [fila, empleadoDb] = await Promise.all([
+      this.cargarToken(negocioId, token),
+      this.cargarEmpleado(empleado.id),
+    ]);
+    this.exigirAccesoCon(empleadoDb, fila.sucursalId);
 
     if (fila.usado) throw new BadRequestException('Este token ya fue usado');
     if (fila.expiraEn < new Date()) throw new GoneException('El token expiro');
 
+    // Sucursal efectiva de la visita: la del TOKEN (Opción A). Si es legacy
+    // (sin sucursalId), se usa la del empleado que aprueba.
+    const sucursalId = fila.sucursalId ?? empleado.sucursalId;
+
     // Fase 1: si el staff eligio un pedido del menu, el monto sale del PEDIDO (no del DTO) y queda
     // el vinculo 1-1 (`Visita.pedidoId`). Validaciones: mismo negocio, sin otra visita, y del mismo
     // cliente (o del mismo telefono si el pedido es de invitado).
+    // El pedido y la config del club son independientes: un round-trip. La config sale del CACHE
+    // (antes: una lectura a la base aca + OTRA adentro de la transaccion, por `fidelizacion.acreditar`).
+    const [pedido, configYa] = await Promise.all([
+      dto.pedidoId
+        ? this.prisma.pedido.findFirst({
+            where: { id: dto.pedidoId, negocioId },
+            select: {
+              id: true, total: true, clienteId: true, telefono: true,
+              visita: { select: { id: true } },
+            },
+          })
+        : Promise.resolve(null),
+      // El contexto se resuelve UNA vez y se pasa: adentro de la transaccion no se toca la config.
+      this.configYContexto(negocioId, sucursalId),
+    ]);
+    const { config, cfg } = configYa;
+
     let pedidoVinculado: { id: string; total: Prisma.Decimal } | null = null;
     if (dto.pedidoId) {
-      const pedido = await this.prisma.pedido.findFirst({
-        where: { id: dto.pedidoId, negocioId },
-        select: {
-          id: true, total: true, clienteId: true, telefono: true,
-          visita: { select: { id: true } },
-        },
-      });
       if (!pedido) throw new NotFoundException('Ese pedido no existe en este negocio');
       if (pedido.visita) throw new BadRequestException('Ese pedido ya acredito otra visita');
       const mismoCliente = pedido.clienteId === fila.clienteId;
@@ -336,51 +451,61 @@ export class VisitasService {
     /** Monto efectivo: el del pedido si hay vinculo, si no el que tipeo el staff (puede ser null). */
     const monto = pedidoVinculado ? Number(pedidoVinculado.total) : dto.montoConsumido ?? null;
 
-    // Sucursal efectiva de la visita: la del TOKEN (Opción A). Si es legacy
-    // (sin sucursalId), se usa la del empleado que aprueba.
-    const sucursalId = fila.sucursalId ?? empleado.sucursalId;
-
-    const config = await this.prisma.configuracionClub.findUnique({
-      where: { negocioId },
-      select: { mostrarResenaPostVisita: true },
-    });
     // Estaba HARDCODEADO en true: el dueño apaga las resenas y la PWA igual las
     // mostraba. Ahora manda la configuracion del club.
-    const mostrarResena = config?.mostrarResenaPostVisita ?? false;
+    const mostrarResena = config.mostrarResenaPostVisita ?? false;
 
-    const resultado = await this.prisma.$transaction(async (tx) => {
-      const marcado = await tx.tokenValidacion.updateMany({
-        where: { id: fila.id, usado: false }, data: { usado: true },
-      });
-      if (marcado.count === 0) throw new BadRequestException('Este token ya fue usado');
+    const resultado = await this.prisma.$transaction(
+      async (tx) => {
+        const marcado = await tx.tokenValidacion.updateMany({
+          where: { id: fila.id, usado: false }, data: { usado: true },
+        });
+        if (marcado.count === 0) throw new BadRequestException('Este token ya fue usado');
 
-      // Sellos + puntos: los decide FidelizacionService segun el modo del negocio y el monto.
-      // (Antes era `sellosOtorgados = 1` fijo y los puntos siempre 0.)
-      const acreditado = await this.fidelizacion.acreditar(tx, {
-        negocioId,
-        clienteId: fila.clienteId,
-        sucursalId,
-        empleadoId: empleado.id,
-        monto,
-        tipo: TipoVisita.VISITA,
-        metodo: 'QR_DINAMICO',
-        pedidoId: pedidoVinculado?.id ?? null,
-        origen: dto.origen ?? null,
-        notas: dto.notas ?? null,
-      });
+        // Sellos + puntos: los decide FidelizacionService segun el modo del negocio y el monto.
+        // (Antes era `sellosOtorgados = 1` fijo y los puntos siempre 0.)
+        const acreditado = await this.fidelizacion.acreditar(tx, {
+          negocioId,
+          clienteId: fila.clienteId,
+          sucursalId,
+          empleadoId: empleado.id,
+          monto,
+          tipo: TipoVisita.VISITA,
+          metodo: 'QR_DINAMICO',
+          pedidoId: pedidoVinculado?.id ?? null,
+          origen: dto.origen ?? null,
+          notas: dto.notas ?? null,
+          // Lo que el token ya traia: evita un round-trip adentro de la transaccion.
+          totalVisitasAntes: fila.cliente.totalVisitas,
+          cfg,
+        });
 
-      return acreditado;
-    });
-
-    await this.auditoria.registrar({
-      negocioId, accion: 'visita.aprobada', empleadoId: empleado.id, clienteId: fila.clienteId,
-      detalle: {
-        visitaId: resultado.visitaId, sucursalId, origen: dto.origen ?? null,
-        sellos: resultado.sellos, puntos: resultado.puntos, monto,
-        pedidoId: pedidoVinculado?.id ?? null,
+        return acreditado;
       },
-      ip: empleado.ip,
-    });
+      // La transaccion ya NO hace trabajo externo (config/cliente/negocio/auditoria/WS salieron).
+      // El timeout explicito es la red de seguridad del repo para Neon: el default de 5s se quedaba
+      // corto con las consultas de mas, no con las que quedan.
+      { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS },
+    );
+
+    // ---- De aca para abajo: TODO lo que no es `tx.*` va DESPUES del commit ----
+    // Auditoria, aviso de saldo e info de horario: tres cosas independientes, un solo round-trip.
+    const [, , avisoHorario] = await Promise.all([
+      this.auditoria.registrar({
+        negocioId, accion: 'visita.aprobada', empleadoId: empleado.id, clienteId: fila.clienteId,
+        detalle: {
+          visitaId: resultado.visitaId, sucursalId, origen: dto.origen ?? null,
+          sellos: resultado.sellos, puntos: resultado.puntos, monto,
+          pedidoId: pedidoVinculado?.id ?? null,
+        },
+        ip: empleado.ip,
+      }),
+      // EVENTO UNICO DE SALDO: se emite ACA (post-commit). Adentro de la transaccion avisaba de un
+      // cambio que un rollback podia deshacer, y su auditoria quedaba escrita igual porque va por la
+      // conexion global.
+      this.saldo.avisar(negocioId, fila.clienteId, resultado.avisoSaldo),
+      this.avisoHorario(negocioId, sucursalId),
+    ]);
 
     this.gateway.emitirAprobada(fila.clienteId, {
       visitaId: resultado.visitaId,
@@ -433,7 +558,7 @@ export class VisitasService {
       premioPuntosDesbloqueado: resultado.premioPuntosDesbloqueado,
       mostrarResena,
       // AVISO (nunca bloqueo): aprobar una visita jamas se rechaza por horario.
-      avisoHorario: await this.avisoHorario(negocioId, sucursalId),
+      avisoHorario,
     };
   }
   /**
@@ -713,10 +838,16 @@ export class VisitasService {
       );
     }
 
-    const resultado = await this.prisma.$transaction((tx) =>
-      this.fidelizacion.recalcularVisitaPorMonto(tx, {
-        negocioId, visitaId: visita.id, montoNuevo: dto.montoConsumido,
-      }),
+    // La config se resuelve ANTES de abrir la transaccion (con el cache): adentro la leia el cliente
+    // global, o sea fuera de la transaccion.
+    const cfg = (await this.configYContexto(negocioId)).cfg;
+
+    const resultado = await this.prisma.$transaction(
+      (tx) =>
+        this.fidelizacion.recalcularVisitaPorMonto(tx, {
+          negocioId, visitaId: visita.id, montoNuevo: dto.montoConsumido, cfg,
+        }),
+      { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS },
     );
 
     await this.auditoria.registrar({
@@ -751,28 +882,43 @@ export class VisitasService {
    * Es `public` a proposito: lo reusa VerificacionService. Reimplementar aca la resolucion de
    * saldos (GLOBAL vs POR_SUCURSAL) fue justo lo que dejo la pagina de verificacion mostrando
    * solo sellos cuando el club paso a HIBRIDO.
+   *
+   * `previos`: lo que el llamador YA leyo en esta request (negocio, config, cliente, tarjeta de la
+   * sucursal). Con los cuatro cargados no hace NINGUNA consulta: antes los caminos que ya tenian
+   * esos datos los volvian a pedir (el cliente se leia 2 veces en `mi-tarjeta` y la tarjeta de la
+   * sucursal tambien, cuando el `findMany` de todas las tarjetas ya la traia).
    */
-  async saldosEfectivos(negocioId: string, clienteId: string, sucursalId: string) {
+  async saldosEfectivos(
+    negocioId: string,
+    clienteId: string,
+    sucursalId: string,
+    previos: SaldosPrevios = {},
+  ) {
     const [negocio, config, cliente, tarjeta] = await Promise.all([
-      this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
-      this.prisma.configuracionClub.findUnique({
-        where: { negocioId },
-        select: {
-          sellosParaPremio: true, premioTexto: true, mostrarResenaPostVisita: true,
-          // Programa por puntos: el cliente necesita el modo y el premio para dibujar la 2da barra.
-          modoFidelizacion: true, premioPorPuntos: true, premioTextoPuntos: true,
-        },
-      }),
-      this.prisma.cliente.findFirst({
-        where: { id: clienteId, eliminadoEn: null },
-        select: { sellosActuales: true, puntosActuales: true, totalVisitas: true },
-      }),
-      this.prisma.tarjetaClienteSucursal.findUnique({
-        where: { clienteId_sucursalId: { clienteId, sucursalId } },
-        select: { sellosActuales: true, puntosActuales: true, totalVisitas: true },
-      }),
+      previos.negocio !== undefined
+        ? previos.negocio
+        : this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
+      previos.config !== undefined ? previos.config : this.configClub(negocioId, sucursalId),
+      previos.cliente !== undefined
+        ? previos.cliente
+        : this.prisma.cliente.findFirst({
+            where: { id: clienteId, eliminadoEn: null },
+            select: { sellosActuales: true, puntosActuales: true, totalVisitas: true },
+          }),
+      previos.tarjeta !== undefined
+        ? previos.tarjeta
+        : this.prisma.tarjetaClienteSucursal.findUnique({
+            where: { clienteId_sucursalId: { clienteId, sucursalId } },
+            select: { sellosActuales: true, puntosActuales: true, totalVisitas: true },
+          }),
     ]);
 
+    return this.componerSaldos({ negocio, config, cliente, tarjeta }, sucursalId);
+  }
+
+  /** Pura (sin DB): los datos ya leidos -> contrato de saldos que consumen las pantallas. */
+  private componerSaldos(datos: Required<SaldosPrevios>, sucursalId: string) {
+    const { negocio, config, cliente, tarjeta } = datos;
     const porSucursal = negocio?.modoClientes === 'POR_SUCURSAL';
     const sellos = porSucursal ? (tarjeta?.sellosActuales ?? 0) : (cliente?.sellosActuales ?? 0);
     const sellosParaPremio = config?.sellosParaPremio ?? 10;
@@ -802,6 +948,10 @@ export class VisitasService {
   /**
    * GET /visitas/estado/:token (cliente). Respaldo del WebSocket: la PWA lo
    * consulta cada 5s si el socket no conecta.
+   *
+   * El token manda: se lee primero (1 round-trip) porque de el sale la sucursal; recien despues se
+   * piden EN PARALELO las cuatro lecturas del saldo (negocio, config cacheada, cliente y tarjeta de
+   * esa sucursal) y se arma todo sin consultas extra.
    */
   async estadoParaCliente(negocioId: string, clienteId: string, token: string) {
     const fila = await this.prisma.tokenValidacion.findFirst({
@@ -815,10 +965,23 @@ export class VisitasService {
       throw new NotFoundException('Solicitud no encontrada');
     }
 
-    const sucursalId =
-      fila.sucursalId ??
-      ((await this.resolver.resolverSucursal(negocioId, { clienteId })).id as string);
-    const base = await this.saldosEfectivos(negocioId, clienteId, sucursalId);
+    const sucursalId = fila.sucursalId ?? (
+      await this.resolver.resolverSucursal(negocioId, { clienteId })
+    ).id as string;
+
+    const [negocio, config, cliente, tarjeta] = await Promise.all([
+      this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
+      this.configClub(negocioId, sucursalId),
+      this.prisma.cliente.findFirst({
+        where: { id: clienteId, eliminadoEn: null },
+        select: { sellosActuales: true, puntosActuales: true, totalVisitas: true },
+      }),
+      this.prisma.tarjetaClienteSucursal.findUnique({
+        where: { clienteId_sucursalId: { clienteId, sucursalId } },
+        select: { sellosActuales: true, puntosActuales: true, totalVisitas: true },
+      }),
+    ]);
+    const base = this.componerSaldos({ negocio, config, cliente, tarjeta }, sucursalId);
 
     if (fila.usado) {
       const rechazo = await this.redis.get(CLAVE_RECHAZO(token)).catch(() => null);
@@ -838,17 +1001,49 @@ export class VisitasService {
     return { estado: 'PENDIENTE', expiraEn: fila.expiraEn, ...base };
   }
 
-  /** GET /visitas/mi-tarjeta (cliente). */
+  /**
+   * GET /visitas/mi-tarjeta (cliente).
+   *
+   * El plan de lecturas: lo que el cliente ya conoce (su fila) y lo que la request necesita seguro
+   * (negocio + sucursal resuelta) en UN round-trip; despues las tarjetas de las sucursales y la
+   * config cacheada en otro; el armado de saldos reusa TODO eso (cero consultas) y los premios van
+   * con su contexto de canje ya batcheado.
+   */
   async miTarjeta(negocioId: string, clienteId: string, sucursalSlug?: string) {
-    const cliente = await this.prisma.cliente.findFirst({
-      where: { id: clienteId, negocioId, eliminadoEn: null },
-      select: {
-        id: true, nombre: true, telefono: true, etiqueta: true,
-        sellosActuales: true, puntosActuales: true, totalVisitas: true, ultimaVisita: true,
-        tokenVerificacion: true,
-      },
-    });
+    const [cliente, negocio, sucursal] = await Promise.all([
+      this.prisma.cliente.findFirst({
+        where: { id: clienteId, negocioId, eliminadoEn: null },
+        select: {
+          id: true, nombre: true, telefono: true, etiqueta: true,
+          sellosActuales: true, puntosActuales: true, totalVisitas: true, ultimaVisita: true,
+          tokenVerificacion: true,
+        },
+      }),
+      // El `slug` (link de verificacion) y el `modoClientes` (GLOBAL/POR_SUCURSAL) son el MISMO dato
+      // leido una sola vez: antes esta pantalla pedia el negocio dos veces (una aca y otra adentro
+      // de `saldosEfectivos`).
+      this.prisma.negocio.findUnique({
+        where: { id: negocioId },
+        select: { slug: true, modoClientes: true },
+      }),
+      this.resolver.resolverSucursal(negocioId, { sucursalSlug, clienteId }),
+    ]);
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
+
+    const sucursalId = sucursal.id as string;
+
+    // Tarjetas del cliente (una por sucursal) y config del club: independientes, un round-trip.
+    // La tarjeta de la sucursal efectiva sale de ESTA lista, no de otra consulta.
+    const [tarjetas, config] = await Promise.all([
+      this.prisma.tarjetaClienteSucursal.findMany({
+        where: { clienteId },
+        select: {
+          sucursalId: true, sellosActuales: true, puntosActuales: true,
+          totalVisitas: true, premiosCanjeados: true, ultimaVisita: true,
+        },
+      }),
+      this.configClub(negocioId, sucursalId),
+    ]);
 
     // Link de verificacion del boton de WhatsApp: token LAZY (si todavia no tiene, se
     // genera aca y se persiste). Solo lo ve el propio cliente autenticado.
@@ -859,25 +1054,20 @@ export class VisitasService {
     // links del cliente = PUBLIC_APP_URL + slug). El front NO puede armarlo con
     // `window.location.origin`: en los subdominios de tenant (`<slug>.clubio.lat`) el link saldria
     // con el slug duplicado y la pagina de verificacion responde "enlace no valido".
-    const negocioSlug = (
-      await this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { slug: true } })
-    )?.slug;
     const baseApp = (process.env.PUBLIC_APP_URL ?? 'https://app.dominio.com').replace(/\/$/, '');
-    const urlVerificacion = negocioSlug
-      ? `${baseApp}/${negocioSlug}/verificar/${tokenVerificacion}`
+    const urlVerificacion = negocio?.slug
+      ? `${baseApp}/${negocio.slug}/verificar/${tokenVerificacion}`
       : null;
 
-    const sucursal = await this.resolver.resolverSucursal(negocioId, { sucursalSlug, clienteId });
-    const base = await this.saldosEfectivos(negocioId, clienteId, sucursal.id as string);
-
-    // Con POR_SUCURSAL la PWA muestra una tarjeta por sucursal.
-    const tarjetas = await this.prisma.tarjetaClienteSucursal.findMany({
-      where: { clienteId },
-      select: {
-        sucursalId: true, sellosActuales: true, puntosActuales: true,
-        totalVisitas: true, premiosCanjeados: true, ultimaVisita: true,
+    const base = this.componerSaldos(
+      {
+        negocio,
+        config,
+        cliente,
+        tarjeta: tarjetas.find((t) => t.sucursalId === sucursalId) ?? null,
       },
-    });
+      sucursalId,
+    );
 
     // PREMIOS GANADOS ("Tus premios ganados" en la tarjeta). Van en la MISMA respuesta de la
     // tarjeta (cero requests extra y cero estado nuevo en el front): un premio ACEPTADO —y sobre

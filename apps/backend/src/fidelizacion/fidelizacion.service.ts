@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { MetodoVisita, Prisma, TipoVisita } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SegmentosService } from '../clientes/segmentos.service';
-import { SaldoNotificador } from '../common/saldo/saldo-notificador.service';
+import type { CambioSaldo } from '../common/saldo/saldo-notificador.service';
 import type { SaldoPar } from '@repo/types';
 
 export type ModoFidelizacion = 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO';
@@ -11,6 +11,62 @@ export type ModoFidelizacion = 'SOLO_VISITAS' | 'SOLO_PUNTOS' | 'HIBRIDO';
 export interface Acreditacion {
   sellos: number;
   puntos: number;
+}
+
+/**
+ * Config del club + modo de clientes, YA RESUELTA.
+ *
+ * Existe para que la configuracion se lea UNA vez por request y se PASE: pedirla desde adentro de
+ * una transaccion significaba leerla con el cliente global (una conexion distinta a la de `tx`) y
+ * sumar dos round-trips al reloj de la transaccion sin participar de ella.
+ */
+export interface ContextoFidelizacion {
+  modoFidelizacion: ModoFidelizacion;
+  puntosPorMil: number;
+  sellosParaPremio: number;
+  premioTexto: string;
+  premioPorPuntos: number;
+  premioTextoPuntos: string;
+  porSucursal: boolean;
+}
+
+/** Campos que alimentan el contexto (el resto de la fila de configuracion no se usa). */
+export interface ConfigParaContexto {
+  modoFidelizacion?: ModoFidelizacion | null;
+  puntosPorMil?: number | null;
+  sellosParaPremio?: number | null;
+  premioTexto?: string | null;
+  premioPorPuntos?: number | null;
+  premioTextoPuntos?: string | null;
+}
+
+/**
+ * Los campos de `ConfiguracionClub` que consumen los caminos calientes (visitas y pedidos): el
+ * contexto de fidelizacion + las tres puertas que se leen por request.
+ */
+export interface ConfigClub extends ConfigParaContexto {
+  horasMinimasEntreVisitas?: number | null;
+  limiteVisitasPorDia?: number | null;
+  mostrarResenaPostVisita?: boolean | null;
+}
+
+/**
+ * Funcion PURA (sin DB): configuracion + `modoClientes` -> contexto, con los defaults del club.
+ * Es el unico lugar donde se resuelven los defaults; el llamador solo tiene que traer la fila.
+ */
+export function contextoFidelizacion(
+  config: ConfigParaContexto | null | undefined,
+  modoClientes?: string | null,
+): ContextoFidelizacion {
+  return {
+    modoFidelizacion: (config?.modoFidelizacion ?? 'SOLO_VISITAS') as ModoFidelizacion,
+    puntosPorMil: config?.puntosPorMil ?? PUNTOS_POR_MIL_DEFAULT,
+    sellosParaPremio: config?.sellosParaPremio ?? 10,
+    premioTexto: config?.premioTexto ?? '',
+    premioPorPuntos: config?.premioPorPuntos ?? PUNTOS_PARA_PREMIO_DEFAULT,
+    premioTextoPuntos: config?.premioTextoPuntos ?? 'Postre gratis',
+    porSucursal: modoClientes === 'POR_SUCURSAL',
+  };
 }
 
 /** Tasa por defecto si el negocio nunca configuro `puntosPorMil`. */
@@ -65,6 +121,20 @@ export interface CtxAcreditar {
   pedidoId?: string | null;
   origen?: string | null;
   notas?: string | null;
+  /**
+   * `totalVisitas` del cliente ANTES de esta acreditacion.
+   *
+   * La etiqueta (VIP/REGULAR/NUEVO) se calcula con el total POST-incremento y tiene que quedar en el
+   * MISMO update que lo incrementa (un solo round-trip). El llamador normalmente YA sabe este numero
+   * (lo trae el token de la visita o una lectura que hizo antes de la transaccion, en paralelo con
+   * la config); si no lo pasa, se lee adentro de la transaccion como antes.
+   */
+  totalVisitasAntes?: number | null;
+  /**
+   * Config del club ya resuelta FUERA de la transaccion (obligatoria a proposito: si se pudiera
+   * omitir, el camino facil volveria a leerla desde adentro con el cliente global).
+   */
+  cfg: ContextoFidelizacion;
 }
 
 export interface ResultadoAcreditacion {
@@ -81,7 +151,15 @@ export interface ResultadoAcreditacion {
   premioPorPuntos: number;
   premioDesbloqueado: boolean;
   premioPuntosDesbloqueado: boolean;
+  /**
+   * Datos del aviso de saldo (`saldo:cambiado` + auditoria `saldo.cambiado`), con el par REAL que
+   * esta acreditacion dejo escrito. Los emite el LLAMADOR, DESPUES del commit: emitirlos desde
+   * adentro de la transaccion avisaba de un cambio que un rollback podia deshacer (y la auditoria
+   * quedaba escrita igual, porque va por la conexion global).
+   */
+  avisoSaldo: CambioSaldo;
 }
+
 
 /**
  * Acreditacion de fidelizacion: la UNICA puerta por la que se otorgan sellos y puntos.
@@ -99,14 +177,17 @@ export class FidelizacionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly segmentos: SegmentosService,
-    private readonly saldo: SaldoNotificador,
   ) {}
 
   /**
    * Config del club + modo de clientes. `ConfiguracionClub` es obligatoria (una por negocio), pero
    * si faltara se usan los defaults en vez de romper el flujo de atencion.
+   *
+   * SOLO para caminos que NO estan dentro de una transaccion (ej. `visitas.canjear`). Los caminos
+   * transaccionales leen la config antes de abrir la transaccion (o de un cache) y la pasan en
+   * `ctx.cfg`.
    */
-  async contexto(negocioId: string) {
+  async contexto(negocioId: string): Promise<ContextoFidelizacion> {
     const [config, negocio] = await Promise.all([
       this.prisma.configuracionClub.findUnique({
         where: { negocioId },
@@ -118,22 +199,16 @@ export class FidelizacionService {
       this.prisma.negocio.findUnique({ where: { id: negocioId }, select: { modoClientes: true } }),
     ]);
 
-    return {
-      modoFidelizacion: (config?.modoFidelizacion ?? 'SOLO_VISITAS') as ModoFidelizacion,
-      puntosPorMil: config?.puntosPorMil ?? PUNTOS_POR_MIL_DEFAULT,
-      sellosParaPremio: config?.sellosParaPremio ?? 10,
-      premioTexto: config?.premioTexto ?? '',
-      premioPorPuntos: config?.premioPorPuntos ?? PUNTOS_PARA_PREMIO_DEFAULT,
-      premioTextoPuntos: config?.premioTextoPuntos ?? 'Postre gratis',
-      porSucursal: negocio?.modoClientes === 'POR_SUCURSAL',
-    };
+    return contextoFidelizacion(config, negocio?.modoClientes);
   }
 
   async acreditar(
     tx: Prisma.TransactionClient,
     ctx: CtxAcreditar,
   ): Promise<ResultadoAcreditacion> {
-    const cfg = await this.contexto(ctx.negocioId);
+    // La config llega RESUELTA (`ctx.cfg`): leerla aca adentro la traia por la conexion global, es
+    // decir FUERA de la transaccion (2 round-trips que no participaban de ella).
+    const cfg = ctx.cfg;
     const { sellos, puntos } = calcularAcreditacion(cfg.modoFidelizacion, ctx.monto, cfg.puntosPorMil);
 
     const visita = await tx.visita.create({
@@ -156,17 +231,21 @@ export class FidelizacionService {
 
     // Cliente: los AGREGADOS (totalVisitas, ultimaVisita, etiqueta) siempre. Los SALDOS solo con
     // modoClientes = GLOBAL: con POR_SUCURSAL el saldo vive en la tarjeta de cada sucursal.
-    const cliente = await tx.cliente.findFirstOrThrow({
-      where: { id: ctx.clienteId },
-      select: { totalVisitas: true, ultimaVisita: true },
-    });
+    //
+    // La etiqueta va en el MISMO update que incrementa `totalVisitas`: si el llamador no trajo el
+    // total previo, se lee aca (un round-trip mas adentro de la transaccion, el camino viejo).
+    const totalVisitasAntes = ctx.totalVisitasAntes ??
+      (await tx.cliente.findFirstOrThrow({
+        where: { id: ctx.clienteId },
+        select: { totalVisitas: true },
+      })).totalVisitas;
     const actualizado = await tx.cliente.update({
       where: { id: ctx.clienteId },
       data: {
         ...(cfg.porSucursal ? {} : { sellosActuales: { increment: sellos }, puntosActuales: { increment: puntos } }),
         totalVisitas: { increment: 1 },
         ultimaVisita: new Date(),
-        etiqueta: this.segmentos.calcularEtiqueta(cliente.totalVisitas + 1, new Date()),
+        etiqueta: this.segmentos.calcularEtiqueta(totalVisitasAntes + 1, new Date()),
       },
       select: { sellosActuales: true, puntosActuales: true },
     });
@@ -195,18 +274,6 @@ export class FidelizacionService {
     const sellosEfectivos = cfg.porSucursal ? tarjeta.sellosActuales : actualizado.sellosActuales;
     const puntosEfectivos = cfg.porSucursal ? tarjeta.puntosActuales : actualizado.puntosActuales;
 
-    // EVENTO UNICO DE SALDO (hueco #1): la visita/pedido mueve el saldo y la app no se enteraba.
-    // El aviso va con los valores REALES que esta transaccion dejo escritos (`actualizado` y
-    // `tarjeta` son las filas post-acreditacion): ni un query extra ni un recalculado a mano.
-    // `motivo`/`ref` salen del contexto para que el evento diga QUE lo movio.
-    await this.saldo.avisar(ctx.negocioId, ctx.clienteId, {
-      sellos,
-      puntos,
-      saldoDespues: { sellos: sellosEfectivos, puntos: puntosEfectivos },
-      motivo: ctx.metodo === 'PEDIDO' ? 'pedido_entregado' : 'visita_aprobada',
-      ref: ctx.pedidoId ?? visita.id,
-    });
-
     return {
       visitaId: visita.id,
       sellos,
@@ -221,6 +288,17 @@ export class FidelizacionService {
       premioPorPuntos: cfg.premioPorPuntos,
       premioDesbloqueado: sellosEfectivos >= cfg.sellosParaPremio,
       premioPuntosDesbloqueado: puntosEfectivos >= cfg.premioPorPuntos,
+      // EVENTO UNICO DE SALDO (hueco #1): la visita/pedido mueve el saldo y la app no se enteraba.
+      // Se DEVUELVE sin emitir: el llamador lo emite despues del commit (WS + auditoria), asi el
+      // aviso nunca sale de una transaccion que puede hacer rollback. El par sale de las filas
+      // post-acreditacion (`actualizado`/`tarjeta`): ni un query extra ni un recalculado a mano.
+      avisoSaldo: {
+        sellos,
+        puntos,
+        saldoDespues: { sellos: sellosEfectivos, puntos: puntosEfectivos },
+        motivo: ctx.metodo === 'PEDIDO' ? 'pedido_entregado' : 'visita_aprobada',
+        ref: ctx.pedidoId ?? visita.id,
+      },
     };
   }
 
@@ -238,14 +316,15 @@ export class FidelizacionService {
    */
   async recalcularVisitaPorMonto(
     tx: Prisma.TransactionClient,
-    ctx: { negocioId: string; visitaId: string; montoNuevo: number },
+    ctx: { negocioId: string; visitaId: string; montoNuevo: number; cfg: ContextoFidelizacion },
   ): Promise<{
     montoAntes: number | null; montoDespues: number;
     puntosAntes: number; puntosDespues: number; saldoDespues: number;
     /** Par EFECTIVO (sellos+puntos) antes y despues: lo usa el evento `saldo:cambiado`. */
     saldo: { antes: SaldoPar; despues: SaldoPar };
   }> {
-    const cfg = await this.contexto(ctx.negocioId);
+    // La config llega resuelta por el llamador (fuera de la transaccion), igual que en `acreditar`.
+    const cfg = ctx.cfg;
     const visita = await tx.visita.findFirstOrThrow({
       where: { id: ctx.visitaId, negocioId: ctx.negocioId },
       select: {

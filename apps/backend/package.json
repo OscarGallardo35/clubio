@@ -20,6 +20,7 @@
     "test:pin": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-pin-duplicado.cjs",
     "test:cancelar": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-cancelar-link.cjs",
     "test:pedido-activo": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-pedido-activo.cjs",
+    "test:pedido-entregado": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-pedido-entregado.cjs",
     "test:auto-cancelar": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-auto-cancelar.cjs",
     "test:ws-cancelado": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-ws-cancelado-cliente.cjs",
     "test:ws-saldo-aprobar": "dotenv -e ../../.env -e ../../.env.secrets -- node scripts/check-ws-saldo-aprobar.cjs",

@@ -140,8 +140,8 @@ de cero downtime por API**; lo que si existe es una secuencia corta y con rollba
 5. **Regresion**: los harness de push/perfil/cliente (`test:premios-push`, `test:disparos-push`,
    `test:campanas-push`, `test:envios-push`, `test:perfil-cliente`, `test:cumpleanos`,
    `test:acepta-notificaciones`, `test:acepta-notificaciones-default`) y el flujo de visita
-   (`test:visita-pedido`, `test:editar-monto`, `test:hibrido`, `test:ws-cancelado`,
-   `test:ws-saldo-aprobar`). El corte de
+   (`test:visita-pedido`, `test:editar-monto`, `test:pedido-entregado`, `test:hibrido`,
+   `test:ws-cancelado`, `test:ws-saldo-aprobar`). El corte de
    "hoy" del limite diario usa la hora del contenedor (UTC, no depende de la region), asi que **no**
    hay que esperar cambios de fecha por la mudanza.
 

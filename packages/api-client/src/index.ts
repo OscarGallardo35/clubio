@@ -145,10 +145,22 @@ export class ApiClient {
   }
 }
 
+/** Los 3 transportes que acepta engine.io (`transports` del factory). */
+export type Transporte = 'websocket' | 'polling' | 'webtransport'
+
 export interface SocketConfig {
   url: string
   token?: string | null
   namespace?: string
+  /**
+   * Transportes a intentar, EN ORDEN. Sin esto queda el historico `['websocket']`.
+   *
+   * Por que existe: con SOLO websocket, una red que no deja establecer el WS (proxy, wifi
+   * corporativo, algunos operadores moviles) deja al cliente SIN socket para siempre: el
+   * polling de respaldo del flujo no lo cubre en el acto. Pasar `['websocket','polling']`
+   * conserva el WS como camino normal y cae a polling solo cuando el WS no se puede abrir.
+   */
+  transports?: Transporte[]
   onConnect?: () => void
   onDisconnect?: () => void
 }
@@ -164,7 +176,7 @@ export function createSocket(config: SocketConfig): Socket {
     // exactOptionalPropertyTypes.
     ...(config.token ? { auth: { token: config.token } } : {}),
     withCredentials: true,
-    transports: ['websocket'],
+    transports: config.transports ?? ['websocket'],
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,

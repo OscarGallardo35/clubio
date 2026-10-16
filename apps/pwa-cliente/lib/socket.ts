@@ -1,6 +1,18 @@
 import type { Socket } from 'socket.io-client'
 import { createSocket } from '@repo/api-client'
+import type { Transporte } from '@repo/api-client'
 import { WS_URL } from './api'
+
+/**
+ * Transportes del cliente: WebSocket PRIMERO (que es lo que emite al instante) y polling
+ * como respaldo si el WS no se puede establecer.
+ *
+ * `['websocket']` a secas (la config historica) deja al cliente SIN socket cuando la red no
+ * permite el upgrade — proxy, wifi corporativo, algunos operadores — y ahi la tarjeta y el
+ * flujo de visita se quedan solo con el polling. Con el respaldo, esa red recupera los
+ * avisos en vivo; en una red normal el comportamiento es identico (el WS abre igual).
+ */
+export const TRANSPORTES_WS: Transporte[] = ['websocket', 'polling']
 
 /**
  * Socket del namespace /visitas.
@@ -16,6 +28,7 @@ export function crearSocketVisitas(token?: string | null, namespace = '/visitas'
     url: WS_URL,
     token: token ?? null,
     namespace,
+    transports: TRANSPORTES_WS,
   })
 }
 

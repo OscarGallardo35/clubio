@@ -3,6 +3,7 @@ import type { VisitaAprobadaPayload } from '@repo/api-client'
 import type { Socket } from 'socket.io-client'
 import type { ClienteMe, EstadoVisitaRespuesta, SolicitarVisitaRespuesta } from '@/types/api'
 import { api, clienteApi, WS_URL } from './api'
+import { TRANSPORTES_WS } from './socket'
 import type { ClasificacionRechazo, EstadoVisitaToken, SellosTrasAprobar } from './visita-maquina'
 import { clasificarRechazoDeSolicitud } from './visita-maquina'
 
@@ -167,7 +168,7 @@ export interface ManejadoresWs {
  * handshake se autentica igual con la cookie HttpOnly (withCredentials).
  */
 export function crearSocketVisita(manejadores: ManejadoresWs, token?: string | null, namespace = '/visitas') {
-  const socket: Socket = createSocket({ url: WS_URL, namespace, token: token ?? null })
+  const socket: Socket = createSocket({ url: WS_URL, namespace, token: token ?? null, transports: TRANSPORTES_WS })
 
   // Los manejadores se enganchan aca y no en el config: createSocket tipa
   // onDisconnect como `() => void` y el flujo necesita el motivo.

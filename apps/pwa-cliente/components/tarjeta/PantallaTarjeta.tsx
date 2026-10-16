@@ -15,7 +15,6 @@
  */
 import * as React from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { getTheme } from '@repo/types'
 import { Progress, Skeleton, TarjetaSellos, buttonVariants } from '@repo/ui'
 import { useBranding } from '@/hooks/useBranding'
@@ -23,6 +22,7 @@ import { useCliente } from '@/hooks/useCliente'
 import { useMiTarjeta } from '@/hooks/useMiTarjeta'
 import { useSucursalActiva } from '@/hooks/useSucursalActiva'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
+import { CambiarDeCuenta } from '@/components/CambiarDeCuenta'
 import { CardNotificaciones } from '@/components/notificaciones/CardNotificaciones'
 import { PerfilamientoGate } from '@/components/perfil/PerfilamientoGate'
 import { MisPremios } from '@/components/tarjeta/MisPremios'
@@ -53,7 +53,8 @@ export function PantallaTarjeta({ slugNegocio }: { slugNegocio: string }) {
 
   if ((!resuelto || cargandoBranding) && !negocio) return <Cargando />
   // La sesion guardada es de OTRO local: no es un fallo de la app ni un 401. Se ofrece cambiar de
-  // cuenta (la cookie es HttpOnly: la baja el logout del backend, no el navegador).
+  // cuenta (la cookie es HttpOnly: la baja el logout del backend, no el navegador). La pantalla es
+  // el componente COMPARTIDO con el flujo del club (components/CambiarDeCuenta).
   if (sesionDeOtroLocal || tenantMismatch) {
     return <CambiarDeCuenta slugNegocio={slugNegocio} onSalir={logout} />
   }
@@ -327,51 +328,3 @@ function Fallo({ mensaje, onReintentar }: { mensaje: string; onReintentar: () =>
   )
 }
 
-/**
- * La sesion guardada pertenece a OTRO local: el backend contesta 403 "no coincide con la solicitud".
- *
- * No se muestra el error crudo (es una situacion esperable: el cliente entro a otro club desde el
- * mismo telefono) ni se lo deja en un callejon: se le ofrece salir y entrar con la cuenta de ESTE
- * local. Ojo: la cookie es HttpOnly, asi que no se puede borrar desde el navegador; el boton pasa
- * por el logout del backend y recien despues navega al club.
- */
-function CambiarDeCuenta({
-  slugNegocio,
-  onSalir,
-}: {
-  slugNegocio: string
-  onSalir: () => Promise<void>
-}) {
-  const router = useRouter()
-  const [saliendo, setSaliendo] = React.useState(false)
-
-  async function cambiar() {
-    setSaliendo(true)
-    try {
-      await onSalir()
-    } finally {
-      router.replace(RUTAS.club(slugNegocio))
-    }
-  }
-
-  return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 p-6 text-center">
-      <p className="text-lg font-semibold text-white drop-shadow">Esta cuenta es de otro local</p>
-      <p className="text-sm text-white/85">
-        La sesión guardada en este teléfono es de otro negocio, así que no podemos mostrarte la
-        tarjeta de este club.
-      </p>
-      <button
-        type="button"
-        onClick={() => void cambiar()}
-        disabled={saliendo}
-        className={buttonVariants({ className: 'min-h-12' })}
-      >
-        {saliendo ? 'Saliendo…' : 'Cambiar de cuenta'}
-      </button>
-      <Link href={RUTAS.club(slugNegocio)} className="text-sm text-white/80 underline underline-offset-4">
-        Ir al club de este local
-      </Link>
-    </div>
-  )
-}

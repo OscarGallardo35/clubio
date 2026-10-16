@@ -91,6 +91,15 @@ export interface EstadoFlujo {
   faltanHoras: number | null
   /** Mensaje para paso = 'error' (y detalle del rechazo). */
   mensaje: string | null
+  /**
+   * true cuando el paso = 'error' es el 403 del `TenantGuard`: la sesion es de OTRO local.
+   *
+   * No es un fallo de la app y por eso NO se muestra el texto crudo del backend ("El tenant del
+   * token no coincide con la solicitud"): la pantalla lo trata como el mismo caso que la tarjeta
+   * (components/CambiarDeCuenta). La deteccion vive en `esTenantMismatch` (lib/tenant.ts), que
+   * corre en el transporte (visita-service) porque es el unico lugar donde todavia existe el status.
+   */
+  tenantMismatch: boolean
   /** Sellos que trajo el WS: es la fuente de verdad, no se pide de nuevo. */
   sellos: SellosTrasAprobar | null
   /** true si el estado salio de un token guardado (no de una solicitud nueva). */
@@ -115,7 +124,7 @@ export type EventoFlujo =
       /** true cuando el token viene de reanudar lo persistido (no de una solicitud nueva). */
       reanudado?: boolean
     }
-  | { tipo: 'SOLICITUD_RECHAZADA'; motivo: 'esperaHoras' | 'yaSumadaHoy' | 'otro'; faltanHoras?: number; mensaje?: string }
+  | { tipo: 'SOLICITUD_RECHAZADA'; motivo: 'esperaHoras' | 'yaSumadaHoy' | 'otro'; faltanHoras?: number; mensaje?: string; tenantMismatch?: boolean }
   | { tipo: 'ESTADO_RECIBIDO'; estado: EstadoVisitaToken; motivo?: string; sellosActuales?: number; premioDesbloqueado?: boolean }
   | ({ tipo: 'WS_APROBADA' } & SellosTrasAprobar)
   | { tipo: 'WS_RECHAZADA'; motivo?: string }
@@ -132,6 +141,7 @@ export const ESTADO_INICIAL: EstadoFlujo = {
   motivo: null,
   faltanHoras: null,
   mensaje: null,
+  tenantMismatch: false,
   sellos: null,
   reanudado: false,
   mensajeWhatsApp: null,
@@ -238,7 +248,7 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
     // reutiliza el token, pero la UI no tiene por que pedirlo).
     case 'SOLICITAR': {
       if (estado.paso === 'solicitando' || estado.paso === 'esperando') return estado
-      return { ...estado, paso: 'solicitando', motivo: null, mensaje: null, faltanHoras: null }
+      return { ...estado, paso: 'solicitando', motivo: null, mensaje: null, faltanHoras: null, tenantMismatch: false }
     }
 
     case 'SOLICITADA':
@@ -251,10 +261,11 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
         motivo: null,
         mensaje: null,
         faltanHoras: null,
+        tenantMismatch: false,
         reanudado: evento.reanudado ?? false,
       
       mensajeWhatsApp: evento.mensajeWhatsApp ?? null,
-      urlValidacion: evento.urlValidacion ?? null,}
+      urlValidacion: evento.urlValidacion ?? null}
 
     // Un 400 del backend no es siempre un error: "espera 4 horas" y "ya sumaste
     // hoy" son estados con su propio texto, no un error rojo.
@@ -266,12 +277,20 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
           motivo: 'esperaHoras',
           faltanHoras: evento.faltanHoras ?? null,
           mensaje: evento.mensaje ?? null,
+          tenantMismatch: false,
         }
       }
       if (evento.motivo === 'yaSumadaHoy') {
-        return { ...estado, paso: 'noSumada', motivo: 'yaSumadaHoy', faltanHoras: null, mensaje: null }
+        return { ...estado, paso: 'noSumada', motivo: 'yaSumadaHoy', faltanHoras: null, mensaje: null, tenantMismatch: false }
       }
-      return { ...estado, paso: 'error', mensaje: evento.mensaje ?? 'No pudimos sumar tu visita.' }
+      // El 403 del TenantGuard llega por aca (motivo 'otro'): se MARCA para que la pantalla muestre
+      // el caso humano ("esta cuenta es de otro local") en vez del texto tecnico del backend.
+      return {
+        ...estado,
+        paso: 'error',
+        mensaje: evento.mensaje ?? 'No pudimos sumar tu visita.',
+        tenantMismatch: evento.tenantMismatch === true,
+      }
     }
 
     // Respuesta de estado/:token (polling o al reanudar). Solo se aplica desde
@@ -293,7 +312,7 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
         return estado
       }
       if (evento.estado === 'PENDIENTE') {
-        return { ...estado, paso: 'esperando', reanudado: true, motivo: null, mensaje: null }
+        return { ...estado, paso: 'esperando', reanudado: true, motivo: null, mensaje: null, tenantMismatch: false }
       }
       if (evento.estado === 'APROBADA') {
         return {
@@ -301,6 +320,7 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
           paso: 'aprobada',
           motivo: null,
           mensaje: null,
+          tenantMismatch: false,
           sellos:
             typeof evento.sellosActuales === 'number'
               ? { sellosActuales: evento.sellosActuales, premioDesbloqueado: evento.premioDesbloqueado === true }
@@ -308,9 +328,9 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
         }
       }
       if (evento.estado === 'RECHAZADA') {
-        return { ...estado, paso: 'noSumada', motivo: 'rechazada', mensaje: evento.motivo ?? null }
+        return { ...estado, paso: 'noSumada', motivo: 'rechazada', mensaje: evento.motivo ?? null, tenantMismatch: false }
       }
-      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null }
+      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null, tenantMismatch: false }
     }
 
     // La aprobacion GANA: vale desde cualquier paso (incluso si el contador ya
@@ -321,6 +341,7 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
         paso: 'aprobada',
         motivo: null,
         mensaje: null,
+        tenantMismatch: false,
         sellos: {
           sellosActuales: evento.sellosActuales,
           premioDesbloqueado: evento.premioDesbloqueado,
@@ -334,25 +355,25 @@ export function visitaReducir(estado: EstadoFlujo, evento: EventoFlujo): EstadoF
       }
 
     case 'WS_RECHAZADA':
-      return { ...estado, paso: 'noSumada', motivo: 'rechazada', mensaje: evento.motivo ?? null }
+      return { ...estado, paso: 'noSumada', motivo: 'rechazada', mensaje: evento.motivo ?? null, tenantMismatch: false }
 
     // El contador llego a cero. Nunca pisa un exito y no hace nada fuera de 'esperando'.
     case 'EXPIRAR':
       if (estado.paso !== 'esperando') return estado
       // EXPIRAR hace spread del estado y NO pasa por ESTADO_INICIAL: los datos del token
       // (mensaje y link) hay que anularlos a mano, o sobreviven al vencimiento.
-      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null, mensajeWhatsApp: null, urlValidacion: null }
+      return { ...estado, paso: 'noSumada', motivo: 'expirada', mensaje: null, mensajeWhatsApp: null, urlValidacion: null, tenantMismatch: false }
 
     // Accion explicita del usuario. Es la UNICA puerta de salida de noSumada/error.
     case 'REINTENTAR': {
       if (!puedeReintentar(estado)) return estado
-      return { ...estado, paso: 'solicitando', motivo: null, mensaje: null, faltanHoras: null }
+      return { ...estado, paso: 'solicitando', motivo: null, mensaje: null, faltanHoras: null, tenantMismatch: false }
     }
 
     case 'ERROR_RED':
       // Un fallo de red no borra una visita ya confirmada.
       if (estado.paso === 'aprobada') return estado
-      return { ...estado, paso: 'error', mensaje: evento.mensaje }
+      return { ...estado, paso: 'error', mensaje: evento.mensaje, tenantMismatch: false }
 
     default:
       return estado

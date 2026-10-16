@@ -4,6 +4,7 @@ import type { Socket } from 'socket.io-client'
 import type { ClienteMe, EstadoVisitaRespuesta, SolicitarVisitaRespuesta } from '@/types/api'
 import { api, clienteApi, WS_URL } from './api'
 import { TRANSPORTES_WS } from './socket'
+import { esTenantMismatch } from './tenant'
 import type { ClasificacionRechazo, EstadoVisitaToken, SellosTrasAprobar } from './visita-maquina'
 import { clasificarRechazoDeSolicitud } from './visita-maquina'
 
@@ -32,6 +33,12 @@ export interface SolicitudFallida {
   rechazo: ClasificacionRechazo
   mensaje: string
   status: number
+  /**
+   * true si el 403 es el del `TenantGuard` (la sesion es de OTRO local). Se resuelve ACA y no en el
+   * reducer porque este es el ultimo lugar donde todavia existe el `status` HTTP; el flujo solo se
+   * queda con la marca para poder mostrar la pantalla humana (ver `esTenantMismatch`).
+   */
+  tenantMismatch: boolean
   /** En una solicitud fallida no hay mensaje para WhatsApp. */
   mensajeWhatsApp: null
   urlValidacion: null
@@ -72,7 +79,11 @@ export async function solicitarVisita(
         rechazo: requiereSesion
           ? { motivo: 'otro' as const, faltanHoras: null }
           : clasificarRechazoDeSolicitud(mensaje),
-        mensaje, status: e.status, mensajeWhatsApp: null, urlValidacion: null,
+        mensaje, status: e.status,
+        // El `TenantGuard` responde 403: la sesion es de OTRO local. La pantalla lo trata como el
+        // caso humano (components/CambiarDeCuenta), no como un fallo tecnico.
+        tenantMismatch: esTenantMismatch(e.status, mensaje, e.data),
+        mensajeWhatsApp: null, urlValidacion: null,
       }
     }
     return {
@@ -81,6 +92,7 @@ export async function solicitarVisita(
       rechazo: { motivo: 'otro', faltanHoras: null },
       mensaje: e instanceof Error ? e.message : 'No pudimos conectar con el local',
       status: 0,
+        tenantMismatch: false,
         mensajeWhatsApp: null,
         urlValidacion: null,
     }

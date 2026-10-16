@@ -283,6 +283,9 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
       motivo: r.rechazo.motivo,
       ...(r.rechazo.faltanHoras !== null ? { faltanHoras: r.rechazo.faltanHoras } : {}),
       mensaje: r.mensaje,
+      // La marca la resolvio el transporte (unico lugar con el status HTTP): la pantalla la usa para
+      // mostrar el caso humano "esta cuenta es de otro local" en vez del texto tecnico.
+      tenantMismatch: r.tenantMismatch,
     })
   }, [despachar, sucursalSlug])
 

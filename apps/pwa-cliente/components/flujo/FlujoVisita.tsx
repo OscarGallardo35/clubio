@@ -14,6 +14,7 @@ import { PasoEspera } from './PasoEspera'
 import { PasoConfirmado } from './PasoConfirmado'
 import { PasoNoSumada } from './PasoNoSumada'
 import { PasoError } from './PasoError'
+import { CambiarDeCuenta } from '@/components/CambiarDeCuenta'
 import { RUTAS } from '@/lib/constants'
 import { numeroAtencionEfectivo } from '@/lib/numero-atencion'
 
@@ -29,7 +30,7 @@ export function FlujoVisita() {
   const router = useRouter()
   const { negocio, configuracion, cargando: cargandoBranding } = useBranding()
   const { sucursal, slugParaApi } = useSucursalActiva()
-  const { autenticado, cliente, resuelto, refetch } = useCliente()
+  const { autenticado, cliente, resuelto, refetch, sesionDeOtroLocal, logout } = useCliente()
   const tarjetas = useClienteStore((s) => s.tarjetas)
   const visita = useVisitaQr(slugParaApi)
   const pasoAprobada = visita.flujo.paso === 'aprobada'
@@ -67,6 +68,27 @@ export function FlujoVisita() {
         <Skeleton className="h-64 w-full" />
         <Skeleton className="h-12 w-full" />
       </div>
+    )
+  }
+
+  /**
+   * La sesion guardada es de OTRO local: el `TenantGuard` contesta 403 y NO es un fallo de la app.
+   *
+   * Se muestra la MISMA pantalla humana que la tarjeta (el componente compartido
+   * `components/CambiarDeCuenta`) en vez del texto crudo del backend — antes se veia
+   * "El tenant del token no coincide con la solicitud" con un "Reintentar" que volvia a fallar.
+   *
+   * Dos fuentes, a proposito: `/auth/cliente/me` corre al montar y delata el caso con
+   * `sesionDeOtroLocal`; y si esa respuesta todavia no llego (o la cookie cambio despues), el 403
+   * del propio POST /visitas/solicitar deja `tenantMismatch` en el flujo (ver visita-service).
+   */
+  if (sesionDeOtroLocal || visita.flujo.tenantMismatch) {
+    return (
+      <CambiarDeCuenta
+        slugNegocio={negocio?.slug ?? ''}
+        onSalir={logout}
+        detalle="La sesión guardada en este teléfono es de otro negocio, así que no podemos sumar tu visita en este club."
+      />
     )
   }
 

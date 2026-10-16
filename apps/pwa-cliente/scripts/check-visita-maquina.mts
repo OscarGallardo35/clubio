@@ -225,6 +225,35 @@ igual('ABRIR_REGISTRO tambien sale de la pantalla de error',
   visitaReducir(en('error', { mensaje: 'No autorizado' }), { tipo: 'ABRIR_REGISTRO' }).paso, 'registrando')
 
 
+// --- 403 del TenantGuard (la sesion es de OTRO local) ----------------------
+console.log('\n== 403 del TenantGuard (sesion de otro local) ==')
+// El backend responde 403 "El tenant del token no coincide con la solicitud". NO es un fallo de la
+// app: la pantalla tiene que mostrar el caso humano (components/CambiarDeCuenta) y NO el texto
+// crudo con un "Reintentar" que vuelve a fallar. La marca la resuelve el transporte
+// (visita-service -> esTenantMismatch) y viaja en el evento.
+igual('el 403 por tenant no arranca la marca', ESTADO_INICIAL.tenantMismatch, false)
+const porTenant = visitaReducir(en('solicitando'), {
+  tipo: 'SOLICITUD_RECHAZADA',
+  motivo: 'otro',
+  mensaje: 'El tenant del token no coincide con la solicitud',
+  tenantMismatch: true,
+})
+igual('queda en error', porTenant.paso, 'error')
+igual('con la marca de tenant', porTenant.tenantMismatch, true)
+igual('un error NORMAL no lleva la marca',
+  visitaReducir(en('solicitando'), { tipo: 'SOLICITUD_RECHAZADA', motivo: 'otro', mensaje: 'boom' }).tenantMismatch,
+  false)
+igual('ERROR_RED (red caida) tampoco',
+  visitaReducir(en('solicitando'), { tipo: 'ERROR_RED', mensaje: 'sin red' }).tenantMismatch, false)
+igual('REINTENTAR limpia la marca',
+  visitaReducir(porTenant, { tipo: 'REINTENTAR' }).tenantMismatch, false)
+igual('un rechazo del negocio (esperaHoras) tampoco la lleva',
+  visitaReducir(en('solicitando'), { tipo: 'SOLICITUD_RECHAZADA', motivo: 'esperaHoras', faltanHoras: 2 }).tenantMismatch,
+  false)
+igual('una aprobacion posterior la limpia (no deja la pantalla marcada)',
+  visitaReducir(porTenant, { tipo: 'WS_APROBADA', sellosActuales: 4, premioDesbloqueado: false }).tenantMismatch, false)
+
+
 // --- Tarjeta de sellos: la vista que se le pasa a <TarjetaSellos /> -------
 console.log('\n== tarjeta ==')
 // Fixture con la forma REAL de GET /visitas/mi-tarjeta (verificada contra el backend).

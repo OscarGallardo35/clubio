@@ -3,6 +3,8 @@
 import * as React from 'react'
 import { endpoints } from '@repo/api-client'
 import { api } from '@/lib/api'
+import { normalizarError } from '@/lib/checkout-maquina'
+import { esTenantMismatch } from '@/lib/tenant'
 
 /**
  * Suscripcion a notificaciones push (PWA Cliente).
@@ -164,7 +166,15 @@ export function usePushNotifications(): UsoPushNotifications {
       setEstado('activo')
     } catch (e) {
       console.warn('[push] no se pudo activar', e)
-      setMensaje(e instanceof Error ? e.message : 'No pudimos activar las notificaciones.')
+      // El 403 del `TenantGuard` NO es un fallo tecnico (la sesion es de otro local) y su texto crudo
+      // ("El tenant del token no coincide con la solicitud") no dice nada: se explica en humano. El
+      // resto de los errores sigue mostrando el mensaje tal cual.
+      const { status, mensaje, data } = normalizarError(e)
+      setMensaje(
+        esTenantMismatch(status, mensaje, data)
+          ? 'Esta cuenta es de otro local. Cambiá de cuenta para activar las notificaciones acá.'
+          : mensaje || 'No pudimos activar las notificaciones.',
+      )
       setEstado('error')
     } finally {
       setGuardando(false)

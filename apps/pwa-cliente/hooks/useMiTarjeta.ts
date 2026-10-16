@@ -51,11 +51,12 @@ export function useMiTarjeta(sucursalSlug: string | null, habilitado: boolean): 
       setError(null)
       setTenantMismatch(false)
     } catch (e) {
-      const { status, mensaje } = normalizarError(e)
+      const { status, mensaje, data } = normalizarError(e)
       // 401 = sin sesion (no es un error: el estado "no logueado" tiene su propia pantalla).
       // 403 por tenant: tampoco es un fallo de la app, es una sesion de otro local.
-      if (esTenantMismatch(status, mensaje)) setTenantMismatch(true)
-      if (status !== 401 && !esTenantMismatch(status, mensaje)) setError(mensaje || 'No pudimos cargar tu tarjeta')
+      const mismatch = esTenantMismatch(status, mensaje, data)
+      if (mismatch) setTenantMismatch(true)
+      if (status !== 401 && !mismatch) setError(mensaje || 'No pudimos cargar tu tarjeta')
     } finally {
       setCargando(false)
     }

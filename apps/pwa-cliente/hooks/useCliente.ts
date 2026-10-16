@@ -47,7 +47,7 @@ export function useCliente(): UseCliente {
         setSesionDeOtroLocal(false)
       } else if (
         e instanceof ApiError &&
-        esTenantMismatch(e.status, (e as { message?: string }).message)
+        esTenantMismatch(e.status, (e as { message?: string }).message, (e as { data?: unknown }).data)
       ) {
         // La cookie es de otro negocio: no hay sesion utilizable aca. Se limpia lo que haya en
         // memoria y se marca para ofrecer "cambiar de cuenta" (la cookie la baja el logout).

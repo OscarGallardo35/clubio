@@ -7,14 +7,12 @@ import { configurarNegocioDeVisita, useVisitaStore } from '@/stores/visitaStore'
 import { consultarEstado, crearSocketVisita, registrarCliente, sesionActual, solicitarVisita } from '@/lib/visita-service'
 import { esFinal, eventoDeAprobacion, puedeReintentar, textoDelMotivo, tokenDeVisitaVivo } from '@/lib/visita-maquina'
 import type { EstadoFlujo } from '@/lib/visita-maquina'
+import { intervaloDeSondeo, sondeoVencido } from '@/lib/sondeo'
 import type { EstadoWs } from '@/stores/visitaStore'
 import { leerParametrosQr } from '@/lib/tenant'
 
 /** El WS tiene 3 segundos para conectar; si no, se arranca a preguntar igual. */
 const MS_ESPERA_WS = 3000
-/** Intervalo y tope del respaldo por polling: 60 x 5s = 5 min (la vida del token). */
-const MS_POLLING = 5000
-const MAX_POLLING = 60
 
 export interface UseVisitaQr {
   flujo: EstadoFlujo
@@ -111,44 +109,75 @@ export function useVisitaQr(sucursalSlug: string | null = null): UseVisitaQr {
   React.useEffect(() => {
     if (flujo.paso !== 'esperando' || !flujo.token) return
 
+    /**
+     * Origen de la ventana agresiva y del tope del respaldo: se cuenta desde que el flujo entro
+     * en 'esperando' (o sea, desde que el cliente PIDIO la visita), no desde que arranca el
+     * polling. Importa porque el polling suele empezar 3 s despues (la gracia del WS) y esos 3 s
+     * son parte de la espera real del cliente.
+     */
+    const inicioEspera = Date.now()
     let socket: ReturnType<typeof crearSocketVisita> | null = null
     let temporizadorWs: ReturnType<typeof setTimeout> | null = null
-    let intervalo: ReturnType<typeof setInterval> | null = null
-    let intentos = 0
+    let temporizador: ReturnType<typeof setTimeout> | null = null
+    let sondeando = false
+    /** Evita apilar consultas si el backend tarda mas que el intervalo (latencia cruzada). */
+    let enVuelo = false
     let cerrado = false
 
+    /**
+     * Respaldo por polling, con cadencia ADAPTATIVA (lib/sondeo.ts): cada 2,5 s durante los
+     * primeros 30 s de espera y cada 5 s despues.
+     *
+     * Por que agresivo al principio: mientras el cliente mira la pantalla de espera, el respaldo
+     * es TODO lo que tiene si el WS no esta vivo, y cada consulta tarda ~1,4 s por la latencia
+     * cruzada entre regiones. Con el intervalo fijo de 5 s la demora percibida llegaba a +6,5 s;
+     * con 2,5 s el peor caso baja a ~3,9 s. Despues de los 30 s (el cliente ya no esta esperando
+     * activamente, aunque la pantalla siga abierta) vuelve a 5 s para no castigar al que la dejo
+     * abierta media hora: son ~66 consultas en los 5 min de vida del token.
+     */
     const arrancarPolling = () => {
-      if (cerrado || intervalo) return
+      if (cerrado || sondeando) return
+      sondeando = true
       fijarWs('polling')
-      intervalo = setInterval(() => {
-        intentos += 1
-        // Se agotaron los 5 minutos: el token ya no puede aprobarse.
-        if (intentos > MAX_POLLING) {
+      const tick = () => {
+        if (cerrado) return
+        const desdeElPedido = Date.now() - inicioEspera
+        // Se agoto la vida del token (5 min): ya no puede aprobarse.
+        if (sondeoVencido(desdeElPedido)) {
           despachar({ tipo: 'EXPIRAR' })
           return
         }
         const token = flujo.token
-        if (!token) return
-        void consultarEstado(token).then((r) => {
-          if (cerrado || !r) return
-          // Solo se despacha algo definitivo: PENDIENTE se ignora (ya estamos esperando).
-          if (r.estado !== 'PENDIENTE') {
-            despachar({
-              tipo: 'ESTADO_RECIBIDO',
-              estado: r.estado,
-              ...(r.motivo ? { motivo: r.motivo } : {}),
-              ...(typeof r.sellosActuales === 'number' ? { sellosActuales: r.sellosActuales } : {}),
-              premioDesbloqueado: r.premioDesbloqueado,
+        if (token && !enVuelo) {
+          enVuelo = true
+          void consultarEstado(token)
+            .then((r) => {
+              if (cerrado || !r) return
+              // Solo se despacha algo definitivo: PENDIENTE se ignora (ya estamos esperando).
+              if (r.estado !== 'PENDIENTE') {
+                despachar({
+                  tipo: 'ESTADO_RECIBIDO',
+                  estado: r.estado,
+                  ...(r.motivo ? { motivo: r.motivo } : {}),
+                  ...(typeof r.sellosActuales === 'number' ? { sellosActuales: r.sellosActuales } : {}),
+                  premioDesbloqueado: r.premioDesbloqueado,
+                })
+              }
             })
-          }
-        })
-      }, MS_POLLING)
+            .finally(() => {
+              enVuelo = false
+            })
+        }
+        temporizador = setTimeout(tick, intervaloDeSondeo(Date.now() - inicioEspera))
+      }
+      temporizador = setTimeout(tick, intervaloDeSondeo(Date.now() - inicioEspera))
     }
 
     const pararPolling = () => {
-      if (intervalo) {
-        clearInterval(intervalo)
-        intervalo = null
+      sondeando = false
+      if (temporizador) {
+        clearTimeout(temporizador)
+        temporizador = null
       }
     }
 
